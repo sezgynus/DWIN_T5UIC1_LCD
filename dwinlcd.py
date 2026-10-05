@@ -463,11 +463,12 @@ class DWIN_LCD:
             self._menus['control'].append(('PROBE', 'Probe calibration', self.ICON_Zoffset))
         if recovery:
             self._menus['control'].append(('RECOVERY', 'Restore jog state', self.ICON_Homing))
+        self._menus['control'].append(('LIGHT', 'Case Light', self.ICON_Cool))
         self._menus['control'].append(('INFO', 'Info', self.ICON_Info))
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
         keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'PLA', 'ABS', 'COOL', 'LANG',
-                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO', 'PROBE', 'RECOVERY')
+                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT')
         for menu, prefix in prefixes.items():
             for key in keys:
                 setattr(self, prefix + '_CASE_' + key, -1)
@@ -1061,6 +1062,10 @@ class DWIN_LCD:
                 self.Draw_Probe_Wizard()
             if self.select_control.now == self.CONTROL_CASE_RECOVERY:
                 self._action('Restore jog state', self.pd.restore_jog_state)
+            if self.select_control.now == self.CONTROL_CASE_LIGHT:
+                self._case_light_on = not getattr(self, '_case_light_on', False)
+                self.pd.sendGCode('M355 S{}'.format(1 if self._case_light_on else 0))
+                self.Draw_Control_Menu()
             if (self.select_control.now == self.CONTROL_CASE_INFO):  # Info
                 self.checkkey = self.Info
                 self.Draw_Info_Menu()
@@ -1978,6 +1983,11 @@ class DWIN_LCD:
 
     def Draw_Control_Menu(self):
         self._draw_capability_menu('control', self.select_control)
+        row = self.CONTROL_CASE_LIGHT + self.MROWS - self.index_control
+        if 1 <= row <= self.MROWS:
+            self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+                                 self.lcd.Color_Bg_Black, 224, self.MBASE(row),
+                                 '[X]' if getattr(self, '_case_light_on', False) else '[ ]')
 
     def _draw_info_text(self, value, y):
         text = T5UIC1_LCD._panel_text(value)[:self.lcd.DWIN_WIDTH // self.MENU_CHR_W]
