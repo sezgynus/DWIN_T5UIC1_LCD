@@ -172,6 +172,7 @@ class JogTests(unittest.TestCase):
         data = snapshot()
         result = display(data)
         result.checkkey = result.Move_X
+        result._live_jog = True
         result._live_jog_future = None
         result._live_jog_pending = None
         result.pd.HMI_ValueStruct.Move_X_scale = 100
@@ -179,6 +180,19 @@ class JogTests(unittest.TestCase):
         result.pd.state.status['gcode_move']['position'][0] = 42.5
         result.EachMomentUpdate()
         self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale, 425)
+
+    def test_manual_move_editor_preserves_unconfirmed_value(self):
+        data = snapshot()
+        result = display(data)
+        result.checkkey = result.Move_X
+        result._live_jog = False
+        result._live_jog_future = None
+        result._live_jog_pending = None
+        result.pd.HMI_ValueStruct.Move_X_scale = 123
+        result.pd.update_variable = Mock(return_value=True)
+        result.pd.state.status['gcode_move']['position'][0] = 42.5
+        result.EachMomentUpdate()
+        self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale, 123)
 
     def test_active_move_editor_does_not_resync_during_live_jog(self):
         data = snapshot()
