@@ -1,6 +1,9 @@
 import copy
 import logging
 import math
+import uuid
+from concurrent.futures import Future
+from threading import Lock
 from motion_settings import PARAMETERS, validate as validate_motion
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
@@ -127,6 +130,9 @@ class PrinterData:
 
     def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0, settings_path=None):
         self.client = MoonrakerClient(URL, API_Key, timeout)
+        self._jog_lock = Lock()
+        self._jog_restore = None
+        self._jog_state_name = '_DWIN_JOG_' + uuid.uuid4().hex
         self.state = PrinterState()
         self.capabilities = PrinterCapabilities()
         self._apply_capabilities(self.capabilities)
@@ -213,7 +219,7 @@ class PrinterData:
     def getREST(self, path):
         return self.client.get(path)
 
-    def postREST(self, path, json):
+    def postREST(self, path, json, cleanup=None):
         snapshot = self.subscription.snapshot()
         if self.connection_error or snapshot['state'] != 'ready':
             from concurrent.futures import Future
@@ -227,7 +233,7 @@ class PrinterData:
             current = self.subscription.snapshot()
             return current['state'] == 'ready' and current['epoch'] == epoch
 
-        return self.client.post(path, json, guard=guard)
+        return self.client.post(path, json, guard=guard, cleanup=cleanup) if cleanup is not None else self.client.post(path, json, guard=guard)
 
     def init_Webservices(self):
         # Bootstrap and reconnection run on the subscription thread.
@@ -338,6 +344,8 @@ class PrinterData:
         return 0
 
     def openAndPrintFile(self, path):
+        if self.jog_recovery_required:
+            raise ValueError('Restore jog state before starting a print')
         if (not isinstance(path, str) or not self._files_loaded or self.file_error
                 or path not in {item['path'] for item in self.files}):
             raise ValueError('Selected file is no longer available')
@@ -354,6 +362,8 @@ class PrinterData:
         return self.postREST('/printer/print/pause', json=None)
 
     def resume_job(self): #fixed
+        if self.jog_recovery_required:
+            raise ValueError('Restore jog state before resuming')
         print('Resuming job:')
         return self.postREST('/printer/print/resume', json=None)
 
@@ -391,6 +401,8 @@ class PrinterData:
         self.sendGCode(script)
 
     def _jog(self, axis, value, speed, absolute):
+        if self.jog_recovery_required:
+            raise ValueError('Restore the preceding jog state before moving')
         axis = str(axis).upper()
         if axis not in ('X', 'Y', 'Z', 'E'):
             raise ValueError('Invalid jog axis')
@@ -432,11 +444,45 @@ class PrinterData:
             return None
         # Klipper saves/restores feed and extrusion factors as well as G90/M82.
         # Relative displacement avoids changing the G92/work origin.
-        script = '\n'.join(('SAVE_GCODE_STATE NAME=_DWIN_JOG', 'G91', 'M83',
+        name = self._jog_state_name
+        restore = 'RESTORE_GCODE_STATE NAME={} MOVE=0'.format(name)
+        script = '\n'.join(('SAVE_GCODE_STATE NAME=' + name, 'G91', 'M83',
                             'M220 S100', 'M221 S100',
-                            'G1 {}{:g} F{:g}'.format(axis, delta, speed),
-                            'RESTORE_GCODE_STATE NAME=_DWIN_JOG MOVE=0'))
-        return self.sendGCode(script)
+                            'G1 {}{:g} F{:g}'.format(axis, delta, speed), restore))
+        with self._jog_lock:
+            self._jog_restore = restore
+        try:
+            future = self.sendGCode(script, cleanup=restore)
+        except Exception:
+            # Submission failed before sending anything.
+            with self._jog_lock:
+                self._jog_restore = None
+            raise
+        if isinstance(future, Future):
+            future.add_done_callback(lambda done: self._jog_finished(done, restore))
+        return future
+
+    @property
+    def jog_recovery_required(self):
+        with self._jog_lock:
+            return self._jog_restore is not None
+
+    def _jog_finished(self, future, restore):
+        if not future.cancelled() and getattr(future, 'cleanup_complete', False):
+            with self._jog_lock:
+                if self._jog_restore == restore:
+                    self._jog_restore = None
+
+    def restore_jog_state(self):
+        with self._jog_lock:
+            restore = self._jog_restore
+        if restore is None:
+            raise ValueError('No jog state needs recovery')
+        if self.status in ('printing', 'paused', 'pausing'):
+            raise ValueError('Stop the print before restoring jog state')
+        future = self.postREST('/printer/gcode/script', json={'script': restore})
+        future.add_done_callback(lambda done: self._jog_finished(done, restore))
+        return future
 
     def moveRelative(self, axis, distance, speed):
         return self._jog(axis, distance, speed, False)
@@ -444,7 +490,16 @@ class PrinterData:
     def moveAbsolute(self, axis, position, speed):
         return self._jog(axis, position, speed, True)
 
-    def sendGCode(self, gcode):
+    def sendGCode(self, gcode, cleanup=None):
+        if cleanup is None and self.jog_recovery_required:
+            # Heater/fan shutdown and temperature control do not depend on modes.
+            allowed = {'TURN_OFF_HEATERS', 'SET_HEATER_TEMPERATURE', 'M106', 'M107'}
+            if any(line.strip().split()[0].upper() not in allowed
+                   for line in gcode.splitlines() if line.strip()):
+                raise ValueError('Restore jog state before sending motion commands')
+        if cleanup is not None:
+            return self.postREST('/printer/gcode/script', json={'script': gcode},
+                                 cleanup={'script': cleanup})
         return self.postREST('/printer/gcode/script', json={'script': gcode})
 
     def disable_all_heaters(self):

@@ -61,6 +61,9 @@ class RegressionContracts(unittest.TestCase):
 
     def test_resume_uses_absolute_endpoint_path(self):
         printer = self.printer()
+        from threading import Lock
+        printer._jog_lock = Lock()
+        printer._jog_restore = None
         printer.resume_job()
         printer.postREST.assert_called_once_with('/printer/print/resume', json=None)
 

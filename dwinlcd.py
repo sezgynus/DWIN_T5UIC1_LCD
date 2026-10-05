@@ -418,9 +418,11 @@ class DWIN_LCD:
 
     def _configure_menus(self):
         caps = self.pd.capabilities
-        if getattr(self, '_menu_capabilities', None) == caps:
+        recovery = self.pd.jog_recovery_required
+        if getattr(self, '_menu_capabilities', None) == caps and getattr(self, '_menu_recovery', False) == recovery:
             return False
         self._menu_capabilities = caps
+        self._menu_recovery = recovery
         heat = self.pd.HAS_HOTEND or self.pd.HAS_HEATED_BED
         self._menus = {
             'prepare': [('MOVE', 'Move', self.ICON_Axis), ('DISA', 'Disable steppers', self.ICON_CloseMotor),
@@ -450,11 +452,13 @@ class DWIN_LCD:
         self._menus['control'].append(('MOVE', 'Motion', self.ICON_Motion))
         if caps.probe and 'manual_probe' in self.pd.state.objects:
             self._menus['control'].append(('PROBE', 'Probe calibration', self.ICON_Zoffset))
+        if recovery:
+            self._menus['control'].append(('RECOVERY', 'Restore jog state', self.ICON_Homing))
         self._menus['control'].append(('INFO', 'Info', self.ICON_Info))
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
         keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'PLA', 'ABS', 'COOL', 'LANG',
-                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO', 'PROBE')
+                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO', 'PROBE', 'RECOVERY')
         for menu, prefix in prefixes.items():
             for key in keys:
                 setattr(self, prefix + '_CASE_' + key, -1)
@@ -928,6 +932,8 @@ class DWIN_LCD:
                 self.checkkey = self.ProbeWizardID
                 self._probe_selection = 0
                 self.Draw_Probe_Wizard()
+            if self.select_control.now == self.CONTROL_CASE_RECOVERY:
+                self._action('Restore jog state', self.pd.restore_jog_state)
             if (self.select_control.now == self.CONTROL_CASE_INFO):  # Info
                 self.checkkey = self.Info
                 self.Draw_Info_Menu()

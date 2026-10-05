@@ -363,3 +363,19 @@ The audit identifies remaining command-feedback, runtime-offset, epoch/cache and
 field-boundary defects; passing isolated tests is not a release-readiness claim.
 See [lcd-assets.md](docs/lcd-assets.md) for verified reference assets. No hardware
 or live-printer tests were performed in this source adaptation pass.
+
+### Jog error recovery
+
+Each jog first confirms SAVE_GCODE_STATE in a separate serialized request.
+Only then are G91/M83, normalized speed/flow, G1 and RESTORE MOVE=0 submitted.
+A failed SAVE never sends the movement. A failed movement request attempts only
+the saved-state RESTORE, without replaying G1, if its connection epoch is still
+valid. The original failure remains visible even when restoration succeeds.
+
+Unconfirmed restoration blocks motion commands, print start and resume. Heater
+and part-fan control remains available. Control → Restore jog state explicitly
+retries the non-moving restoration; it does not clear the block without a
+successful response. Disconnect/reconnect alone does not clear it. The saved
+slot is unique to the client instance and reused after successful restoration,
+so Klipper's saved-state dictionary does not grow with every jog. This guard
+covers this LCD client's commands; other clients can still submit commands.

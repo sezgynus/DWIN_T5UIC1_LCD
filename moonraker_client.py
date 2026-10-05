@@ -73,14 +73,15 @@ class MoonrakerClient:
         # Each polling attempt opens a fresh request: recovery needs no restart.
         return self.request('GET', path)
 
-    def post(self, path, payload=None, guard=None):
+    def post(self, path, payload=None, guard=None, cleanup=None):
         future = Future()
+        future.cleanup_complete = False
         with self._lock:
             if self._stop.is_set():
                 future.set_exception(MoonrakerError('Client is closed'))
             else:
                 try:
-                    self._queue.put_nowait((future, path, payload, guard))
+                    self._queue.put_nowait((future, path, payload, guard, cleanup))
                 except Full:
                     future.set_exception(MoonrakerError('Command queue is full'))
         if future.done():
@@ -90,7 +91,7 @@ class MoonrakerClient:
     def _discard_pending(self, message):
         while True:
             try:
-                future, path, _, _ = self._queue.get_nowait()
+                future, path, _, _, _ = self._queue.get_nowait()
             except Empty:
                 return
             if not future.done():
@@ -101,22 +102,48 @@ class MoonrakerClient:
     def _run(self):
         while not self._stop.is_set():
             try:
-                future, path, payload, guard = self._queue.get(timeout=0.1)
+                future, path, payload, guard, cleanup = self._queue.get(timeout=0.1)
             except Empty:
                 continue
             if self._stop.is_set():
                 future.cancel()
             elif future.set_running_or_notify_cancel():
+                mutated = False
                 try:
                     if guard is not None and not guard():
                         raise MoonrakerError('Printer connection changed before command execution')
-                    future.set_result(self.request('POST', path, payload))
+                    if cleanup is not None:
+                        # Confirm SAVE in a separate request before mutating modes.
+                        # A timeout of SAVE alone cannot leave changed modal state.
+                        first, rest = payload['script'].split('\n', 1)
+                        if not first.startswith('SAVE_GCODE_STATE NAME='):
+                            raise MoonrakerError('Jog preparation must save state')
+                        self.request('POST', path, {'script': first})
+                        if guard is not None and not guard():
+                            raise MoonrakerError('Connection changed after jog preparation')
+                        payload = {'script': rest}
+                        mutated = True
+                    result = self.request('POST', path, payload)
+                    future.cleanup_complete = True
+                    future.set_result(result)
                 except Exception as exc:
-                    future.set_exception(exc)
+                    # Restore is a separate non-moving command, never a replay.
+                    # SAVE was confirmed before any mode change was submitted.
+                    if cleanup is not None and not mutated:
+                        future.cleanup_complete = True
+                    if cleanup is not None and mutated and not self._stop.is_set():
+                        try:
+                            if guard is not None and not guard():
+                                raise MoonrakerError('Connection changed before jog restore')
+                            self.request('POST', path, cleanup)
+                            future.cleanup_complete = True
+                        except Exception:
+                            future.cleanup_complete = False
                     # A timed-out POST is ambiguous. Never replay it or execute
                     # dependent commands that were queued behind it.
                     with self._lock:
                         self._discard_pending('Cancelled after preceding command failure')
+                    future.set_exception(exc)
             self.command_results.put((path, future))
             self._queue.task_done()
 
@@ -124,4 +151,4 @@ class MoonrakerClient:
         with self._lock:
             self._stop.set()
             self._discard_pending('Client is closed')
-        self._worker.join(timeout=self.timeout + 1)
+        self._worker.join(timeout=self.timeout * 3 + 1)

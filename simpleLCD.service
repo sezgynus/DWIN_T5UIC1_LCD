@@ -19,7 +19,7 @@ StateDirectory=dwin-lcd
 StateDirectoryMode=0750
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=15
+TimeoutStopSec=30
 StandardOutput=journal
 StandardError=journal
 
