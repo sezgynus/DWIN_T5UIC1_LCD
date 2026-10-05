@@ -52,3 +52,7 @@ without G92, displacement from command space, negative limits, homing, cold
 and excessive extrusion, paused/printing rejection, numeric/axis validation,
 Z velocity caps and local UI edits until confirmation. Actual motion and
 Klipper error recovery still require live printer validation.
+
+Print screen coverage checks paused startup/resume, completion confirmation and
+acknowledgement, new-print reset, cancellation/standby, retained error messages,
+external speed updates and editor isolation.

@@ -101,6 +101,14 @@ Temperature and Tune confirmations now submit the corresponding live heater
 target; preset editors only change preset values. Paused and terminal jobs retain
 progress and elapsed print duration. Completion follows `print_stats.state`,
 so a rounded progress value cannot mark a running job complete.
+Print screen selection handles paused startup, completion, cancellation and
+print errors explicitly. Completion stays on the print screen until Enter;
+acknowledging it does not reset the printer's speed. Print error messages remain
+visible until Enter. A new print clears the old completion prompt.
+The displayed speed percentage follows subscribed `gcode_move.speed_factor`,
+including edits from other clients; an open speed editor keeps its local target.
+M220 submission does not change the reported value until status confirms it.
+
 The Save row persists both PLA/ABS profiles (heater targets and fan percentage)
 to `$XDG_CONFIG_HOME/dwin-lcd/presets.json`, or `~/.config/dwin-lcd/presets.json`
 when XDG_CONFIG_HOME is unset. Use `--settings-file /absolute/path/presets.json`

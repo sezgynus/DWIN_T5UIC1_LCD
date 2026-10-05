@@ -279,6 +279,9 @@ class PrinterData:
             origin = gcm['homing_origin'][2]
             absolute_moves = gcm['absolute_coordinates']
             absolute_extrude = gcm['absolute_extrude']
+            speed_percent = float(gcm.get('speed_factor', 1.0)) * 100
+            if not math.isfinite(speed_percent) or speed_percent <= 0:
+                raise ValueError('Invalid feedrate percentage')
             thermal = copy.deepcopy(self.thermalManager)
             for obj, target in [(caps.active_hotend.name if caps.active_hotend else None, thermal['temp_hotend'][0]),
                                 ('heater_bed' if caps.bed else None, thermal['temp_bed'])]:
@@ -301,6 +304,7 @@ class PrinterData:
             self.files = []
             self._file_revision = state.file_revision
         self.thermalManager = thermal
+        self.feedrate_percentage = round(speed_percent)
         self.absolute_moves = absolute_moves
         self.absolute_extrude = absolute_extrude
         self.current_position.x, self.current_position.y, self.current_position.z, self.current_position.e = x, y, z, e
@@ -331,6 +335,8 @@ class PrinterData:
         return self.job_Info['print_stats'].get('print_duration', 0)
 
     def remain(self):
+        if self.status in ('complete', 'cancelled', 'error'):
+            return 0
         percent = self.getPercent()
         duration = self.duration()
         if percent:
@@ -355,8 +361,10 @@ class PrinterData:
         self.postREST('/printer/print/resume', json=None)
 
     def set_feedrate(self, fr):
-        self.feedrate_percentage = fr
-        self.sendGCode('M220 S%s' % fr)
+        fr = float(fr)
+        if not math.isfinite(fr) or fr <= 0:
+            raise ValueError('Feedrate percentage must be positive')
+        return self.sendGCode('M220 S{:g}'.format(fr))
 
     def home(self, homeZ=False): #fixed using gcode
         script = 'G28 X Y'

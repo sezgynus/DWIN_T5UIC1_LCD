@@ -542,15 +542,41 @@ class DWIN_LCD:
 
         self.HMI_SetLanguage()
 
-    def HMI_StartFrame(self, with_update):
-        self.last_status = self.pd.status
-        if self.pd.status == 'printing':
+    def _present_print_state(self):
+        status = self.pd.status
+        self.last_status = status
+        self._print_error_visible = False
+        self.pd.HMI_flag.done_confirm_flag = False
+        self.pd.HMI_flag.pause_flag = self.pd.printingIsPaused()
+        if status in ('printing', 'paused', 'pausing'):
             self.Goto_PrintProcess()
-        elif self.pd.status in ['operational', 'complete', 'standby', 'cancelled']:
-            self.Goto_MainMenu()
+        elif status == 'complete':
+            if getattr(self, '_acknowledged_terminal', None) == self._terminal_key():
+                self.Goto_MainMenu()
+                return
+            self.Goto_PrintProcess()
+            self.pd.HMI_flag.done_confirm_flag = True
+            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 250,
+                                    self.lcd.DWIN_WIDTH - 1, self.STATUS_Y)
+            self.lcd.ICON_Show(self.ICON, self.ICON_Confirm_E, 86, 283)
+        elif status == 'error':
+            if getattr(self, '_acknowledged_terminal', None) == self._terminal_key():
+                self.Goto_MainMenu()
+                return
+            self._print_error_visible = True
+            message = self.pd.job_Info['print_stats'].get('message') or 'Print failed'
+            self._show_message(str(message))
         else:
             self.Goto_MainMenu()
-        self.Draw_Status_Area(with_update)
+
+    def _terminal_key(self):
+        return (self.pd.state.epoch, self.pd.status, self.pd.file_name,
+                self.pd.job_Info['print_stats'].get('print_duration', 0))
+
+    def HMI_StartFrame(self, with_update):
+        self._present_print_state()
+        if not self._print_error_visible:
+            self.Draw_Status_Area(with_update)
 
     def HMI_MainMenu(self):
         encoder_diffState = self.get_encoder_state()
@@ -802,7 +828,8 @@ class DWIN_LCD:
         if (self.pd.HMI_flag.done_confirm_flag):
             if (encoder_diffState == self.ENCODER_DIFF_ENTER):
                 self.pd.HMI_flag.done_confirm_flag = False
-                self.dwin_abort_flag = True  # Reset feedrate, return to Home
+                self._acknowledged_terminal = self._terminal_key()
+                self.Goto_MainMenu()
             return
 
         if (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -876,7 +903,7 @@ class DWIN_LCD:
                 self.Goto_PrintProcess()
             elif (self.select_print.now == 2):  # stop window
                 if (self.pd.HMI_flag.select_flag):
-                    self.dwin_abort_flag = True  # Reset feedrate, return to Home
+                    self.dwin_abort_flag = True
                     self.pd.cancel_job()
                     self.Goto_MainMenu()
                 else:
@@ -924,7 +951,7 @@ class DWIN_LCD:
             self.pd.HMI_ValueStruct.print_speed += 1
 
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.print_speed -= 1
+            self.pd.HMI_ValueStruct.print_speed = max(1, self.pd.HMI_ValueStruct.print_speed - 1)
 
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.Tune
@@ -1612,7 +1639,7 @@ class DWIN_LCD:
         self.lcd.Frame_AreaCopy(1, 98, 44, 152, 58, 176, 188)  # Stop
 
     def Draw_Print_ProgressBar(self, Percentrecord=None):
-        if not Percentrecord:
+        if Percentrecord is None:
             Percentrecord = self.pd.getPercent()
         self.lcd.ICON_Show(self.ICON, self.ICON_Bar, 15, 93)
         self.lcd.Draw_Rectangle(1, self.lcd.BarFill_Color, 16 + Percentrecord * 240 / 100, 93, 256, 113)
@@ -1627,7 +1654,6 @@ class DWIN_LCD:
 
     def Draw_Print_ProgressRemain(self):
         remain_time = self.pd.remain()
-        if not remain_time: return #time remaining is None during warmup.
         self.lcd.Draw_IntValue(True, True, 1, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 2, 176, 212, remain_time / 3600)
         self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 192, 212, ":")
         self.lcd.Draw_IntValue(True, True, 1, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 2, 200, 212, (remain_time % 3600) / 60)
@@ -1871,7 +1897,6 @@ class DWIN_LCD:
             self.index_prepare = self.MROWS
             self.Draw_Prepare_Menu()
         elif (self.checkkey == self.Back_Main):
-            self.pd.HMI_ValueStruct.print_speed = self.pd.feedrate_percentage = 100
             # dwin_zoffset = TERN0(HAS_BED_PROBE, probe.offset.z)
             # planner.finish_and_disable()
             self.Goto_MainMenu()
@@ -2032,32 +2057,23 @@ class DWIN_LCD:
             self._offline = False
             self.HMI_StartFrame(False)
         if self.last_status != self.pd.status:
-            self.last_status = self.pd.status
-            print(self.pd.status)
-            if self.pd.status == 'printing':
-                self.Goto_PrintProcess()
-            elif self.pd.status in ['operational', 'complete', 'standby', 'cancelled']:
-                self.Goto_MainMenu()
+            self._present_print_state()
+        if getattr(self, '_print_error_visible', False):
+            return
 
-        if (self.checkkey == self.PrintProcess):
-            if (self.pd.HMI_flag.print_finish and not self.pd.HMI_flag.done_confirm_flag):
-                self.pd.HMI_flag.print_finish = False
-                self.pd.HMI_flag.done_confirm_flag = True
-                # show percent bar and value
-                self.Draw_Print_ProgressBar(0)
-                # show print done confirm
-                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 250, self.lcd.DWIN_WIDTH - 1, self.STATUS_Y)
-                self.lcd.ICON_Show(self.ICON, self.ICON_Confirm_E, 86, 283)
-            elif (self.pd.HMI_flag.pause_flag != self.pd.printingIsPaused()):
-                # print status update
-                self.pd.HMI_flag.pause_flag = self.pd.printingIsPaused()
-                if (self.pd.HMI_flag.pause_flag):
-                    self.ICON_Continue()
-                else:
-                    self.ICON_Pause()
+        if self.checkkey == self.PrintProcess:
+            if not self.pd.HMI_flag.done_confirm_flag:
+                if self.pd.HMI_flag.pause_flag != self.pd.printingIsPaused():
+                    self.pd.HMI_flag.pause_flag = self.pd.printingIsPaused()
+                    if self.pd.HMI_flag.pause_flag:
+                        self.ICON_Continue()
+                    else:
+                        self.ICON_Pause()
             self.Draw_Print_ProgressBar()
             self.Draw_Print_ProgressElapsed()
             self.Draw_Print_ProgressRemain()
+        elif update and self.checkkey == self.Tune:
+            self.Draw_Tune_Menu()
 
         if self.pd.HMI_flag.home_flag:
             if self.pd.ishomed():
@@ -2068,6 +2084,13 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def _dispatch_input(self):
+        if getattr(self, '_print_error_visible', False):
+            if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
+                self._acknowledged_terminal = self._terminal_key()
+                self._print_error_visible = False
+                self.Goto_MainMenu()
+                self.lcd.UpdateLCD()
+            return
         if self.checkkey == self.MainMenu:
             self.HMI_MainMenu()
         elif self.checkkey == self.SelectFile:
