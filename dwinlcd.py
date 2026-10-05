@@ -663,21 +663,6 @@ class DWIN_LCD:
         return max(1.0, limit * 60.0 * normalized)
 
     def _queue_live_jog(self, axis, distance, speed):
-        # Clamp the *total commanded handwheel target*, not each segment against
-        # the asynchronously reported position.  Subscription position can lag
-        # behind already accepted jogs and otherwise permits cumulative overshoot.
-        if axis != 'E':
-            index = 'XYZ'.index(axis)
-            minimum = self.pd.capabilities.axis_minimum[index]
-            maximum = self.pd.capabilities.axis_maximum[index]
-            commanded = self.pd.HMI_ValueStruct
-            attr = 'Move_{}_scale'.format(axis)
-            target = float(getattr(commanded, attr)) / self.MINUNITMULT
-            target = max(minimum, min(target, maximum))
-            current_ui = target - distance
-            distance = target - current_ui
-            if abs(distance) < 1e-9:
-                return
         pending = self._live_jog_pending
         if pending is None:
             self._live_jog_pending = [axis, distance, speed]
