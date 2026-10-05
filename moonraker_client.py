@@ -97,7 +97,6 @@ class MoonrakerClient:
             if not future.done():
                 future.set_exception(MoonrakerError(message))
             if report_error:
-                if report_error:
                 self.command_results.put((path, future))
             self._queue.task_done()
 
@@ -147,7 +146,8 @@ class MoonrakerClient:
                     with self._lock:
                         self._discard_pending('Cancelled after preceding command failure')
                     future.set_exception(exc)
-            self.command_results.put((path, future))
+            if report_error:
+                self.command_results.put((path, future))
             self._queue.task_done()
 
     def close(self):
