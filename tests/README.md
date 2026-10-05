@@ -19,3 +19,8 @@ Initial coverage: resume routing, paused progress/duration, homing invalidation,
 and hotend/bed target application through both Temperature and Tune menus.
 Transport reconnection, file-list changes, coordinate/modal-state preservation
 and UART framing need dedicated fixtures as those interfaces are refactored.
+
+Transport coverage now also checks optional authentication, timeout forwarding,
+HTTP/JSON error handling, recovery on the next GET, observable POST results,
+closed-client rejection and cancellation of pending commands after failure.
+Resume routing and homing invalidation are fixed and no longer expected failures.

@@ -27,13 +27,35 @@ https://github.com/arksine/moonraker
     
     dtoverlay=disable-bt
 
-### [Enabling Klipper's API socket](https://www.klipper3d.org/API_Server.html)
-  By default, the Klipper's API socket is not enabled. In order to use the API server, the file /etc/default/klipper need to be updated form
+### Moonraker connection (refactor branch)
 
-    KLIPPY_ARGS="/home/pi/klipper/klippy/klippy.py /home/pi/printer.cfg -l /tmp/klippy.log"
-To:
+The LCD now connects to Moonraker over HTTP; no direct Klipper socket path or
+OctoPrint compatibility endpoint is required. The default URL is
+`http://127.0.0.1:7125`. If using a reverse proxy, set its URL explicitly:
 
-    KLIPPY_ARGS="/home/pi/klipper/klippy/klippy.py /home/pi/printer.cfg -a /tmp/klippy_uds -l /tmp/klippy.log"
+```sh
+python3 run.py --moonraker-url http://127.0.0.1:80 --request-timeout 5
+```
+
+`MOONRAKER_URL` can supply the URL. For installations requiring an API key,
+provide `MOONRAKER_API_KEY` in the process environment. Empty keys are not sent.
+Do not commit credentials or disable Moonraker authorization.
+
+`--serial-port`, `--encoder-pins A B`, and `--button-pin` configure hardware.
+The current pin defaults preserve the existing run.py wiring (21/19 and 13);
+set 26/19 explicitly if following the older wiring diagram below.
+
+Commands execute on a dedicated serial worker and expose their result through
+Futures. HTTP failures, invalid JSON and timeouts are checked. Failed commands
+are never replayed; pending dependent commands are discarded. The LCD displays
+a generic failure message and logs the error. Status polling retries after
+connection failure without restarting the application; offline input is ignored.
+A timed-out command may already have executed: inspect printer state before
+issuing it again.
+
+This is the transport foundation. WebSocket subscriptions, a unified UI event
+queue and full device capability discovery are subsequent refactor steps.
+Existing installation instructions below are still being modernized.
 
 ### Library requirements 
 

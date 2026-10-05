@@ -302,7 +302,7 @@ class DWIN_LCD:
     # Dwen serial screen initialization
     # Passing parameters: serial port number
     # DWIN screen uses serial port 1 to send
-    def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key):
+    def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key, moonraker_url='http://127.0.0.1:7125', request_timeout=5.0):
         self.encoder = Encoder(encoder_pins[0], encoder_pins[1])
         self.button_pin = button_pin
         self.button = Button(self.button_pin, pull_up=True)
@@ -316,30 +316,28 @@ class DWIN_LCD:
         self.last_cardpercentValue = 101
         self.lcd = T5UIC1_LCD(USARTx)
         self.checkkey = self.MainMenu
-        self.pd = PrinterData(octoPrint_API_Key)
+        self.pd = PrinterData(octoPrint_API_Key, moonraker_url, request_timeout)
         self.timer = multitimer.MultiTimer(interval=2, function=self.EachMomentUpdate)
         self.HMI_ShowBoot()
         print("Boot looks good")
         print("Testing Web-services")
         self.pd.init_Webservices()
-        while self.pd.status is None:
-            print("No Web-services")
-            self.pd.init_Webservices()
-            self.HMI_ShowBoot("Web-service still loading")
         self.HMI_Init()
         self.HMI_StartFrame(False)
+        self._offline = bool(self.pd.connection_error)
+        if self._offline:
+            self.HMI_ShowBoot('Moonraker unavailable')
 
     def lcdExit(self):
-        print("Shutting down the LCD")
-        self.lcd.JPG_ShowAndCache(0)
-        self.lcd.Frame_SetDir(1)
-        self.lcd.UpdateLCD()
+        if getattr(self, '_closed', False):
+            return
+        self._closed = True
         self.timer.stop()
-        if hasattr(self, "button"):
-            self.button.close()
-        if hasattr(self, "encoder"):
-            self.encoder.close()
-            
+        self.button.close()
+        self.encoder.close()
+        self.pd.close()
+        self.lcd.MYSERIAL1.close()
+
     def MBASE(self, L):
         return 49 + self.MLINE * L
 
@@ -2215,6 +2213,18 @@ class DWIN_LCD:
     def EachMomentUpdate(self):
         # variable update
         update = self.pd.update_variable()
+        if self.pd.connection_error:
+            self._offline = True
+            self.HMI_ShowBoot('Moonraker unavailable')
+            return
+        if self.pd.last_command_error:
+            self._offline = True
+            self.HMI_ShowBoot('Command failed; check log')
+            self.pd.last_command_error = None
+            return
+        if getattr(self, '_offline', False):
+            self._offline = False
+            self.HMI_StartFrame(False)
         if self.last_status != self.pd.status:
             self.last_status = self.pd.status
             print(self.pd.status)
@@ -2252,6 +2262,8 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def encoder_has_data(self, val):
+        if not hasattr(self, 'pd') or self.pd.connection_error or getattr(self, '_closed', False):
+            return
         if self.checkkey == self.MainMenu:
             self.HMI_MainMenu()
         elif self.checkkey == self.SelectFile:

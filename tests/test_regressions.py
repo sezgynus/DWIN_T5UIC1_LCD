@@ -53,7 +53,6 @@ class RegressionContracts(unittest.TestCase):
     def test_pause_state_is_reported(self):
         self.assertTrue(self.printer().printingIsPaused())
 
-    @unittest.expectedFailure
     def test_resume_uses_absolute_endpoint_path(self):
         printer = self.printer()
         printer.resume_job()
@@ -67,7 +66,6 @@ class RegressionContracts(unittest.TestCase):
     def test_paused_duration_is_retained(self):
         self.assertEqual(self.printer().duration(), 120.0)
 
-    @unittest.expectedFailure
     def test_unhomed_axes_clear_previous_flags(self):
         printer = self.printer()
         printer.klippy_callback('{"result":{"status":{"toolhead":{"homed_axes":"xyz"}}}}')
@@ -99,6 +97,35 @@ class RegressionContracts(unittest.TestCase):
         display = self.display(0)
         display.HMI_BedTemp()
         display.pd.sendGCode.assert_called_once_with('M140 S65')
+
+
+class BackendConnectionTests(unittest.TestCase):
+    def test_initialization_does_not_open_klipper_socket(self):
+        with patch.object(backend, 'MoonrakerClient') as transport:
+            printer = backend.PrinterData(URL='http://localhost:7125', timeout=2)
+            transport.assert_called_once_with('http://localhost:7125', '', 2)
+            self.assertIsNone(printer.status)
+            printer.close()
+            transport.return_value.close.assert_called_once()
+
+    def test_missing_snapshot_preserves_previous_state(self):
+        with patch.object(backend, 'MoonrakerClient'):
+            printer = backend.PrinterData()
+        printer.check_command_results = Mock()
+        printer.getREST = Mock(return_value={'result': {'status': {}}})
+        printer.status = 'paused'
+        self.assertFalse(printer.update_variable())
+        self.assertEqual(printer.status, 'paused')
+        self.assertIsNotNone(printer.connection_error)
+
+    def test_offline_command_is_rejected_without_network(self):
+        with patch.object(backend, 'MoonrakerClient') as transport:
+            printer = backend.PrinterData()
+            printer.connection_error = 'Disconnected'
+            future = printer.postREST('/printer/print/start', {'filename': 'test.gcode'})
+            with self.assertRaises(backend.MoonrakerError):
+                future.result()
+            transport.return_value.post.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -1,14 +1,6 @@
-from asyncio.tasks import sleep
-import threading
-import errno
-import select
-import socket
-import json
-import requests
-from requests.exceptions import ConnectionError
-import atexit
-import time
-import asyncio
+import copy
+import logging
+from moonraker_client import MoonrakerClient, MoonrakerError
 
 class xyze_t:
     x = 0.0
@@ -95,97 +87,6 @@ class material_preset_t:
         self.fan_speed = fan_speed
 
 
-class KlippySocket:
-    def __init__(self, uds_filename, callback=None):
-        self.webhook_socket_create(uds_filename)
-        self.lock = threading.Lock()
-        self.poll = select.poll()
-        self.stop_threads = False
-        self.poll.register(self.webhook_socket, select.POLLIN | select.POLLHUP)
-        self.socket_data = ""
-        self.t = threading.Thread(target=self.polling)
-        self.callback = callback
-        self.lines = []
-        self.t.start()
-        atexit.register(self.klippyExit)
-
-    def klippyExit(self):
-        print("Shuting down Klippy Socket")
-        self.stop_threads = True
-        self.t.join()
-
-    def webhook_socket_create(self, uds_filename):
-        self.webhook_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.webhook_socket.setblocking(0)
-        print("Waiting for connect to %s\n" % (uds_filename,))
-        while 1:
-            try:
-                self.webhook_socket.connect(uds_filename)
-            except socket.error as e:
-                if e.errno == errno.ECONNREFUSED:
-                    time.sleep(0.1)
-                    continue
-                print(
-                    "Unable to connect socket %s [%d,%s]\n" % (
-                        uds_filename, e.errno,
-                        errno.errorcode[e.errno]
-                    ))
-                exit(-1)
-            break
-        print("Connection.\n")
-
-    def process_socket(self):
-        data = self.webhook_socket.recv(4096).decode()
-        if not data:
-            print("Socket closed\n")
-            exit(0)
-        parts = data.split('\x03')
-        parts[0] = self.socket_data + parts[0]
-        self.socket_data = parts.pop()
-        for line in parts:
-            if self.callback:
-                self.callback(line)
-
-    def queue_line(self, line):
-        with self.lock:
-            self.lines.append(line)
-
-    def send_line(self):
-        if len(self.lines) == 0:
-            return
-        line = self.lines.pop(0).strip()
-        if not line or line.startswith('#'):
-            return
-        try:
-            m = json.loads(line)
-        except JSONDecodeError:
-            print("ERROR: Unable to parse line\n")
-            return
-        cm = json.dumps(m, separators=(',', ':'))
-        wdm = '{}\x03'.format(cm)
-        self.webhook_socket.send(wdm.encode())
-
-    def polling(self):
-        while True:
-            if self.stop_threads:
-                break
-            res = self.poll.poll(1000.)
-            for fd, event in res:
-                self.process_socket()
-            with self.lock:
-                self.send_line()
-
-
-class MoonrakerSocket:
-    def __init__(self, address, port, api_key):
-        self.s = requests.Session()
-        self.s.headers.update({
-            'X-Api-Key': api_key,
-            'Content-Type': 'application/json'
-        })
-        self.base_address = 'http://' + address + ':' + str(port)
-
-
 class PrinterData:
     event_loop = None
     HAS_HOTEND = True
@@ -249,36 +150,45 @@ class PrinterData:
     SHORT_BUILD_VERSION = "1.00"
     CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-    def __init__(self, API_Key, URL='127.0.0.1'):
-        self.op = MoonrakerSocket(URL, 80, API_Key)
+    def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0):
+        self.client = MoonrakerClient(URL, API_Key, timeout)
         self.status = None
-        print(self.op.base_address)
-        self.ks = KlippySocket('/home/sezgynpi/printer_data/comms/klippy.sock', callback=self.klippy_callback)
-        subscribe = {
-            "id": 4001,
-            "method": "objects/subscribe",
-            "params": {
-                "objects": {
-                    "toolhead": [
-                        "position"
-                    ]
-                },
-                "response_template": {}
-            }
-        }
-        self.klippy_z_offset = '{"id": 4002, "method": "objects/query", "params": {"objects": {"configfile": ["config"]}}}'
-        self.klippy_home = '{"id": 4003, "method": "objects/query", "params": {"objects": {"toolhead": ["homed_axes"]}}}'
+        self.connection_error = None
+        self.last_command_error = None
+        self.absolute_moves = True
+        self.absolute_extrude = True
+        self.file_name = ''
+        self.job_Info = {'virtual_sdcard': {'is_active': False, 'progress': 0},
+                         'print_stats': {'state': 'standby', 'print_duration': 0,
+                                         'filename': ''}}
+        self.current_position = xyze_t()
+        self.HMI_ValueStruct = HMI_value_t()
+        self.HMI_flag = HMI_Flag_t()
+        self.thermalManager = copy.deepcopy(type(self).thermalManager)
+        self.material_preset = copy.deepcopy(type(self).material_preset)
+        self.files = []
 
-        self.ks.queue_line(json.dumps(subscribe))
-        self.ks.queue_line(self.klippy_z_offset)
-        self.ks.queue_line(self.klippy_home)
+    def close(self):
+        self.client.close()
 
-        self.event_loop = asyncio.new_event_loop()
-        threading.Thread(target=self.event_loop.run_forever, daemon=True).start()
+    def check_command_results(self):
+        from queue import Empty
+        while True:
+            try:
+                path, future = self.client.command_results.get_nowait()
+            except Empty:
+                return
+            if future.cancelled():
+                continue
+            error = future.exception()
+            if error:
+                self.last_command_error = str(error)
+                logging.error('LCD command %s failed: %s', path, error)
 
     # ------------- Klipper Function ----------
 
     def klippy_callback(self, line):
+        import json
         klippyData = json.loads(line)
         status = None
         if 'result' in klippyData:
@@ -296,12 +206,10 @@ class PrinterData:
                     self.current_position.z = status['toolhead']['position'][2]
                     self.current_position.e = status['toolhead']['position'][3]
                 if 'homed_axes' in status['toolhead']:
-                    if 'x' in status['toolhead']['homed_axes']:
-                        self.current_position.home_x = True
-                    if 'y' in status['toolhead']['homed_axes']:
-                        self.current_position.home_y = True
-                    if 'z' in status['toolhead']['homed_axes']:
-                        self.current_position.home_z = True
+                    homed = status['toolhead']['homed_axes']
+                    self.current_position.home_x = 'x' in homed
+                    self.current_position.home_y = 'y' in homed
+                    self.current_position.home_z = 'z' in homed
 
             if 'configfile' in status:
                 if 'config' in status['configfile']:
@@ -313,10 +221,9 @@ class PrinterData:
             # print(status)
 
     def ishomed(self):
-        if self.current_position.home_x and self.current_position.home_y and self.current_position.home_z:
+        if not self.connection_error and self.current_position.home_x and self.current_position.home_y and self.current_position.home_z:
             return True
         else:
-            self.ks.queue_line(self.klippy_home)
             return False
 
     def offset_z(self, new_offset):
@@ -334,105 +241,95 @@ class PrinterData:
         self.sendGCode('PROBE_CALIBRATE')
         self.sendGCode('G1 Z0')
 
-    # ------------- OctoPrint Function ----------
+    # ------------- Moonraker transport ----------
 
     def getREST(self, path):
-        r = self.op.s.get(self.op.base_address + path)
-        d = r.content.decode('utf-8')
-        try:
-            return json.loads(d)
-        except JSONDecodeError:
-            print('Decoding JSON has failed')
-        return None
-
-    async def _postREST(self, path, json):
-        self.op.s.post(self.op.base_address + path, json=json)
+        return self.client.get(path)
 
     def postREST(self, path, json):
-        self.event_loop.call_soon_threadsafe(asyncio.create_task,self._postREST(path,json))
+        if self.connection_error:
+            from concurrent.futures import Future
+            future = Future()
+            future.set_exception(MoonrakerError('Printer connection is not ready'))
+            self.last_command_error = 'Printer connection is not ready'
+            return future
+        return self.client.post(path, json)
 
     def init_Webservices(self):
         try:
-            requests.get(self.op.base_address)
-        except ConnectionError:
-            print('Web site does not exist')
-            return
-        else:
-            print('Web site exists')
-        if self.getREST('/api/printer') is None:
-            return
-        self.update_variable()
-        #alternative approach
-        #full_version = self.getREST('/printer/info')['result']['software_version']
-        #self.SHORT_BUILD_VERSION = '-'.join(full_version.split('-',2)[:2])
-        self.SHORT_BUILD_VERSION = self.getREST('/machine/update/status?refresh=false')['result']['version_info']['klipper']['version']
-
-        data = self.getREST('/printer/objects/query?toolhead')['result']['status']
-        toolhead = data['toolhead']
-        volume = toolhead['axis_maximum'] #[x,y,z,w]
-        self.MACHINE_SIZE = "{}x{}x{}".format(
-            int(volume[0]),
-            int(volume[1]),
-            int(volume[2])
-        )
-        self.X_MAX_POS = int(volume[0])
-        self.Y_MAX_POS = int(volume[1])
+            info = self.getREST('/printer/info')['result']
+            self.SHORT_BUILD_VERSION = info.get('software_version', 'unknown')
+            if info.get('state') != 'ready':
+                self.connection_error = info.get('state_message', 'Klipper is not ready')
+                return False
+            return self.update_variable()
+        except (MoonrakerError, KeyError, TypeError, ValueError) as exc:
+            self.connection_error = str(exc)
+            return False
 
     def GetFiles(self, refresh=False):
         if not self.files or refresh:
-            self.files = self.getREST('/server/files/list')["result"]
+            try:
+                files = self.getREST('/server/files/list')['result']
+                if not isinstance(files, list) or not all(
+                        isinstance(item, dict) and isinstance(item.get('path'), str)
+                        for item in files):
+                    raise ValueError('Invalid file list')
+                self.files = files
+            except (MoonrakerError, KeyError, TypeError, ValueError) as exc:
+                self.connection_error = str(exc)
         names = []
         for fl in self.files:
             names.append(fl["path"])
         return names
 
     def update_variable(self):
-        query = '/printer/objects/query?extruder&heater_bed&gcode_move&fan'
-        response = {}
+        self.check_command_results()
         try:
-            response = self.getREST(query) or {}
-        except Exception as e:
-            print(f"REST query failed: {e}")
-        data = response.get('result', {}).get('status', {})
-        gcm = data.get('gcode_move', {})
-        z_offset = gcm['homing_origin'][2] #z offset
-        flow_rate = gcm['extrude_factor'] * 100 #flow rate percent
-        self.absolute_moves = gcm['absolute_coordinates'] #absolute or relative
-        self.absolute_extrude = gcm['absolute_extrude'] #absolute or relative
-        speed = gcm['speed'] #current speed in mm/s
-        print_speed = gcm['speed_factor'] * 100 #print speed percent
-        bed = data['heater_bed'] #temperature, target
-        extruder = data['extruder'] #temperature, target
-        fan = data['fan']
-        Update = False
-        try:
-            if self.thermalManager['temp_bed']['celsius'] != int(bed['temperature']):
-                self.thermalManager['temp_bed']['celsius'] = int(bed['temperature'])
-                Update = True
-            if self.thermalManager['temp_bed']['target'] != int(bed['target']):
-                self.thermalManager['temp_bed']['target'] = int(bed['target'])
-                Update = True
-            if self.thermalManager['temp_hotend'][0]['celsius'] != int(extruder['temperature']):
-                self.thermalManager['temp_hotend'][0]['celsius'] = int(extruder['temperature'])
-                Update = True
-            if self.thermalManager['temp_hotend'][0]['target'] != int(extruder['target']):
-                self.thermalManager['temp_hotend'][0]['target'] = int(extruder['target'])
-                Update = True
-            if self.thermalManager['fan_speed'][0] != int(fan['speed'] * 100):
-                self.thermalManager['fan_speed'][0] = int(fan['speed'] * 100)
-                Update = True
-            if self.BABY_Z_VAR != z_offset:
-                self.BABY_Z_VAR = z_offset
-                self.HMI_ValueStruct.offset_value = z_offset * 100
-                Update = True
-        except:
-            pass #missing key, shouldn't happen, fixes misses on conditionals ¯\_(ツ)_/¯
-        self.job_Info = self.getREST('/printer/objects/query?virtual_sdcard&print_stats')['result']['status']
-        if self.job_Info:
-            self.file_name = self.job_Info['print_stats']['filename']
-            self.status = self.job_Info['print_stats']['state']
-            self.HMI_flag.print_finish = self.getPercent() == 100.0
-        return Update
+            response = self.getREST('/printer/objects/query?extruder&heater_bed&gcode_move&fan&toolhead&virtual_sdcard&print_stats')
+            data = response['result']['status']
+            gcm = data['gcode_move']
+            toolhead = data['toolhead']
+            # Validate required fields before committing the snapshot.
+            job = {'virtual_sdcard': data['virtual_sdcard'], 'print_stats': data['print_stats']}
+            state = job['print_stats']['state']
+            position = toolhead['position']
+            x, y, z, e = position[:4]
+            origin = gcm['homing_origin'][2]
+            absolute_moves = gcm['absolute_coordinates']
+            absolute_extrude = gcm['absolute_extrude']
+            maximum = toolhead['axis_maximum']
+            xmax, ymax = maximum[:2]
+            size = '{}x{}x{}'.format(*(int(v) for v in maximum[:3]))
+            thermal = copy.deepcopy(self.thermalManager)
+            for obj, target in [('extruder', thermal['temp_hotend'][0]),
+                                ('heater_bed', thermal['temp_bed'])]:
+                if obj in data:
+                    target['celsius'] = int(data[obj]['temperature'])
+                    target['target'] = int(data[obj]['target'])
+            if 'fan' in data:
+                thermal['fan_speed'][0] = int(data['fan']['speed'] * 100)
+        except (MoonrakerError, KeyError, TypeError, IndexError, ValueError) as exc:
+            self.connection_error = str(exc)
+            return False
+        self.connection_error = None
+        self.thermalManager = thermal
+        self.absolute_moves = absolute_moves
+        self.absolute_extrude = absolute_extrude
+        self.current_position.x, self.current_position.y, self.current_position.z, self.current_position.e = x, y, z, e
+        homed = toolhead.get('homed_axes', '')
+        self.current_position.home_x = 'x' in homed
+        self.current_position.home_y = 'y' in homed
+        self.current_position.home_z = 'z' in homed
+        self.X_MAX_POS, self.Y_MAX_POS = xmax, ymax
+        self.MACHINE_SIZE = size
+        self.BABY_Z_VAR = origin
+        self.HMI_ValueStruct.offset_value = origin * 100
+        self.job_Info = job
+        self.file_name = job['print_stats'].get('filename', '')
+        self.status = state
+        self.HMI_flag.print_finish = self.getPercent() == 100.0
+        return True
 
     def printingIsPaused(self):
         return self.job_Info['print_stats']['state'] == "paused" or self.job_Info['print_stats']['state'] == "pausing"
@@ -470,7 +367,7 @@ class PrinterData:
 
     def resume_job(self): #fixed
         print('Resuming job:')
-        self.postREST('printer/print/resume', json=None)
+        self.postREST('/printer/print/resume', json=None)
 
     def set_feedrate(self, fr):
         self.feedrate_percentage = fr
@@ -491,7 +388,7 @@ class PrinterData:
             '\nG91' if not self.absolute_moves else ''))
 
     def sendGCode(self, gcode):
-        self.postREST('/printer/gcode/script', json={'script': gcode})
+        return self.postREST('/printer/gcode/script', json={'script': gcode})
 
     def disable_all_heaters(self):
         self.setExtTemp(0)
