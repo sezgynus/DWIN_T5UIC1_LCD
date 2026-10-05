@@ -1,4 +1,5 @@
 import copy
+from concurrent.futures import Future
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -123,6 +124,21 @@ class CapabilityTests(unittest.TestCase):
                 settings_path=tempfile.mktemp(prefix='dwin-test-', suffix='.json'))
         self.assertIsNone(result.mmu)
 
+    def test_spoolman_remaining_percentage_uses_initial_weight(self):
+        self.assertEqual(
+            backend.PrinterData._spool_remaining_percent(
+                {'remaining_weight': 580, 'initial_weight': 1000, 'used_weight': 420}),
+            58)
+
+    def test_spoolman_remaining_percentage_falls_back_to_used_weight(self):
+        self.assertEqual(
+            backend.PrinterData._spool_remaining_percent(
+                {'remaining_weight': 400, 'used_weight': 600}),
+            40)
+        self.assertIsNone(
+            backend.PrinterData._spool_remaining_percent(
+                {'remaining_weight': None, 'used_weight': 0}))
+
     def test_happy_hare_mmu_state_is_normalized(self):
         data = snapshot()
         data['objects'].append('mmu')
@@ -130,6 +146,7 @@ class CapabilityTests(unittest.TestCase):
             'num_gates': 4, 'gate': 2, 'unit': 0, 'gate_status': [1, 1, 1, 0],
             'gate_color_rgb': [[0.0, 0.4, 1.0], [1.0, 0.1, 0.0],
                                [0.0, 1.0, 0.2], [1.0, 0.8, 0.0]],
+            'gate_spool_id': [-1, -1, -1, -1],
             'filament': 'Loaded',
         }
         data['objects'].append('mmu_machine')
@@ -190,6 +207,7 @@ class CapabilityTests(unittest.TestCase):
             'num_gates': 4, 'gate': 2, 'gate_status': (1, 1, 1, 0),
             'gate_color_rgb': ((0.0, 0.4, 1.0), (1.0, 0.1, 0.0),
                                (0.0, 1.0, 0.2), (1.0, 0.8, 0.0)),
+            'remaining_percent': (3, 40, 70, 58),
             'filament': 'Loaded',
         }
         result.lcd.DWIN_WIDTH = 272
