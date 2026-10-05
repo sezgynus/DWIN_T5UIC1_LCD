@@ -570,7 +570,7 @@ class DWIN_LCD:
                              10, 50, message)
         self.lcd.UpdateLCD()
 
-    def _enqueue_input(self, kind, value, accelerated_value=0):
+    def _enqueue_input(self, kind, value, accelerated_value=0, rate=0.0):
         feedback = getattr(self, '_action_feedback', None)
         if (self.pd is None or self._closed or not getattr(self, '_uart_online', True)
                 or (feedback is not None and not (feedback.phase == 'error' and kind == 'press'))):
@@ -578,7 +578,7 @@ class DWIN_LCD:
         snapshot = self.pd.subscription.snapshot()
         if snapshot['state'] != 'ready':
             return
-        if not self._loop.post(InputEvent(kind, value, snapshot['epoch'], getattr(self, '_uart_epoch', 0), accelerated_value)):
+        if not self._loop.post(InputEvent(kind, value, snapshot['epoch'], getattr(self, '_uart_epoch', 0), accelerated_value, rate)):
             logging.warning('LCD input queue full or closed; input discarded')
 
     def encoder_has_data(self, value):
@@ -590,6 +590,7 @@ class DWIN_LCD:
                 return
             now = time.monotonic()
             multiplier = 1
+            rate = 0.0
             last_encoder_time = getattr(self, '_last_encoder_time', None)
             if last_encoder_time is not None:
                 elapsed = now - last_encoder_time
@@ -603,7 +604,7 @@ class DWIN_LCD:
                             1 + (self.ENCODER_FAST_MULTIPLIER - 1)
                             * normalized ** self.ENCODER_ACCEL_EXPONENT))
             self._last_encoder_time = now
-            self._enqueue_input('rotate', delta, delta * multiplier)
+            self._enqueue_input('rotate', delta, delta * multiplier, rate)
 
     def _button_pressed(self):
         # Capture a press edge once; rotation while held must not create Enter.
@@ -645,15 +646,32 @@ class DWIN_LCD:
             return 10
         return 1
 
+    def _live_jog_speed(self, axis):
+        """Map handwheel rotation rate directly onto the configured axis velocity."""
+        rate = max(0.0, float(getattr(self, '_encoder_jog_rate', 0.0)))
+        toolhead = self.pd.state.status.get('toolhead', {})
+        limit = float(toolhead.get('max_velocity', 1.0))
+        if axis == 'Z':
+            limit = min(limit, float(
+                self.pd.state.settings.get('printer', {}).get('max_z_velocity', limit)))
+        elif axis == 'E':
+            hotend = self.pd.capabilities.active_hotend
+            settings = self.pd.state.settings.get(hotend.name, {}) if hotend is not None else {}
+            limit = float(settings.get('max_extrude_only_velocity', limit))
+        # Full measured handwheel rate reaches the configured Klipper limit.
+        normalized = min(1.0, rate / self.ENCODER_ACCEL_FULL_STEPS_PER_SEC)
+        return max(1.0, limit * 60.0 * normalized)
+
     def _queue_live_jog(self, axis, distance, speed):
         pending = self._live_jog_pending
         if pending is None:
             self._live_jog_pending = [axis, distance, speed]
-        elif pending[0] == axis:
+        elif pending[0] == axis and pending[1] * distance > 0:
             pending[1] += distance
             pending[2] = speed
         else:
-            return
+            # A handwheel reversal or axis change supersedes queued motion.
+            self._live_jog_pending = [axis, distance, speed]
         if self._live_jog_future is not None:
             return
         self._flush_live_jog()
@@ -706,6 +724,7 @@ class DWIN_LCD:
             return
         if not self._sync_input_state(event):
             return
+        self._encoder_jog_rate = event.rate if event.kind == 'rotate' else 0.0
         acceleration_cap = self._encoder_acceleration_cap() if event.kind == 'rotate' else 1
         if acceleration_cap > 1:
             count = 1
@@ -1297,7 +1316,7 @@ class DWIN_LCD:
         if getattr(self, '_live_jog', False) and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             applied = (self.pd.HMI_ValueStruct.Move_X_scale - previous_scale) / self.MINUNITMULT
             if applied:
-                self._queue_live_jog('X', applied, 5000)
+                self._queue_live_jog('X', applied, self._live_jog_speed('X'))
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(1), self.pd.HMI_ValueStruct.Move_X_scale)
@@ -1334,7 +1353,7 @@ class DWIN_LCD:
         if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             applied = (self.pd.HMI_ValueStruct.Move_Y_scale - previous_scale) / self.MINUNITMULT
             if applied:
-                self._queue_live_jog('Y', applied, 5000)
+                self._queue_live_jog('Y', applied, self._live_jog_speed('Y'))
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(2), self.pd.HMI_ValueStruct.Move_Y_scale)
@@ -1370,7 +1389,7 @@ class DWIN_LCD:
         if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             applied = (self.pd.HMI_ValueStruct.Move_Z_scale - previous_scale) / self.MINUNITMULT
             if applied:
-                self._queue_live_jog('Z', applied, 600)
+                self._queue_live_jog('Z', applied, self._live_jog_speed('Z'))
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(3), self.pd.HMI_ValueStruct.Move_Z_scale)
@@ -1404,7 +1423,7 @@ class DWIN_LCD:
         if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             applied = (self.pd.HMI_ValueStruct.Move_E_scale - previous_scale) / self.MINUNITMULT
             if applied:
-                self._queue_live_jog('E', applied, 300)
+                self._queue_live_jog('E', applied, self._live_jog_speed('E'))
         self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
         self.lcd.UpdateLCD()
 
