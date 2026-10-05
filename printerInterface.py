@@ -3,6 +3,7 @@ import logging
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
 from printer_state import PrinterState
+from printer_capabilities import PrinterCapabilities
 
 class xyze_t:
     x = 0.0
@@ -90,38 +91,6 @@ class material_preset_t:
 
 
 class PrinterData:
-    event_loop = None
-    HAS_HOTEND = True
-    HOTENDS = 1
-    HAS_HEATED_BED = True
-    HAS_FAN = False
-    HAS_ZOFFSET_ITEM = True
-    HAS_ONESTEP_LEVELING = False
-    HAS_PREHEAT = True
-    HAS_BED_PROBE = False
-    PREVENT_COLD_EXTRUSION = True
-    EXTRUDE_MINTEMP = 170
-    EXTRUDE_MAXLENGTH = 200
-
-    HEATER_0_MAXTEMP = 275
-    HEATER_0_MINTEMP = 5
-    HOTEND_OVERSHOOT = 15
-
-    MAX_E_TEMP = (HEATER_0_MAXTEMP - (HOTEND_OVERSHOOT))
-    MIN_E_TEMP = HEATER_0_MINTEMP
-
-    BED_OVERSHOOT = 10
-    BED_MAXTEMP = 150
-    BED_MINTEMP = 5
-
-    BED_MAX_TARGET = (BED_MAXTEMP - (BED_OVERSHOOT))
-    MIN_BED_TEMP = BED_MINTEMP
-
-    X_MIN_POS = 0.0
-    Y_MIN_POS = 0.0
-    Z_MIN_POS = 0.0
-    Z_MAX_POS = 200
-
     Z_PROBE_OFFSET_RANGE_MIN = -20
     Z_PROBE_OFFSET_RANGE_MAX = 20
 
@@ -138,9 +107,9 @@ class PrinterData:
     current_position = xyze_t()
 
     thermalManager = {
-        'temp_bed': {'celsius': 20, 'target': 120},
-        'temp_hotend': [{'celsius': 20, 'target': 120}],
-        'fan_speed': [100]
+        'temp_bed': {'celsius': 0, 'target': 0},
+        'temp_hotend': [{'celsius': 0, 'target': 0}],
+        'fan_speed': [0]
     }
 
     material_preset = [
@@ -148,13 +117,15 @@ class PrinterData:
         material_preset_t('ABS', 210, 100)
     ]
     files = None
-    MACHINE_SIZE = "220x220x250"
-    SHORT_BUILD_VERSION = "1.00"
+    MACHINE_SIZE = 'unknown'
+    SHORT_BUILD_VERSION = "unknown"
     CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
     def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0):
         self.client = MoonrakerClient(URL, API_Key, timeout)
         self.state = PrinterState()
+        self.capabilities = PrinterCapabilities()
+        self._apply_capabilities(self.capabilities)
         self.status = None
         self.connection_error = None
         self.last_command_error = None
@@ -172,6 +143,28 @@ class PrinterData:
         self.files = []
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
+
+    def _apply_capabilities(self, caps):
+        self.HAS_HOTEND = caps.active_hotend is not None
+        self.HOTENDS = len(caps.hotends)
+        self.HAS_HEATED_BED = caps.bed is not None
+        self.HAS_FAN = caps.fan
+        self.HAS_BED_PROBE = caps.probe
+        self.HAS_PREHEAT = caps.has_heaters
+        self.HAS_ZOFFSET_ITEM = True
+        # Discovery does not enable the not-yet-implemented leveling wizard.
+        self.HAS_ONESTEP_LEVELING = False
+        self.PREVENT_COLD_EXTRUSION = True
+        hotend = caps.active_hotend
+        self.EXTRUDE_MINTEMP = hotend.min_extrude_temp if hotend else 0
+        self.EXTRUDE_MAXLENGTH = hotend.max_extrude_distance if hotend else 0
+        self.MAX_E_TEMP = hotend.maximum if hotend else 0
+        self.MIN_E_TEMP = 0
+        self.BED_MAX_TARGET = caps.bed.maximum if caps.bed else 0
+        self.MIN_BED_TEMP = 0
+        self.X_MIN_POS, self.Y_MIN_POS, self.Z_MIN_POS = caps.axis_minimum
+        self.X_MAX_POS, self.Y_MAX_POS, self.Z_MAX_POS = caps.axis_maximum
+        self.MACHINE_SIZE = 'x'.join('{:g}'.format(value) for value in caps.build_size)
 
     def close(self):
         self.subscription.close()
@@ -264,6 +257,7 @@ class PrinterData:
                 self.connection_error = state.error or 'Klipper is not ready'
                 return False
             data = state.status
+            caps = PrinterCapabilities.from_state(state)
             gcm = data['gcode_move']
             toolhead = data['toolhead']
             # Validate required fields before committing the snapshot.
@@ -274,23 +268,23 @@ class PrinterData:
             origin = gcm['homing_origin'][2]
             absolute_moves = gcm['absolute_coordinates']
             absolute_extrude = gcm['absolute_extrude']
-            maximum = toolhead['axis_maximum']
-            xmax, ymax = maximum[:2]
-            size = '{}x{}x{}'.format(*(int(v) for v in maximum[:3]))
             thermal = copy.deepcopy(self.thermalManager)
-            for obj, target in [('extruder', thermal['temp_hotend'][0]),
-                                ('heater_bed', thermal['temp_bed'])]:
-                if obj in data:
+            for obj, target in [(caps.active_hotend.name if caps.active_hotend else None, thermal['temp_hotend'][0]),
+                                ('heater_bed' if caps.bed else None, thermal['temp_bed'])]:
+                if obj is None:
+                    target['celsius'] = target['target'] = 0
+                else:
                     target['celsius'] = int(data[obj]['temperature'])
                     target['target'] = int(data[obj]['target'])
-            if 'fan' in data:
-                thermal['fan_speed'][0] = int(data['fan']['speed'] * 100)
+            thermal['fan_speed'][0] = int(data['fan']['speed'] * 100) if caps.fan else 0
         except (MoonrakerError, KeyError, TypeError, IndexError, ValueError) as exc:
             self.connection_error = str(exc)
             return False
         self.connection_error = None
         changed = state != self.state
         self.state = state
+        self.capabilities = caps
+        self._apply_capabilities(caps)
         self.SHORT_BUILD_VERSION = state.software_version
         if state.file_revision != self._file_revision:
             self.files = []
@@ -303,8 +297,6 @@ class PrinterData:
         self.current_position.home_x = 'x' in homed
         self.current_position.home_y = 'y' in homed
         self.current_position.home_z = 'z' in homed
-        self.X_MAX_POS, self.Y_MAX_POS = xmax, ymax
-        self.MACHINE_SIZE = size
         self.BABY_Z_VAR = origin
         self.HMI_ValueStruct.offset_value = origin * 100
         self.job_Info = job
@@ -373,11 +365,18 @@ class PrinterData:
         return self.postREST('/printer/gcode/script', json={'script': gcode})
 
     def disable_all_heaters(self):
-        self.setExtTemp(0)
-        self.setBedTemp(0)
+        if not self.capabilities.has_heaters:
+            return None
+        return self.sendGCode('TURN_OFF_HEATERS')
 
     def zero_fan_speeds(self):
-        pass
+        if self.HAS_FAN:
+            return self.setFanSpeed(0)
+
+    def setFanSpeed(self, percent):
+        if not self.HAS_FAN or not 0 <= float(percent) <= 100:
+            raise ValueError('Fan is unavailable or speed is out of range')
+        return self.sendGCode('M106 S{:g}'.format(float(percent) * 255 / 100))
 
     def preheat(self, profile):
         if profile == "PLA":
@@ -389,18 +388,40 @@ class PrinterData:
         print('saving settings')
         return True
 
-    def setExtTemp(self, target, toolnum=0):
-        self.sendGCode('M104 T%s S%s' % (toolnum, target))
+    def setExtTemp(self, target, toolnum=None):
+        heater = self.capabilities.active_hotend
+        if toolnum is not None:
+            name = 'extruder' + (str(toolnum) if toolnum else '')
+            heater = next((item for item in self.capabilities.hotends if item.name == name), None)
+        if heater is None:
+            raise ValueError('Hotend is unavailable')
+        value = heater.validate_target(target)
+        return self.sendGCode('SET_HEATER_TEMPERATURE HEATER={} TARGET={:g}'.format(heater.name, value))
 
     def setBedTemp(self, target):
-        self.sendGCode('M140 S%s' % target)
+        heater = self.capabilities.bed
+        if heater is None:
+            raise ValueError('Heated bed is unavailable')
+        value = heater.validate_target(target)
+        return self.sendGCode('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET={:g}'.format(value))
 
-    def preHeat(self, bedtemp, exttemp, toolnum=0):
-# these work but invoke a wait which hangs the screen until they finish.
-#        self.sendGCode('M140 S%s\nM190 S%s' % (bedtemp, bedtemp))
-#        self.sendGCode('M104 T%s S%s\nM109 T%s S%s' % (toolnum, exttemp, toolnum, exttemp))
-        self.setBedTemp(bedtemp)
-        self.setExtTemp(exttemp)
+    def preHeat(self, bedtemp, exttemp, toolnum=None):
+        # Validate the whole preset before sending any command.
+        commands = []
+        if self.capabilities.bed:
+            value = self.capabilities.bed.validate_target(bedtemp)
+            commands.append('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET={:g}'.format(value))
+        heater = self.capabilities.active_hotend
+        if toolnum is not None:
+            name = 'extruder' + (str(toolnum) if toolnum else '')
+            heater = next((item for item in self.capabilities.hotends if item.name == name), None)
+            if heater is None:
+                raise ValueError('Hotend is unavailable')
+        if heater:
+            value = heater.validate_target(exttemp)
+            commands.append('SET_HEATER_TEMPERATURE HEATER={} TARGET={:g}'.format(heater.name, value))
+        if commands:
+            return self.sendGCode('\n'.join(commands))
 
     def setZOffset(self, offset):
         self.sendGCode('SET_GCODE_OFFSET Z=%s MOVE=1' % offset)

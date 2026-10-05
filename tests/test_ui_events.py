@@ -230,7 +230,7 @@ class DisplayIntegrationTests(unittest.TestCase):
         snapshot = {
             'state': 'ready', 'error': None, 'epoch': 1, 'revision': 1, 'file_revision': 0,
             'status': {
-                'toolhead': {'position': [0, 0, 0, 0], 'axis_maximum': [220, 220, 250, 0],
+                'toolhead': {'position': [0, 0, 0, 0], 'axis_minimum': [0, 0, 0, 0], 'axis_maximum': [220, 220, 250, 0],
                              'homed_axes': 'xyz'},
                 'gcode_move': {'homing_origin': [0, 0, 0, 0],
                                'absolute_coordinates': True, 'absolute_extrude': True},

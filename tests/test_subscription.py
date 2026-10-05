@@ -26,7 +26,8 @@ class FakeSocket:
         results = {'server.connection.identify': {'connection_id': 1},
                    'server.info': {'klippy_state': 'ready'},
                    'printer.info': {'software_version': 'test-klipper'},
-                   'printer.objects.list': {'objects': list(self.snapshot)},
+                   'printer.objects.list': {'objects': list(self.snapshot) + ['configfile']},
+                   'printer.objects.query': {'status': {'configfile': {'settings': {}}}, 'eventtime': 9},
                    'printer.objects.subscribe': {'status': self.snapshot, 'eventtime': 10}}
         result = results[request['method']]
         self.messages.append({'jsonrpc': '2.0', 'id': request['id'], 'result': result})
@@ -103,7 +104,7 @@ class SubscriptionTests(unittest.TestCase):
         self.assertEqual(client.snapshot()['status']['print_stats']['state'], 'paused')
         self.assertEqual(connection.sent[0]['params']['api_key'], 'test-key')
         self.assertNotIn('fan', connection.sent[-1]['params']['objects'])
-        self.assertEqual([r['id'] for r in connection.sent], [1, 2, 3, 4, 5])
+        self.assertEqual([r['id'] for r in connection.sent], [1, 2, 3, 4, 5, 6])
         self.assertTrue(all(r['method'] not in ('printer.gcode.script', 'printer.print.start')
                             for r in connection.sent))
 
@@ -176,11 +177,11 @@ class SubscriptionTests(unittest.TestCase):
         client.close()
         self.assertFalse(client._thread.is_alive())
         self.assertTrue(first.closed)
-        self.assertEqual(len(first.sent), 5)
+        self.assertEqual(len(first.sent), 6)
         self.assertTrue(second.closed)
         self.assertEqual([r['method'] for r in second.sent],
                          ['server.connection.identify', 'server.info', 'printer.info',
-                          'printer.objects.list', 'printer.objects.subscribe'])
+                          'printer.objects.list', 'printer.objects.query', 'printer.objects.subscribe'])
 
 
 class CommandEpochTests(unittest.TestCase):

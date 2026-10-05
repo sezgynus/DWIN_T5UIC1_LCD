@@ -316,6 +316,7 @@ class DWIN_LCD:
         self.pd = PrinterData(api_key, url, timeout)
         self.HMI_ShowBoot()
         self.pd.init_Webservices()
+        self._configure_menus()
         self.HMI_Init()
         self.HMI_StartFrame(False)
         self._offline = bool(self.pd.connection_error)
@@ -327,6 +328,118 @@ class DWIN_LCD:
             self.encoder.callback = self.encoder_has_data
         self.button.when_pressed = self._button_pressed
         self.button.when_released = None
+
+    def _configure_menus(self):
+        caps = self.pd.capabilities
+        if getattr(self, '_menu_capabilities', None) == caps:
+            return False
+        self._menu_capabilities = caps
+        heat = self.pd.HAS_HOTEND or self.pd.HAS_HEATED_BED
+        self._menus = {
+            'prepare': [('MOVE', 'Move', self.ICON_Axis), ('DISA', 'Disable steppers', self.ICON_CloseMotor),
+                        ('HOME', 'Home', self.ICON_Homing), ('ZOFF', 'Runtime Z offset', self.ICON_Zoffset)],
+            'tune': [('SPEED', 'Print speed', self.ICON_Speed)],
+            'temperature': [], 'preheat': [], 'control': [],
+        }
+        for menu in ('tune', 'temperature', 'preheat'):
+            if self.pd.HAS_HOTEND:
+                self._menus[menu].append(('TEMP', 'Hotend temp', self.ICON_HotendTemp))
+            if self.pd.HAS_HEATED_BED:
+                self._menus[menu].append(('BED', 'Bed temp', self.ICON_BedTemp))
+            if self.pd.HAS_FAN:
+                self._menus[menu].append(('FAN', 'Fan speed', self.ICON_FanSpeed))
+        self._menus['tune'].append(('ZOFF', 'Runtime Z offset', self.ICON_Zoffset))
+        if heat:
+            self._menus['prepare'].extend([('PLA', 'Preheat PLA', self.ICON_PLAPreheat),
+                                           ('ABS', 'Preheat ABS', self.ICON_ABSPreheat),
+                                           ('COOL', 'Cooldown', self.ICON_Cool)])
+        # Preset-edit screens currently use the hotend-based PLA/ABS layout.
+        if self.pd.HAS_HOTEND:
+            self._menus['temperature'].extend([('PLA', 'PLA settings', self.ICON_PLAPreheat),
+                                               ('ABS', 'ABS settings', self.ICON_ABSPreheat)])
+        self._menus['preheat'].append(('SAVE', 'Save settings', self.ICON_WriteEEPROM))
+        if heat or self.pd.HAS_FAN:
+            self._menus['control'].append(('TEMP', 'Temperature', self.ICON_Temperature))
+        self._menus['control'].extend([('MOVE', 'Motion', self.ICON_Motion), ('INFO', 'Info', self.ICON_Info)])
+        prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
+                    'preheat': 'PREHEAT', 'control': 'CONTROL'}
+        keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'PLA', 'ABS', 'COOL', 'LANG',
+                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO')
+        for menu, prefix in prefixes.items():
+            for key in keys:
+                setattr(self, prefix + '_CASE_' + key, -1)
+            for index, (key, _, _) in enumerate(self._menus[menu], 1):
+                setattr(self, prefix + '_CASE_' + key, index)
+            setattr(self, prefix + '_CASE_TOTAL', len(self._menus[menu]))
+        return True
+
+    def _menu_navigation(self, menu, selection, index_name, draw):
+        event = self.get_encoder_state()
+        if event not in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            return False
+        if event == self.ENCODER_DIFF_CW:
+            selection.inc(1 + len(self._menus[menu]))
+        else:
+            selection.dec()
+        bottom = getattr(self, index_name, self.MROWS)
+        if selection.now > bottom:
+            bottom = selection.now
+        elif selection.now < bottom - self.MROWS:
+            bottom = selection.now + self.MROWS
+        setattr(self, index_name, max(self.MROWS, bottom))
+        draw()
+        self.lcd.UpdateLCD()
+        return True
+
+    def _draw_capability_menu(self, name, selection, bottom=None, profile=None):
+        self.Clear_Main_Window()
+        title = name.title() if profile is None else self.pd.material_preset[profile].name + ' settings'
+        self.Draw_Title(title)
+        start = max(0, (bottom or self.MROWS) - self.MROWS)
+        entries = [('BACK', 'Back', self.ICON_Back)] + self._menus[name]
+        for logical in range(start, min(len(entries), start + self.TROWS)):
+            key, label, icon = entries[logical]
+            row = logical - start
+            self.Draw_Menu_Line(row, icon, label)
+            if logical == selection.now:
+                self.Draw_Menu_Cursor(row)
+            value = None
+            preset = self.pd.material_preset[profile] if profile is not None else None
+            if name in ('temperature', 'tune', 'preheat'):
+                if key == 'TEMP':
+                    value = preset.hotend_temp if preset else self.pd.thermalManager['temp_hotend'][0]['target']
+                elif key == 'BED':
+                    value = preset.bed_temp if preset else self.pd.thermalManager['temp_bed']['target']
+                elif key == 'FAN':
+                    value = preset.fan_speed if preset else self.pd.thermalManager['fan_speed'][0]
+                elif key == 'SPEED':
+                    value = self.pd.feedrate_percentage
+                elif key == 'ZOFF':
+                    self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black,
+                                               2, 2, 202, self.MBASE(row), self.pd.BABY_Z_VAR * 100)
+                if value is not None:
+                    self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                                          self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                                          3, 216, self.MBASE(row), value)
+
+    def _open_thermal_editor(self, key, row, profile=None):
+        preset = self.pd.material_preset[profile] if profile is not None else None
+        values = self.pd.HMI_ValueStruct
+        if key == 'TEMP':
+            self.checkkey = self.ETemp
+            values.E_Temp = preset.hotend_temp if preset else self.pd.thermalManager['temp_hotend'][0]['target']
+            value = values.E_Temp
+        elif key == 'BED':
+            self.checkkey = self.BedTemp
+            values.Bed_Temp = preset.bed_temp if preset else self.pd.thermalManager['temp_bed']['target']
+            value = values.Bed_Temp
+        else:
+            self.checkkey = self.FanSpeed
+            values.Fan_speed = preset.fan_speed if preset else self.pd.thermalManager['fan_speed'][0]
+            value = values.Fan_speed
+        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                               self.lcd.Color_White, self.lcd.Select_Color,
+                               3, 216, self.MBASE(row), value)
 
     def lcdExit(self):
         self._loop.close()
@@ -555,52 +668,9 @@ class DWIN_LCD:
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
 
-        if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_prepare.inc(1 + self.PREPARE_CASE_TOTAL)):
-                if (self.select_prepare.now > self.MROWS and self.select_prepare.now > self.index_prepare):
-                    self.index_prepare = self.select_prepare.now
-
-                    # Scroll up and draw a blank bottom line
-                    self.Scroll_Menu(self.DWIN_SCROLL_UP)
-                    self.Draw_Menu_Icon(self.MROWS, self.ICON_Axis + self.select_prepare.now - 1)
-
-                    # Draw "More" icon for sub-menus
-                    if (self.index_prepare < 7):
-                        self.Draw_More_Icon(self.MROWS - self.index_prepare + 1)
-
-                    if self.pd.HAS_HOTEND:
-                        if (self.index_prepare == self.PREPARE_CASE_ABS):
-                            self.Item_Prepare_ABS(self.MROWS)
-                    if self.pd.HAS_PREHEAT:
-                        if (self.index_prepare == self.PREPARE_CASE_COOL):
-                            self.Item_Prepare_Cool(self.MROWS)
-                else:
-                    self.Move_Highlight(1, self.select_prepare.now + self.MROWS - self.index_prepare)
-
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_prepare.dec()):
-                if (self.select_prepare.now < self.index_prepare - self.MROWS):
-                    self.index_prepare -= 1
-                    self.Scroll_Menu(self.DWIN_SCROLL_DOWN)
-
-                    if (self.index_prepare == self.MROWS):
-                        self.Draw_Back_First()
-                    else:
-                        self.Draw_Menu_Line(0, self.ICON_Axis + self.select_prepare.now - 1)
-
-                    if (self.index_prepare < 7):
-                        self.Draw_More_Icon(self.MROWS - self.index_prepare + 1)
-
-                    if (self.index_prepare == 6):
-                        self.Item_Prepare_Move(0)
-                    elif (self.index_prepare == 7):
-                        self.Item_Prepare_Disable(0)
-                    elif (self.index_prepare == 8):
-                        self.Item_Prepare_Home(0)
-                else:
-                    self.Move_Highlight(-1, self.select_prepare.now + self.MROWS - self.index_prepare)
-
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
+        if self._menu_navigation('prepare', self.select_prepare, 'index_prepare', self.Draw_Prepare_Menu):
+            return
+        if (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if (self.select_prepare.now == 0):  # Back
                 self.select_page.set(1)
                 self.Goto_MainMenu()
@@ -621,9 +691,10 @@ class DWIN_LCD:
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 1, 216, self.MBASE(3), self.pd.current_position.z * self.MINUNITMULT
                 )
-                self.pd.sendGCode("G92 E0")
-                self.pd.current_position.e = self.pd.HMI_ValueStruct.Move_E_scale = 0
-                self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1, 216, self.MBASE(4), 0)
+                if self.pd.HAS_HOTEND:
+                    self.pd.HMI_ValueStruct.Move_E_scale = self.pd.current_position.e * self.MINUNITMULT
+                    self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1,
+                                               216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
             elif self.select_prepare.now == self.PREPARE_CASE_DISA:  # Disable steppers
                 self.pd.sendGCode("M84")
             elif self.select_prepare.now == self.PREPARE_CASE_HOME:  # Homing
@@ -635,8 +706,6 @@ class DWIN_LCD:
                 self.pd.sendGCode("G28")
             elif self.select_prepare.now == self.PREPARE_CASE_ZOFF:  # Z-offset
                 self.checkkey = self.Homeoffset
-                if self.pd.HAS_BED_PROBE:
-                    self.pd.probe_calibrate()
 
                 self.pd.HMI_ValueStruct.show_mode = -4
 
@@ -819,23 +888,9 @@ class DWIN_LCD:
         encoder_diffState = self.get_encoder_state()
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
-        if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_tune.inc(1 + self.TUNE_CASE_TOTAL)):
-                if (self.select_tune.now > self.MROWS and self.select_tune.now > self.index_tune):
-                    self.index_tune = self.select_tune.now
-                    self.Scroll_Menu(self.DWIN_SCROLL_UP)
-                else:
-                    self.Move_Highlight(1, self.select_tune.now + self.MROWS - self.index_tune)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_tune.dec()):
-                if (self.select_tune.now < self.index_tune - self.MROWS):
-                    self.index_tune -= 1
-                    self.Scroll_Menu(self.DWIN_SCROLL_DOWN)
-                    if (self.index_tune == self.MROWS):
-                        self.Draw_Back_First()
-                else:
-                    self.Move_Highlight(-1, self.select_tune.now + self.MROWS - self.index_tune)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
+        if self._menu_navigation('tune', self.select_tune, 'index_tune', self.Draw_Tune_Menu):
+            return
+        if (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if self.select_tune.now == 0:  # Back
                 self.select_print.set(0)
                 self.Goto_PrintProcess()
@@ -847,6 +902,9 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.TUNE_CASE_SPEED + self.MROWS - self.index_tune),
                     self.pd.feedrate_percentage
                 )
+            elif self._menus['tune'][self.select_tune.now - 1][0] in ('TEMP', 'BED', 'FAN'):
+                key = self._menus['tune'][self.select_tune.now - 1][0]
+                self._open_thermal_editor(key, self.select_tune.now + self.MROWS - self.index_tune)
             elif self.select_tune.now == self.TUNE_CASE_ZOFF:   #z offset
                 self.checkkey = self.Homeoffset
                 self.lcd.Draw_Signed_Float(
@@ -913,7 +971,7 @@ class DWIN_LCD:
                 return
         # Avoid flicker by updating only the previous menu
         if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_axis.inc(1 + 4)):
+            if (self.select_axis.inc(1 + 3 + int(self.pd.HAS_HOTEND))):
                 self.Move_Highlight(1, self.select_axis.now)
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
             if (self.select_axis.dec()):
@@ -949,10 +1007,10 @@ class DWIN_LCD:
                     3, 1, 216, self.MBASE(3),
                     self.pd.HMI_ValueStruct.Move_Z_scale
                 )
-            elif self.select_axis.now == 4:  # Extruder
+            elif self.select_axis.now == 4 and self.pd.HAS_HOTEND:  # Extruder
                 # window tips
                 if self.pd.PREVENT_COLD_EXTRUSION:
-                    if (self.pd.thermalManager['temp_hotend'][0]['celsius'] < self.pd.EXTRUDE_MINTEMP):
+                    if not self.pd.state.status.get(self.pd.capabilities.active_hotend.name, {}).get('can_extrude', False):
                         self.pd.HMI_flag.ETempTooLow_flag = True
                         self.Popup_Window_ETempTooLow()
                         self.lcd.UpdateLCD()
@@ -1088,235 +1146,81 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def HMI_Temperature(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
+        event = self.get_encoder_state()
+        if self._menu_navigation('temperature', self.select_temp, 'index_temp', self.Draw_Temperature_Menu):
             return
+        if event != self.ENCODER_DIFF_ENTER:
+            return
+        if self.select_temp.now == 0:
+            self.checkkey = self.Control
+            self.select_control.set(self.CONTROL_CASE_TEMP)
+            self.Draw_Control_Menu()
+        else:
+            key = self._menus['temperature'][self.select_temp.now - 1][0]
+            if key in ('PLA', 'ABS'):
+                profile = 0 if key == 'PLA' else 1
+                self.checkkey = self.PLAPreheat if profile == 0 else self.ABSPreheat
+                selection = self.select_PLA if profile == 0 else self.select_ABS
+                selection.reset()
+                self.pd.HMI_ValueStruct.show_mode = -2 - profile
+                self._draw_capability_menu('preheat', selection, profile=profile)
+            else:
+                self.pd.HMI_ValueStruct.show_mode = -1
+                self._open_thermal_editor(key, self.select_temp.now)
+        self.lcd.UpdateLCD()
 
-        if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_temp.inc(1 + self.TEMP_CASE_TOTAL)):
-                self.Move_Highlight(1, self.select_temp.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_temp.dec()):
-                self.Move_Highlight(-1, self.select_temp.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
-            if self.select_temp.now == 0:  # back
-                self.checkkey = self.Control
-                self.select_control.set(1)
-                self.index_control = self.MROWS
-                self.Draw_Control_Menu()
-            elif self.select_temp.now == self.TEMP_CASE_TEMP:  # Nozzle temperature
-                self.checkkey = self.ETemp
-                self.pd.HMI_ValueStruct.E_Temp = self.pd.thermalManager['temp_hotend'][0]['target']
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(1),
-                    self.pd.thermalManager['temp_hotend'][0]['target']
-                )
-            elif self.select_temp.now == self.TEMP_CASE_BED:  # Bed temperature
-                self.checkkey = self.BedTemp
-                self.pd.HMI_ValueStruct.Bed_Temp = self.pd.thermalManager['temp_bed']['target']
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(2),
-                    self.pd.thermalManager['temp_bed']['target']
-                )
-            elif self.select_temp.now == self.TEMP_CASE_FAN:  # Fan speed
-                self.checkkey = self.FanSpeed
-                self.pd.HMI_ValueStruct.Fan_speed = self.pd.thermalManager['fan_speed'][0]
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(3), self.pd.thermalManager['fan_speed'][0]
-                )
-
-            elif self.select_temp.now == self.TEMP_CASE_PLA:  # PLA preheat setting
-                self.checkkey = self.PLAPreheat
-                self.select_PLA.reset()
-                self.pd.HMI_ValueStruct.show_mode = -2
-
-                self.Clear_Main_Window()
-                self.lcd.Frame_TitleCopy(1, 56, 16, 141, 28)  # "PLA Settings"
-                self.lcd.Frame_AreaCopy(1, 157, 76, 181, 86, self.LBLX, self.MBASE(self.PREHEAT_CASE_TEMP))
-                self.lcd.Frame_AreaCopy(1, 197, 104, 238, 114, self.LBLX + 27, self.MBASE(self.PREHEAT_CASE_TEMP))
-                self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 71, self.MBASE(self.PREHEAT_CASE_TEMP))  # PLA nozzle temp
-                if self.pd.HAS_HEATED_BED:
-                    self.lcd.Frame_AreaCopy(1, 157, 76, 181, 86, self.LBLX, self.MBASE(self.PREHEAT_CASE_BED) + 3)
-                    self.lcd.Frame_AreaCopy(1, 240, 104, 264, 114, self.LBLX + 27, self.MBASE(self.PREHEAT_CASE_BED) + 3)
-                    self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 54, self.MBASE(self.PREHEAT_CASE_BED) + 3)  # PLA bed temp
-                if self.pd.HAS_FAN:
-                    self.lcd.Frame_AreaCopy(1, 157, 76, 181, 86, self.LBLX, self.MBASE(self.PREHEAT_CASE_FAN))
-                    self.lcd.Frame_AreaCopy(1, 0, 119, 64, 132, self.LBLX + 27, self.MBASE(self.PREHEAT_CASE_FAN))  # PLA fan speed
-
-                self.lcd.Frame_AreaCopy(1, 97, 165, 229, 177, self.LBLX, self.MBASE(self.PREHEAT_CASE_SAVE))  # Save PLA configuration
-
-                self.Draw_Back_First()
-                i = 1
-                self.Draw_Menu_Line(i, self.ICON_SetEndTemp)
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                    3, 216, self.MBASE(i),
-                    self.pd.material_preset[0].hotend_temp
-                )
-                if self.pd.HAS_HEATED_BED:
-                    i += 1
-                    self.Draw_Menu_Line(i, self.ICON_SetBedTemp)
-                    self.lcd.Draw_IntValue(
-                        True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                        3, 216, self.MBASE(i),
-                        self.pd.material_preset[0].bed_temp
-                    )
-                if self.pd.HAS_FAN:
-                    i += 1
-                    self.Draw_Menu_Line(i, self.ICON_FanSpeed)
-                    self.lcd.Draw_IntValue(
-                        True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                        3, 216, self.MBASE(i),
-                        self.pd.material_preset[0].fan_speed
-                    )
-                i += 1
-                self.Draw_Menu_Line(i, self.ICON_WriteEEPROM)
-            elif self.select_temp.now == self.TEMP_CASE_ABS:  # ABS preheat setting
-                self.checkkey = self.ABSPreheat
-                self.select_ABS.reset()
-                self.pd.HMI_ValueStruct.show_mode = -3
-                self.Clear_Main_Window()
-                self.lcd.Frame_TitleCopy(1, 56, 16, 141, 28)  # "ABS Settings"
-                self.lcd.Frame_AreaCopy(1, 172, 76, 198, 86, self.LBLX, self.MBASE(self.PREHEAT_CASE_TEMP))
-                self.lcd.Frame_AreaCopy(1, 197, 104, 238, 114, self.LBLX + 27, self.MBASE(self.PREHEAT_CASE_TEMP))
-                self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 71, self.MBASE(self.PREHEAT_CASE_TEMP))  # ABS nozzle temp
-                if self.pd.HAS_HEATED_BED:
-                    self.lcd.Frame_AreaCopy(1, 172, 76, 198, 86, self.LBLX, self.MBASE(self.PREHEAT_CASE_BED) + 3)
-                    self.lcd.Frame_AreaCopy(1, 240, 104, 264, 114, self.LBLX + 27, self.MBASE(self.PREHEAT_CASE_BED) + 3)
-                    self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 54, self.MBASE(self.PREHEAT_CASE_BED) + 3)  # ABS bed temp
-                if self.pd.HAS_FAN:
-                    self.lcd.Frame_AreaCopy(1, 172, 76, 198, 86, self.LBLX, self.MBASE(self.PREHEAT_CASE_FAN))
-                    self.lcd.Frame_AreaCopy(1, 0, 119, 64, 132, self.LBLX + 27, self.MBASE(self.PREHEAT_CASE_FAN))  # ABS fan speed
-
-                self.lcd.Frame_AreaCopy(1, 97, 165, 229, 177, self.LBLX, self.MBASE(self.PREHEAT_CASE_SAVE))
-                self.lcd.Frame_AreaCopy(1, 172, 76, 198, 86, self.LBLX + 33, self.MBASE(self.PREHEAT_CASE_SAVE))  # Save ABS configuration
-
-                self.Draw_Back_First()
-                i = 1
-                self.Draw_Menu_Line(i, self.ICON_SetEndTemp)
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                    3, 216, self.MBASE(i),
-                    self.pd.material_preset[1].hotend_temp
-                )
-                if self.pd.HAS_HEATED_BED:
-                    i += 1
-                    self.Draw_Menu_Line(i, self.ICON_SetBedTemp)
-                    self.lcd.Draw_IntValue(
-                        True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                        3, 216, self.MBASE(i),
-                        self.pd.material_preset[1].bed_temp
-                    )
-                if self.pd.HAS_FAN:
-                    i += 1
-                    self.Draw_Menu_Line(i, self.ICON_FanSpeed)
-                    self.lcd.Draw_IntValue(
-                        True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                        3, 216, self.MBASE(i),
-                        self.pd.material_preset[1].fan_speed
-                    )
-                i += 1
-                self.Draw_Menu_Line(i, self.ICON_WriteEEPROM)
-
+    def _preset_hmi(self, profile):
+        selection = self.select_PLA if profile == 0 else self.select_ABS
+        draw = lambda: self._draw_capability_menu('preheat', selection, profile=profile)
+        if self._menu_navigation('preheat', selection, 'index_preset', draw):
+            return
+        if self.get_encoder_state() != self.ENCODER_DIFF_ENTER:
+            return
+        if selection.now == 0:
+            self.checkkey = self.TemperatureID
+            self.pd.HMI_ValueStruct.show_mode = -1
+            self.Draw_Temperature_Menu()
+        else:
+            key = self._menus['preheat'][selection.now - 1][0]
+            if key == 'SAVE':
+                self.HMI_AudioFeedback(self.pd.save_settings())
+            else:
+                self._open_thermal_editor(key, selection.now, profile)
         self.lcd.UpdateLCD()
 
     def HMI_PLAPreheatSetting(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-        # Avoid flicker by updating only the previous menu
-        elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_PLA.inc(1 + self.PREHEAT_CASE_TOTAL)):
-                self.Move_Highlight(1, self.select_PLA.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_PLA.dec()):
-                self.Move_Highlight(-1, self.select_PLA.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
-
-            if self.select_PLA.now == 0:  # Back
-                self.checkkey = self.TemperatureID
-                self.select_temp.now = self.TEMP_CASE_PLA
-                self.pd.HMI_ValueStruct.show_mode = -1
-                self.Draw_Temperature_Menu()
-            elif self.select_PLA.now == self.PREHEAT_CASE_TEMP:  # Nozzle temperature
-                self.checkkey = self.ETemp
-                self.pd.HMI_ValueStruct.E_Temp = self.pd.material_preset[0].hotend_temp
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(self.PREHEAT_CASE_TEMP),
-                    self.pd.material_preset[0].hotend_temp
-                )
-            elif self.select_PLA.now == self.PREHEAT_CASE_BED:  # Bed temperature
-                self.checkkey = self.BedTemp
-                self.pd.HMI_ValueStruct.Bed_Temp = self.pd.material_preset[0].bed_temp
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(self.PREHEAT_CASE_BED),
-                    self.pd.material_preset[0].bed_temp
-                )
-            elif self.select_PLA.now == self.PREHEAT_CASE_FAN:  # Fan speed
-                self.checkkey = self.FanSpeed
-                self.pd.HMI_ValueStruct.Fan_speed = self.pd.material_preset[0].fan_speed
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(self.PREHEAT_CASE_FAN),
-                    self.pd.material_preset[0].fan_speed
-                )
-            elif self.select_PLA.now == self.PREHEAT_CASE_SAVE:  # Save PLA configuration
-                success = self.pd.save_settings()
-                self.HMI_AudioFeedback(success)
-        self.lcd.UpdateLCD()
+        self._preset_hmi(0)
 
     def HMI_ABSPreheatSetting(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-        # Avoid flicker by updating only the previous menu
-        elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_ABS.inc(1 + self.PREHEAT_CASE_TOTAL)):
-                self.Move_Highlight(1, self.select_ABS.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_ABS.dec()):
-                self.Move_Highlight(-1, self.select_ABS.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
+        self._preset_hmi(1)
 
-            if self.select_ABS.now == 0:  # Back
-                self.checkkey = self.TemperatureID
-                self.select_temp.now = self.TEMP_CASE_ABS
-                self.pd.HMI_ValueStruct.show_mode = -1
-                self.Draw_Temperature_Menu()
-
-            elif self.select_ABS.now == self.PREHEAT_CASE_TEMP:  # Nozzle temperature
-                self.checkkey = self.ETemp
-                self.pd.HMI_ValueStruct.E_Temp = self.pd.material_preset[1].hotend_temp
-                print(self.pd.HMI_ValueStruct.E_Temp)
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(self.PREHEAT_CASE_TEMP),
-                    self.pd.material_preset[1].hotend_temp
-                )
-            elif self.select_ABS.now == self.PREHEAT_CASE_BED:  # Bed temperature
-                self.checkkey = self.BedTemp
-                self.pd.HMI_ValueStruct.Bed_Temp = self.pd.material_preset[1].bed_temp
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(self.PREHEAT_CASE_BED),
-                    self.pd.material_preset[1].bed_temp
-                )
-            elif self.select_ABS.now == self.PREHEAT_CASE_FAN:  # Fan speed
-                self.checkkey = self.FanSpeed
-                self.pd.HMI_ValueStruct.Fan_speed = self.pd.material_preset[1].fan_speed
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
-                    3, 216, self.MBASE(self.PREHEAT_CASE_FAN),
-                    self.pd.material_preset[1].fan_speed
-                )
-            elif self.select_ABS.now == self.PREHEAT_CASE_SAVE:  # Save PLA configuration
-                success = self.pd.save_settings()
-                self.HMI_AudioFeedback(success)
+    def HMI_FanSpeed(self):
+        event = self.get_encoder_state()
+        mode = self.pd.HMI_ValueStruct.show_mode
+        if mode in (-2, -3):
+            row = self.PREHEAT_CASE_FAN
+        elif mode == -1:
+            row = self.TEMP_CASE_FAN
+        else:
+            row = self.TUNE_CASE_FAN + self.MROWS - self.index_tune
+        if event == self.ENCODER_DIFF_ENTER:
+            value = self.pd.HMI_ValueStruct.Fan_speed
+            if mode in (-2, -3):
+                profile = -mode - 2
+                self.pd.material_preset[profile].fan_speed = value
+                self.checkkey = self.PLAPreheat if profile == 0 else self.ABSPreheat
+                selection = self.select_PLA if profile == 0 else self.select_ABS
+                self._draw_capability_menu('preheat', selection, profile=profile)
+            else:
+                self.pd.setFanSpeed(value)
+                self.checkkey = self.TemperatureID if mode == -1 else self.Tune
+                self.Draw_Temperature_Menu() if mode == -1 else self.Draw_Tune_Menu()
+        elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            value = self.pd.HMI_ValueStruct.Fan_speed + (1 if event == self.ENCODER_DIFF_CW else -1)
+            self.pd.HMI_ValueStruct.Fan_speed = max(0, min(100, value))
+            self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                                   self.lcd.Color_White, self.lcd.Select_Color,
+                                   3, 216, self.MBASE(row), self.pd.HMI_ValueStruct.Fan_speed)
         self.lcd.UpdateLCD()
 
     def HMI_ETemp(self):
@@ -1380,6 +1284,9 @@ class DWIN_LCD:
             self.pd.HMI_ValueStruct.E_Temp = self.pd.MAX_E_TEMP
         if self.pd.HMI_ValueStruct.E_Temp < self.pd.MIN_E_TEMP:
             self.pd.HMI_ValueStruct.E_Temp = self.pd.MIN_E_TEMP
+        heater = self.pd.capabilities.active_hotend
+        if heater and 0 < self.pd.HMI_ValueStruct.E_Temp < heater.minimum:
+            self.pd.HMI_ValueStruct.E_Temp = heater.minimum if encoder_diffState == self.ENCODER_DIFF_CW else 0
         # E_Temp value
         self.lcd.Draw_IntValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
@@ -1399,7 +1306,7 @@ class DWIN_LCD:
         elif self.pd.HMI_ValueStruct.show_mode == -3:
             bed_line = self.PREHEAT_CASE_BED
         else:
-            bed_line = self.TUNE_CASE_TEMP + self.MROWS - self.index_tune
+            bed_line = self.TUNE_CASE_BED + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if (self.pd.HMI_ValueStruct.show_mode == -1):  # temperature
@@ -1448,6 +1355,9 @@ class DWIN_LCD:
             self.pd.HMI_ValueStruct.Bed_Temp = self.pd.BED_MAX_TARGET
         if self.pd.HMI_ValueStruct.Bed_Temp < self.pd.MIN_BED_TEMP:
             self.pd.HMI_ValueStruct.Bed_Temp = self.pd.MIN_BED_TEMP
+        heater = self.pd.capabilities.bed
+        if heater and 0 < self.pd.HMI_ValueStruct.Bed_Temp < heater.minimum:
+            self.pd.HMI_ValueStruct.Bed_Temp = heater.minimum if encoder_diffState == self.ENCODER_DIFF_CW else 0
         # Bed_Temp value
         self.lcd.Draw_IntValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
@@ -1486,10 +1396,7 @@ class DWIN_LCD:
             zoff_line = self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER): #if (applyencoder(encoder_diffstate, offset_value))
-            if self.pd.HAS_BED_PROBE:
-                self.pd.offset_z(self.dwin_zoffset)
-            else:
-                self.pd.setZOffset(self.dwin_zoffset) # manually set
+            self.pd.setZOffset(self.dwin_zoffset)
 
             self.checkkey = self.Prepare if self.pd.HMI_ValueStruct.show_mode == -4 else self.Tune
             self.lcd.Draw_Signed_Float(
@@ -1512,8 +1419,6 @@ class DWIN_LCD:
 
         self.last_zoffset = self.dwin_zoffset
         self.dwin_zoffset = self.pd.HMI_ValueStruct.offset_value / 100.0
-        if self.pd.HAS_BED_PROBE:
-            self.pd.add_mm('Z', self.dwin_zoffset - self.last_zoffset)
 
         self.lcd.Draw_Signed_Float(
             self.lcd.font8x16, self.lcd.Select_Color, 2, 2, 202,
@@ -1737,48 +1642,10 @@ class DWIN_LCD:
         self.Redraw_SD_List()
 
     def Draw_Prepare_Menu(self):
-        self.Clear_Main_Window()
-        scroll = self.MROWS - self.index_prepare
-        self.lcd.Frame_TitleCopy(1, 178, 2, 229, 14)  # "Prepare"
-        self.Draw_Back_First(self.select_prepare.now == 0)  # < Back
-        if scroll + self.PREPARE_CASE_MOVE <= self.MROWS:
-            self.Item_Prepare_Move(self.PREPARE_CASE_MOVE)  # Move >
-        if scroll + self.PREPARE_CASE_DISA <= self.MROWS:
-            self.Item_Prepare_Disable(self.PREPARE_CASE_DISA)  # Disable Stepper
-        if scroll + self.PREPARE_CASE_HOME <= self.MROWS:
-            self.Item_Prepare_Home(self.PREPARE_CASE_HOME)  # Auto Home
-        if self.pd.HAS_ZOFFSET_ITEM:
-            if scroll + self.PREPARE_CASE_ZOFF <= self.MROWS:
-                self.Item_Prepare_Offset(self.PREPARE_CASE_ZOFF)  # Edit Z-Offset / Babystep / Set Home Offset
-        if self.pd.HAS_HOTEND:
-            if scroll + self.PREPARE_CASE_PLA <= self.MROWS:
-                self.Item_Prepare_PLA(self.PREPARE_CASE_PLA)  # Preheat PLA
-            if scroll + self.PREPARE_CASE_ABS <= self.MROWS:
-                self.Item_Prepare_ABS(self.PREPARE_CASE_ABS)  # Preheat ABS
-        if self.pd.HAS_PREHEAT:
-            if scroll + self.PREPARE_CASE_COOL <= self.MROWS:
-                self.Item_Prepare_Cool(self.PREPARE_CASE_COOL)  # Cooldown
-        if (self.select_prepare.now):
-            self.Draw_Menu_Cursor(self.select_prepare.now)
+        self._draw_capability_menu('prepare', self.select_prepare, self.index_prepare)
 
     def Draw_Control_Menu(self):
-        self.Clear_Main_Window()
-        self.Draw_Back_First(self.select_control.now == 0)
-        self.lcd.Frame_TitleCopy(1, 128, 2, 176, 12)  # "Control"
-        self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX, self.MBASE(self.CONTROL_CASE_TEMP))  # Temperature >
-        self.lcd.Frame_AreaCopy(1, 84, 89, 128, 99, self.LBLX, self.MBASE(self.CONTROL_CASE_MOVE))  # Motion >
-        self.lcd.Frame_AreaCopy(1, 0, 104, 25, 115, self.LBLX, self.MBASE(self.CONTROL_CASE_INFO))  # Info >
-
-        if self.select_control.now and self.select_control.now < self.MROWS:
-            self.Draw_Menu_Cursor(self.select_control.now)
-
-        # # Draw icons and lines
-        self.Draw_Menu_Line(1, self.ICON_Temperature)
-        self.Draw_More_Icon(1)
-        self.Draw_Menu_Line(2, self.ICON_Motion)
-        self.Draw_More_Icon(2)
-        self.Draw_Menu_Line(3, self.ICON_Info)
-        self.Draw_More_Icon(3)
+        self._draw_capability_menu('control', self.select_control)
 
     def Draw_Info_Menu(self):
         self.Clear_Main_Window()
@@ -1808,112 +1675,10 @@ class DWIN_LCD:
             self.lcd.Draw_Line(self.lcd.Line_Color, 16, self.MBASE(2) + i * 73, 256, 156 + i * 73)
 
     def Draw_Tune_Menu(self):
-        self.Clear_Main_Window()
-        self.lcd.Frame_AreaCopy(1, 94, 2, 126, 12, 14, 9)
-        self.lcd.Frame_AreaCopy(1, 1, 179, 92, 190, self.LBLX, self.MBASE(self.TUNE_CASE_SPEED))  # Print speed
-        if self.pd.HAS_HOTEND:
-            self.lcd.Frame_AreaCopy(1, 197, 104, 238, 114, self.LBLX, self.MBASE(self.TUNE_CASE_TEMP))  # Hotend...
-            self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 44, self.MBASE(self.TUNE_CASE_TEMP))  # Temperature
-        if self.pd.HAS_HEATED_BED:
-            self.lcd.Frame_AreaCopy(1, 240, 104, 264, 114, self.LBLX, self.MBASE(self.TUNE_CASE_BED))  # Bed...
-            self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 27, self.MBASE(self.TUNE_CASE_BED))  # ...Temperature
-        if self.pd.HAS_FAN:
-             self.lcd.Frame_AreaCopy(1, 0, 119, 64, 132, self.LBLX, self.MBASE(self.TUNE_CASE_FAN))  # Fan speed
-        if self.pd.HAS_ZOFFSET_ITEM:
-             self.lcd.Frame_AreaCopy(1, 93, 179, 141, 189, self.LBLX, self.MBASE(self.TUNE_CASE_ZOFF))  # Z-offset
-        self.Draw_Back_First(self.select_tune.now == 0)
-        if (self.select_tune.now):
-            self.Draw_Menu_Cursor(self.select_tune.now)
-
-        self.Draw_Menu_Line(self.TUNE_CASE_SPEED, self.ICON_Speed)
-        self.lcd.Draw_IntValue(
-            True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-            3, 216, self.MBASE(self.TUNE_CASE_SPEED), self.pd.feedrate_percentage)
-
-        if self.pd.HAS_HOTEND:
-            self.Draw_Menu_Line(self.TUNE_CASE_TEMP, self.ICON_HotendTemp)
-            self.lcd.Draw_IntValue(
-                True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                3, 216, self.MBASE(self.TUNE_CASE_TEMP),
-                self.pd.thermalManager['temp_hotend'][0]['target']
-            )
-
-        if self.pd.HAS_HEATED_BED:
-            self.Draw_Menu_Line(self.TUNE_CASE_BED, self.ICON_BedTemp)
-            self.lcd.Draw_IntValue(
-                True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                3, 216, self.MBASE(self.TUNE_CASE_BED), self.pd.thermalManager['temp_bed']['target'])
-
-        if self.pd.HAS_FAN:
-             self.Draw_Menu_Line(self.TUNE_CASE_FAN, self.ICON_FanSpeed)
-             self.lcd.Draw_IntValue(
-                 True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                 3, 216, self.MBASE(self.TUNE_CASE_FAN),
-                 self.pd.thermalManager['fan_speed'][0]
-             )
-        if self.pd.HAS_ZOFFSET_ITEM:
-             self.Draw_Menu_Line(self.TUNE_CASE_ZOFF, self.ICON_Zoffset)
-             self.lcd.Draw_Signed_Float(
-                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 2, 2, 202, self.MBASE(self.TUNE_CASE_ZOFF), self.pd.BABY_Z_VAR * 100
-             )
+        self._draw_capability_menu('tune', self.select_tune, self.index_tune)
 
     def Draw_Temperature_Menu(self):
-        self.Clear_Main_Window()
-        self.lcd.Frame_TitleCopy(1, 56, 16, 141, 28)  # "Temperature"
-        if self.pd.HAS_HOTEND:
-            self.lcd.Frame_AreaCopy(1, 197, 104, 238, 114, self.LBLX, self.MBASE(self.TEMP_CASE_TEMP))  # Nozzle...
-            self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 44, self.MBASE(self.TEMP_CASE_TEMP))  # ...Temperature
-        if self.pd.HAS_HEATED_BED:
-            self.lcd.Frame_AreaCopy(1, 240, 104, 264, 114, self.LBLX, self.MBASE(self.TEMP_CASE_BED))  # Bed...
-            self.lcd.Frame_AreaCopy(1, 1, 89, 83, 101, self.LBLX + 27, self.MBASE(self.TEMP_CASE_BED))  # ...Temperature
-        if self.pd.HAS_FAN:
-            self.lcd.Frame_AreaCopy(1, 0, 119, 64, 132, self.LBLX, self.MBASE(self.TEMP_CASE_FAN))  # Fan speed
-        if self.pd.HAS_HOTEND:
-            self.lcd.Frame_AreaCopy(1, 107, 76, 156, 86, self.LBLX, self.MBASE(self.TEMP_CASE_PLA))  # Preheat...
-            self.lcd.Frame_AreaCopy(1, 157, 76, 181, 86, self.LBLX + 52, self.MBASE(self.TEMP_CASE_PLA))  # ...PLA
-            self.lcd.Frame_AreaCopy(1, 131, 119, 182, 132, self.LBLX + 79, self.MBASE(self.TEMP_CASE_PLA))  # PLA setting
-            self.lcd.Frame_AreaCopy(1, 107, 76, 156, 86, self.LBLX, self.MBASE(self.TEMP_CASE_ABS))  # Preheat...
-            self.lcd.Frame_AreaCopy(1, 172, 76, 198, 86, self.LBLX + 52, self.MBASE(self.TEMP_CASE_ABS))  # ...ABS
-            self.lcd.Frame_AreaCopy(1, 131, 119, 182, 132, self.LBLX + 81, self.MBASE(self.TEMP_CASE_ABS))  # ABS setting
-
-        self.Draw_Back_First(self.select_temp.now == 0)
-        if (self.select_temp.now):
-            self.Draw_Menu_Cursor(self.select_temp.now)
-
-        # Draw icons and lines
-        i = 0
-        if self.pd.HAS_HOTEND:
-            i += 1
-            self.Draw_Menu_Line(self.ICON_SetEndTemp + (self.TEMP_CASE_TEMP) - 1)
-            self.lcd.Draw_IntValue(
-                True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                3, 216, self.MBASE(i),
-                self.pd.thermalManager['temp_hotend'][0]['target']
-            )
-        if self.pd.HAS_HEATED_BED:
-            i += 1
-            self.Draw_Menu_Line(self.ICON_SetEndTemp + (self.TEMP_CASE_BED) - 1)
-            self.lcd.Draw_IntValue(
-                True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                3, 216, self.MBASE(i),
-                self.pd.thermalManager['temp_bed']['target']
-            )
-        if self.pd.HAS_FAN:
-            i += 1
-            self.Draw_Menu_Line(self.ICON_SetEndTemp + (self.TEMP_CASE_FAN) - 1)
-            self.lcd.Draw_IntValue(
-                True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                3, 216, self.MBASE(i),
-                self.pd.thermalManager['fan_speed'][0]
-            )
-        if self.pd.HAS_HOTEND:
-            # PLA/ABS items have submenus
-            i += 1
-            self.Draw_Menu_Line(self.ICON_SetEndTemp + (self.TEMP_CASE_PLA) - 1)
-            self.Draw_More_Icon(i)
-            i += 1
-            self.Draw_Menu_Line(self.ICON_SetEndTemp + (self.TEMP_CASE_ABS) - 1)
-            self.Draw_More_Icon(i)
+        self._draw_capability_menu('temperature', self.select_temp)
 
     def Draw_Motion_Menu(self):
         self.Clear_Main_Window()
@@ -1954,7 +1719,7 @@ class DWIN_LCD:
             self.Draw_Menu_Cursor(self.select_axis.now)
 
         # Draw separators and icons
-        for i in range(4):
+        for i in range(3 + int(self.pd.HAS_HOTEND)):
             self.Draw_Menu_Line(i + 1, self.ICON_MoveX + i)
 
     # --------------------------------------------------------------#
@@ -2252,6 +2017,11 @@ class DWIN_LCD:
     def EachMomentUpdate(self):
         # variable update
         update = self.pd.update_variable()
+        if not self.pd.connection_error and self._configure_menus():
+            for name in self.SELECTIONS:
+                getattr(self, name).reset()
+            self.index_prepare = self.index_tune = self.MROWS
+            self._offline = True
         if self.pd.connection_error:
             if not self._offline:
                 self._show_message('Moonraker unavailable')
@@ -2350,8 +2120,8 @@ class DWIN_LCD:
             self.HMI_Zoffset()
         elif self.checkkey == self.BedTemp:
             self.HMI_BedTemp()
-        # elif self.checkkey == self.FanSpeed:
-        #     self.HMI_FanSpeed()
+        elif self.checkkey == self.FanSpeed:
+            self.HMI_FanSpeed()
         elif self.checkkey == self.PrintSpeed:
             self.HMI_PrintSpeed()
         elif self.checkkey == self.MaxSpeed_value:

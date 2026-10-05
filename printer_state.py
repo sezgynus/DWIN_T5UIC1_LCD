@@ -21,6 +21,7 @@ class PrinterState:
     file_revision: int = 0
     software_version: str = 'unknown'
     objects: tuple = ()
+    settings: Mapping = field(default_factory=lambda: MappingProxyType({}))
     status: Mapping = field(default_factory=lambda: MappingProxyType({}))
 
     @classmethod
@@ -30,6 +31,7 @@ class PrinterState:
                    file_revision=snapshot.get('file_revision', 0),
                    software_version=snapshot.get('software_version', 'unknown'),
                    objects=tuple(snapshot.get('objects', ())),
+                   settings=freeze(snapshot.get('settings', {})),
                    status=freeze(snapshot.get('status', {})))
 
     @property

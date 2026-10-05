@@ -72,25 +72,25 @@ class RegressionContracts(unittest.TestCase):
     def test_temperature_menu_applies_hotend_target(self):
         display = self.display(-1)
         display.HMI_ETemp()
-        display.pd.sendGCode.assert_called_once_with('M104 T0 S205')
+        display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder TARGET=205')
 
     @unittest.expectedFailure
     def test_temperature_menu_applies_bed_target(self):
         display = self.display(-1)
         display.HMI_BedTemp()
-        display.pd.sendGCode.assert_called_once_with('M140 S65')
+        display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=65')
 
     @unittest.expectedFailure
     def test_tune_applies_hotend_target(self):
         display = self.display(0)
         display.HMI_ETemp()
-        display.pd.sendGCode.assert_called_once_with('M104 T0 S205')
+        display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder TARGET=205')
 
     @unittest.expectedFailure
     def test_tune_applies_bed_target(self):
         display = self.display(0)
         display.HMI_BedTemp()
-        display.pd.sendGCode.assert_called_once_with('M140 S65')
+        display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=65')
 
 
 class BackendConnectionTests(unittest.TestCase):
@@ -128,8 +128,11 @@ class BackendConnectionTests(unittest.TestCase):
         printer.getREST = Mock(side_effect=AssertionError('status must not poll HTTP'))
         printer.subscription.snapshot.return_value = {
             'state': 'ready', 'file_revision': 1,
+            'objects': ['extruder', 'toolhead', 'gcode_move', 'print_stats', 'virtual_sdcard'],
+            'settings': {'extruder': {'min_temp': 0, 'max_temp': 300,
+                                     'min_extrude_temp': 170, 'max_extrude_only_distance': 50}},
             'status': {
-                'toolhead': {'position': [1, 2, 3, 4], 'axis_maximum': [220, 220, 250, 0],
+                'toolhead': {'position': [1, 2, 3, 4], 'axis_minimum': [0, 0, 0, 0], 'axis_maximum': [220, 220, 250, 0],
                              'homed_axes': 'xy'},
                 'gcode_move': {'homing_origin': [0, 0, 0.1, 0],
                                'absolute_coordinates': True, 'absolute_extrude': False},
@@ -152,7 +155,7 @@ class BackendConnectionTests(unittest.TestCase):
         snapshot = {
             'state': 'ready', 'file_revision': 0,
             'status': {
-                'toolhead': {'position': [0, 0, 0, 0], 'axis_maximum': [220, 220, 250, 0],
+                'toolhead': {'position': [0, 0, 0, 0], 'axis_minimum': [0, 0, 0, 0], 'axis_maximum': [220, 220, 250, 0],
                              'homed_axes': 'xyz'},
                 'gcode_move': {'homing_origin': [0, 0, 0, 0],
                                'absolute_coordinates': True, 'absolute_extrude': True},

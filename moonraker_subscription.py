@@ -53,6 +53,7 @@ class MoonrakerSubscription:
         self._error = 'Moonraker subscription is connecting'
         self._status = {}
         self._objects = []
+        self._settings = {}
         self._software_version = 'unknown'
         self._eventtime = None
         self._id = 0
@@ -72,7 +73,7 @@ class MoonrakerSubscription:
             return {'state': self._state, 'error': self._error,
                     'status': copy.deepcopy(self._status),
                     'objects': list(self._objects), 'revision': self._revision, 'epoch': self._epoch,
-                    'software_version': self._software_version,
+                    'software_version': self._software_version, 'settings': copy.deepcopy(self._settings),
                     'file_revision': self._file_revision}
 
     def _invalidate(self, error):
@@ -81,6 +82,7 @@ class MoonrakerSubscription:
             self._error = error
             self._status = {}
             self._objects = []
+            self._settings = {}
             self._eventtime = None
             self._revision += 1
             self._epoch += 1
@@ -181,7 +183,18 @@ class MoonrakerSubscription:
         objects = self._rpc('printer.objects.list')
         if not isinstance(objects, dict) or not isinstance(objects.get('objects'), list):
             raise MoonrakerError('Invalid printer object list')
-        available = [name for name in OBJECTS if name in objects['objects']]
+        names = objects['objects']
+        if not all(isinstance(name, str) for name in names) or 'configfile' not in names:
+            raise MoonrakerError('Configuration object is unavailable')
+        available = [name for name in names if name in OBJECTS or
+                     (name.startswith('extruder') and name[8:].isdigit())]
+        config = self._rpc('printer.objects.query', {'objects': {'configfile': ['settings']}})
+        try:
+            settings = config['status']['configfile']['settings']
+        except (KeyError, TypeError):
+            raise MoonrakerError('Effective configuration is unavailable')
+        if not isinstance(settings, dict):
+            raise MoonrakerError('Invalid effective configuration')
         required = {'toolhead', 'gcode_move', 'print_stats', 'virtual_sdcard'}
         if not required.issubset(available):
             raise MoonrakerError('Required printer objects are unavailable')
@@ -201,7 +214,8 @@ class MoonrakerSubscription:
         with self._lock:
             if self._status.get('webhooks', {}).get('state', 'ready') != 'ready':
                 raise MoonrakerError('Klipper is not ready')
-            self._objects = available
+            self._objects = names
+            self._settings = copy.deepcopy(settings)
             self._software_version = printer_info.get('software_version', 'unknown')
             self._state = 'ready'
             self._error = None

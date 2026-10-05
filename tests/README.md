@@ -37,3 +37,9 @@ events/ticks/cleanup, bounded queue overload, startup failures, exception recove
 press debounce, stale connection events and deeply immutable printer snapshots.
 An integration test runs real menu rendering and UART packet construction against
 a fake serial port and confirms writes and close all occur on the UI owner.
+
+Capability tests exercise all eight hotend/bed/fan combinations, compact menu
+indices and scrolling, active extruder selection, effective heater/extrusion and
+axis limits, reconnect replacement, invalid configuration rejection, atomic
+preheat validation, fan percentage conversion and runtime offset routing.
+Bootstrap now queries effective configfile settings before subscribing.

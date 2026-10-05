@@ -83,8 +83,22 @@ snapshot. Menu selection objects belong to each display instance.
 
 `run.py` waits for the UI owner and handles SIGTERM/KeyboardInterrupt cleanup.
 When constructing `DWIN_LCD` directly, call `display.wait()` to keep the process
-running and `display.lcdExit()` to stop it. Device capability discovery and further
-feature fixes are subsequent refactor steps.
+running and `display.lcdExit()` to stop it.
+
+Device menus now follow Klipper's discovered objects. Hotend, heated bed and part
+fan rows are independently optional; heater fans do not count as part fans.
+Effective `configfile.settings` supplies heater and extrusion limits, including
+Klipper defaults. Toolhead status supplies physical axis limits and the active
+extruder; temperature commands address that heater by name. Missing or invalid
+required configuration blocks readiness rather than inventing limits.
+Zero temperature means off; nonzero targets must fit the configured range.
+Preheat validates all installed heater targets before submitting a script.
+Fan edits use percentages and convert to Klipper's M106 scale.
+
+Probe and bed mesh availability are detected, but the calibration wizard is not
+implemented yet. The Z-offset menu changes the runtime G-code offset only.
+Temperature confirmation, progress and preset persistence fixes remain separate
+refactor steps.
 Existing installation instructions below are still being modernized.
 
 ### Library requirements 
@@ -211,7 +225,7 @@ Run with `python3 ./run.py`
     * Move / Jog toolhead
     * Disable stepper
     * Auto Home
-    * Z offset (PROBE_CALIBRATE)
+    * Runtime Z offset (SET_GCODE_OFFSET)
     * Preheat
     * cooldown
  

@@ -1,0 +1,182 @@
+import copy
+import unittest
+from unittest.mock import Mock, patch
+
+from printer_capabilities import PrinterCapabilities
+from printer_state import PrinterState
+from test_regressions import backend, ui
+
+
+def snapshot(hotend=True, bed=True, fan=True, probe=False, multiple=False):
+    status = {
+        'toolhead': {'position': [0, 0, 0, 0], 'axis_minimum': [-10, -20, -2, 0],
+                     'axis_maximum': [250, 260, 350, 0], 'homed_axes': 'xyz'},
+        'gcode_move': {'homing_origin': [0, 0, 0, 0], 'absolute_coordinates': True,
+                       'absolute_extrude': True},
+        'print_stats': {'state': 'standby'},
+        'virtual_sdcard': {'is_active': False, 'progress': 0},
+    }
+    settings = {'printer': {'kinematics': 'cartesian'}}
+    objects = list(status) + ['configfile']
+    if hotend:
+        settings['extruder'] = {'min_temp': 5, 'max_temp': 305, 'min_extrude_temp': 155,
+                                'max_extrude_only_distance': 35}
+        status['extruder'] = {'temperature': 200, 'target': 205, 'can_extrude': True}
+        status['toolhead']['extruder'] = 'extruder'
+        objects.append('extruder')
+    if multiple:
+        settings['extruder1'] = {'min_temp': 0, 'max_temp': 280, 'min_extrude_temp': 120,
+                                 'max_extrude_only_distance': 15}
+        status['extruder1'] = {'temperature': 190, 'target': 195, 'can_extrude': True}
+        status['toolhead']['extruder'] = 'extruder1'
+        objects.append('extruder1')
+    if bed:
+        settings['heater_bed'] = {'min_temp': 5, 'max_temp': 115}
+        status['heater_bed'] = {'temperature': 55, 'target': 60}
+        objects.append('heater_bed')
+    if fan:
+        status['fan'] = {'speed': 0.5}
+        objects.append('fan')
+    if probe:
+        objects += ['probe', 'bed_mesh']
+        settings['bltouch'] = {'z_offset': 2.3}
+    return {'state': 'ready', 'error': None, 'epoch': 1, 'revision': 1,
+            'file_revision': 0, 'objects': objects, 'status': status, 'settings': settings}
+
+
+def printer(data):
+    with patch.object(backend, 'MoonrakerClient'), patch.object(backend, 'MoonrakerSubscription'):
+        result = backend.PrinterData()
+    result.check_command_results = Mock()
+    result.subscription.snapshot.return_value = data
+    result.sendGCode = Mock()
+    result.update_variable()
+    return result
+
+
+def display(data):
+    result = ui.DWIN_LCD.__new__(ui.DWIN_LCD)
+    result.pd = printer(data)
+    result.lcd = Mock()
+    for name in result.SELECTIONS:
+        setattr(result, name, ui.select_t())
+    result.index_prepare = result.index_tune = result.MROWS
+    result._configure_menus()
+    return result
+
+
+class CapabilityTests(unittest.TestCase):
+    def test_effective_limits_and_negative_axis_minimum(self):
+        caps = PrinterCapabilities.from_state(PrinterState.from_snapshot(snapshot(probe=True)))
+        self.assertEqual(caps.active_hotend.maximum, 305)
+        self.assertEqual(caps.active_hotend.min_extrude_temp, 155)
+        self.assertEqual(caps.active_hotend.max_extrude_distance, 35)
+        self.assertEqual(caps.bed.maximum, 115)
+        self.assertEqual(caps.axis_minimum, (-10, -20, -2))
+        self.assertEqual(caps.build_size, (260, 280, 352))
+        self.assertTrue(caps.fan and caps.probe and caps.bed_mesh)
+
+    def test_missing_devices_are_not_invented(self):
+        caps = PrinterCapabilities.from_state(PrinterState.from_snapshot(snapshot(False, False, False)))
+        self.assertIsNone(caps.active_hotend)
+        self.assertIsNone(caps.bed)
+        self.assertFalse(caps.has_heaters or caps.fan or caps.probe)
+
+    def test_heater_fan_is_not_a_part_cooling_fan(self):
+        data = snapshot(fan=False)
+        data['objects'].append('heater_fan hotend_fan')
+        self.assertFalse(PrinterCapabilities.from_state(PrinterState.from_snapshot(data)).fan)
+
+    def test_multiple_hotends_use_active_tool_limits(self):
+        data = snapshot(multiple=True)
+        result = printer(data)
+        self.assertIsNone(result.connection_error)
+        self.assertEqual(result.HOTENDS, 2)
+        self.assertEqual(result.MAX_E_TEMP, 280)
+        self.assertEqual(result.EXTRUDE_MAXLENGTH, 15)
+        self.assertEqual(result.thermalManager['temp_hotend'][0]['target'], 195)
+        result.setExtTemp(210)
+        result.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder1 TARGET=210')
+
+    def test_zero_target_allowed_and_configured_limits_enforced(self):
+        result = printer(snapshot())
+        result.setExtTemp(0)
+        result.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder TARGET=0')
+        result.sendGCode.reset_mock()
+        for target in (1, 306, float('nan')):
+            with self.assertRaises(ValueError):
+                result.setExtTemp(target)
+        with self.assertRaises(ValueError):
+            result.setBedTemp(116)
+        result.sendGCode.assert_not_called()
+
+    def test_missing_limits_block_state_and_commands(self):
+        data = snapshot()
+        del data['settings']['extruder']['max_temp']
+        result = printer(data)
+        self.assertIsNotNone(result.connection_error)
+        self.assertFalse(result.HAS_HOTEND)
+        with self.assertRaises(ValueError):
+            result.setExtTemp(200)
+        result.sendGCode.assert_not_called()
+
+    def test_invalid_preset_is_validated_before_any_heating(self):
+        result = printer(snapshot())
+        with self.assertRaises(ValueError):
+            result.preHeat(60, 400)
+        result.sendGCode.assert_not_called()
+
+    def test_bed_only_preheat_never_addresses_absent_hotend(self):
+        result = printer(snapshot(hotend=False))
+        result.preHeat(60, 200)
+        result.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=60')
+
+    def test_new_connection_replaces_hardware_capabilities(self):
+        result = printer(snapshot())
+        result.subscription.snapshot.return_value = snapshot(False, False, False)
+        self.assertTrue(result.update_variable())
+        self.assertFalse(result.HAS_HOTEND or result.HAS_HEATED_BED or result.HAS_FAN)
+        self.assertEqual(result.thermalManager['temp_hotend'][0]['target'], 0)
+
+
+class CapabilityMenuTests(unittest.TestCase):
+    def test_rows_are_unique_and_compact_for_device_combinations(self):
+        for hotend in (False, True):
+            for bed in (False, True):
+                for fan in (False, True):
+                    with self.subTest(hotend=hotend, bed=bed, fan=fan):
+                        result = display(snapshot(hotend, bed, fan))
+                        for name in ('temperature', 'tune', 'preheat'):
+                            keys = [entry[0] for entry in result._menus[name]]
+                            self.assertEqual(len(keys), len(set(keys)))
+                            self.assertEqual('TEMP' in keys, hotend)
+                            self.assertEqual('BED' in keys, bed)
+                            self.assertEqual('FAN' in keys, fan)
+                        if bed and fan:
+                            self.assertNotEqual(result.TEMP_CASE_BED, result.TEMP_CASE_FAN)
+
+    def test_scroll_draws_only_visible_rows(self):
+        result = display(snapshot())
+        result.index_prepare = result.PREPARE_CASE_TOTAL
+        result.select_prepare.set(result.PREPARE_CASE_TOTAL)
+        result.Draw_Menu_Line = Mock()
+        result.Draw_Prepare_Menu()
+        rows = [call.args[0] for call in result.Draw_Menu_Line.call_args_list]
+        self.assertEqual(rows, list(range(6)))
+
+    def test_probe_detection_does_not_start_old_calibration_flow(self):
+        result = display(snapshot(probe=True))
+        result.select_prepare.set(result.PREPARE_CASE_ZOFF)
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
+        result.pd.probe_calibrate = Mock()
+        result.HMI_Prepare()
+        result.pd.probe_calibrate.assert_not_called()
+        self.assertEqual(result.checkkey, result.Homeoffset)
+
+    def test_fan_edit_uses_percentage_scale(self):
+        result = display(snapshot())
+        result.pd.HMI_ValueStruct.show_mode = -1
+        result.pd.HMI_ValueStruct.Fan_speed = 50
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
+        result.HMI_FanSpeed()
+        result.pd.sendGCode.assert_called_once_with('M106 S127.5')
