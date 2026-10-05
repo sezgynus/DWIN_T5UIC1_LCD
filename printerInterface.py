@@ -4,6 +4,7 @@ import math
 from motion_settings import PARAMETERS, validate as validate_motion
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
+from probe_wizard import ProbeWizard
 from preset_store import PresetStore
 from printer_state import PrinterState
 from printer_capabilities import PrinterCapabilities
@@ -157,6 +158,7 @@ class PrinterData:
         self._files_loaded = False
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
+        self.probe_wizard = ProbeWizard(self)
 
     def _apply_capabilities(self, caps):
         self.HAS_HOTEND = caps.active_hotend is not None
@@ -205,21 +207,6 @@ class PrinterData:
             return True
         else:
             return False
-
-    def offset_z(self, new_offset):
-#        print('new z offset:', new_offset)
-        self.BABY_Z_VAR = new_offset
-        self.sendGCode('ACCEPT')
-
-    def add_mm(self, axs, new_offset):
-        gc = 'TESTZ Z={}'.format(new_offset)
-        print(axs, gc)
-        self.sendGCode(gc)
-
-    def probe_calibrate(self):
-        self.sendGCode('G28')
-        self.sendGCode('PROBE_CALIBRATE')
-        self.sendGCode('G1 Z0')
 
     # ------------- Moonraker transport ----------
 

@@ -123,6 +123,7 @@ class DWIN_LCD:
 
     Print_window = 33
     Popup_Window = 34
+    ProbeWizardID = 36
     MotionValue = 35
 
     MINUNITMULT = 10
@@ -403,11 +404,14 @@ class DWIN_LCD:
         self._menus['preheat'].append(('SAVE', 'Save settings', self.ICON_WriteEEPROM))
         if heat or self.pd.HAS_FAN:
             self._menus['control'].append(('TEMP', 'Temperature', self.ICON_Temperature))
-        self._menus['control'].extend([('MOVE', 'Motion', self.ICON_Motion), ('INFO', 'Info', self.ICON_Info)])
+        self._menus['control'].append(('MOVE', 'Motion', self.ICON_Motion))
+        if caps.probe and 'manual_probe' in self.pd.state.objects:
+            self._menus['control'].append(('PROBE', 'Probe calibration', self.ICON_Zoffset))
+        self._menus['control'].append(('INFO', 'Info', self.ICON_Info))
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
         keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'PLA', 'ABS', 'COOL', 'LANG',
-                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO')
+                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO', 'PROBE')
         for menu, prefix in prefixes.items():
             for key in keys:
                 setattr(self, prefix + '_CASE_' + key, -1)
@@ -880,6 +884,10 @@ class DWIN_LCD:
                 self.checkkey = self.Motion
                 self.select_motion.reset()
                 self.Draw_Motion_Menu()
+            if self.select_control.now == self.CONTROL_CASE_PROBE:
+                self.checkkey = self.ProbeWizardID
+                self._probe_selection = 0
+                self.Draw_Probe_Wizard()
             if (self.select_control.now == self.CONTROL_CASE_INFO):  # Info
                 self.checkkey = self.Info
                 self.Draw_Info_Menu()
@@ -1515,6 +1523,58 @@ class DWIN_LCD:
             self.Draw_Motion_Menu()
             self.lcd.UpdateLCD()
 
+    def _probe_options(self):
+        wizard = self.pd.probe_wizard
+        if wizard.pending:
+            return ()
+        if wizard.phase == 'active':
+            return (('Raise 0.1', lambda: wizard.testz(.1)),
+                    ('Lower 0.1', lambda: wizard.testz(-.1)),
+                    ('Raise 0.01', lambda: wizard.testz(.01)),
+                    ('Lower 0.01', lambda: wizard.testz(-.01)),
+                    ('Accept', wizard.accept), ('Abort', wizard.abort))
+        if wizard.phase == 'accepted':
+            return (('Save: restart Klipper', wizard.save), ('Leave unsaved', self._leave_probe))
+        if wizard.phase in ('error', 'interrupted', 'saved'):
+            return (('Back; check printer', self._leave_probe),)
+        return (('Start at current XY', wizard.start), ('Back', self._leave_probe))
+
+    def _leave_probe(self):
+        self.checkkey = self.Control
+        self.Draw_Control_Menu()
+
+    def Draw_Probe_Wizard(self):
+        self.Clear_Main_Window()
+        self.Draw_Title('Probe calibration')
+        wizard = self.pd.probe_wizard
+        self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
+                             self.lcd.Color_Bg_Black, 8, 35, wizard.message[:42])
+        options = self._probe_options()
+        self._probe_selection = max(0, min(getattr(self, '_probe_selection', 0), max(0, len(options) - 1)))
+        for row, (label, _) in enumerate(options):
+            self.Draw_Menu_Line(row, self.ICON_Zoffset, label)
+            if row == self._probe_selection:
+                self.Draw_Menu_Cursor(row)
+        self.lcd.UpdateLCD()
+
+    def HMI_Probe_Wizard(self):
+        wizard = self.pd.probe_wizard
+        wizard.update()
+        options = self._probe_options()
+        self._probe_selection = max(0, min(getattr(self, '_probe_selection', 0), max(0, len(options) - 1)))
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_CW and options:
+            self._probe_selection = min(len(options) - 1, self._probe_selection + 1)
+        elif event == self.ENCODER_DIFF_CCW:
+            self._probe_selection = max(0, self._probe_selection - 1)
+        elif event == self.ENCODER_DIFF_ENTER and options:
+            try:
+                options[self._probe_selection][1]()
+            except ValueError as error:
+                wizard.message = str(error)
+        if self.checkkey == self.ProbeWizardID:
+            self.Draw_Probe_Wizard()
+
     def HMI_Zoffset(self):
         encoder_diffState = self.get_encoder_state()
         if (encoder_diffState == self.ENCODER_DIFF_NO):
@@ -2114,6 +2174,7 @@ class DWIN_LCD:
                 self._show_message('Moonraker unavailable')
             self._offline = True
             return
+        self.pd.probe_wizard.update()
         if self._poll_print_start() or getattr(self, '_start_error_visible', False):
             return
         if self.checkkey == self.SelectFile and self.pd.state.file_revision != getattr(self, '_file_view_revision', -1):
@@ -2147,6 +2208,8 @@ class DWIN_LCD:
             self.Draw_Tune_Menu()
         elif update and self.checkkey == self.Motion:
             self.Draw_Motion_Menu()
+        elif self.checkkey == self.ProbeWizardID:
+            self.Draw_Probe_Wizard()
 
         if self.pd.HMI_flag.home_flag:
             if self.pd.ishomed():
@@ -2190,6 +2253,8 @@ class DWIN_LCD:
             self.HMI_Temperature()
         elif self.checkkey == self.Motion:
             self.HMI_Motion()
+        elif self.checkkey == self.ProbeWizardID:
+            self.HMI_Probe_Wizard()
         elif self.checkkey == self.MotionValue:
             self.HMI_MotionValue()
         elif self.checkkey == self.Info:

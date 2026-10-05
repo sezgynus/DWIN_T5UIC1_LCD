@@ -83,3 +83,8 @@ Configuration coverage checks environment defaults, CLI overrides and invalid
 pin/timeout rejection before GPIO imports. Unit syntax was checked with
 systemd-analyze using the local Python executable substituted for the Pi-only
 venv path; this does not replace target-Pi service lifecycle validation.
+
+Probe coverage checks homing, active-session/config/print guards, start-result
+and manual-state gating, owned TESTZ and serialization, accept plus pending
+offset confirmation, abort without save, explicit save guards and epoch changes
+without replay. No physical probing is performed.

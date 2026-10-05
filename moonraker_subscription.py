@@ -15,7 +15,7 @@ from moonraker_client import MoonrakerError
 
 
 OBJECTS = ('webhooks', 'toolhead', 'gcode_move', 'print_stats', 'virtual_sdcard',
-           'pause_resume', 'extruder', 'heater_bed', 'fan', 'manual_probe')
+           'pause_resume', 'extruder', 'heater_bed', 'fan', 'manual_probe', 'configfile')
 
 
 def connect(url, timeout, headers):
@@ -202,7 +202,8 @@ class MoonrakerSubscription:
         self._buffered = []
         try:
             result = self._rpc('printer.objects.subscribe',
-                               {'objects': {name: None for name in available}})
+                               {'objects': {name: (['save_config_pending', 'save_config_pending_items']
+                                                  if name == 'configfile' else None) for name in available}})
             if not isinstance(result, dict):
                 raise MoonrakerError('Invalid subscription response')
             self._merge(result.get('status'), result.get('eventtime'), replace=True)

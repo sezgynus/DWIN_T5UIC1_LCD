@@ -80,8 +80,9 @@ Zero temperature means off; nonzero targets must fit the configured range.
 Preheat validates all installed heater targets before submitting a script.
 Fan edits use percentages and convert to Klipper's M106 scale.
 
-Probe and bed mesh availability are detected, but the calibration wizard is not
-implemented yet. The Z-offset menu changes the runtime G-code offset only.
+Probe and bed mesh availability are detected. Runtime Z-offset and the Control
+menu's probe calibration wizard are separate; the runtime menu only changes
+G-code offset.
 Temperature and Tune confirmations now submit the corresponding live heater
 target; preset editors only change preset values. Paused and terminal jobs retain
 progress and elapsed print duration. Completion follows `print_stats.state`,
@@ -267,7 +268,32 @@ cd /opt/dwin-lcd
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The isolated tests do not prove physical motion or panel compatibility. Probe
-calibration wizard, full panel instruction-set verification and final hardware
-validation remain outstanding. The supplied systemd service must still be
+The isolated tests do not prove physical motion or panel compatibility. Full panel instruction-set verification and final hardware validation remain
+outstanding. The supplied systemd service must still be
 validated with start/stop/restart and device permissions on the target Pi.
+
+### Probe calibration wizard
+
+Control → Probe calibration is available when probe and manual-probe status
+are discovered. Home XYZ first and place the nozzle/probe at a suitable bed
+point. Prepare the printer as described in [Klipper probe calibration](https://www.klipper3d.org/Probe_Calibrate.html).
+Starting sends only PROBE_CALIBRATE: no automatic G28 or G1 Z0.
+An existing manual session, active print or pending configuration changes block
+start. The UI waits for HTTP success and `manual_probe.is_active`.
+
+Select explicit Raise/Lower 0.1 or 0.01 mm actions; turning the encoder only
+selects an action. Enter sends one TESTZ and blocks further commands until its
+result arrives. Accept waits for the manual session to close and a pending
+probe z_offset; HTTP success alone does not prove acceptance. Abort closes the
+session without saving. The separate **Save: restart Klipper** action sends
+SAVE_CONFIG only when the pending items contain the accepted probe offset and
+no unrelated changes. Leave unsaved exits without persisting it.
+
+A failed/unconfirmed command or changed connection stops the wizard; nothing is
+replayed or automatically aborted. Check the printer and use another client
+if a manual session remains active. This client cannot lock out another client:
+avoid concurrent calibration/configuration edits. SAVE_CONFIG restarts Klipper;
+a disconnect can leave its outcome uncertain until the printer reconnects.
+The session/state and acceptance checks follow [manual_probe.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/manual_probe.py)
+and [probe.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/probe.py).
+Physical calibration has not been validated by the isolated tests.
