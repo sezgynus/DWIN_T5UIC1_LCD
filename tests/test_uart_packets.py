@@ -121,3 +121,31 @@ class PacketTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             result.Draw_String(False, True, 10, 0, 0, 0, 0, 'bad')
         self.assertEqual(result.DWIN_SendBuf, result.FHONE)
+
+    def test_common_command_frames_match_pinned_marlin_source(self):
+        cases = (
+            (lambda d: d.Frame_Clear(0x1234), 'AA 01 12 34 CC 33 C3 3C'),
+            (lambda d: d.Draw_Line(0x1234, 1, 2, 3, 4), 'AA 03 12 34 00 01 00 02 00 03 00 04 CC 33 C3 3C'),
+            (lambda d: d.Draw_Rectangle(1, 0x1234, 1, 2, 3, 4), 'AA 05 01 12 34 00 01 00 02 00 03 00 04 CC 33 C3 3C'),
+            (lambda d: d.Frame_AreaMove(1, 2, 10, 0x1234, 1, 2, 3, 4), 'AA 09 82 00 0A 12 34 00 01 00 02 00 03 00 04 CC 33 C3 3C'),
+            (lambda d: d.JPG_ShowAndCache(1), 'AA 22 00 01 CC 33 C3 3C'),
+            (lambda d: d.JPG_CacheTo1(1), 'AA 25 01 01 CC 33 C3 3C'),
+            (lambda d: d.QR_Code(2, 10, 20, 'abc'), 'AA 21 00 0A 00 14 02 61 62 63 CC 33 C3 3C'),
+            (lambda d: d.ICON_Animation(1, True, 9, 1, 2, 10, 20, 5), 'AA 28 00 0A 00 14 C1 09 01 02 05 CC 33 C3 3C'),
+        )
+        for operation, expected in cases:
+            with self.subTest(frame=expected):
+                result = self.driver()
+                operation(result)
+                self.assertEqual(result.MYSERIAL1.frames, [bytes.fromhex(expected)])
+
+    def test_decimal_field_roundtrip_uses_same_position_and_width(self):
+        result = self.driver()
+        for value, expected in ((-125, b' -1.25'), (125, b'  1.25'), (0, b'  0.00'), (9999, b' 99.99')):
+            result.Draw_Signed_Float(1, 0, 2, 2, 100, 20, value)
+            frame = result.MYSERIAL1.frames[-1]
+            self.assertEqual(frame[7:11], bytes.fromhex('00 5C 00 14'))
+            self.assertEqual(frame[11:-4], expected)
+        with self.assertRaises(ValueError):
+            result.Draw_Signed_Float(1, 0, 2, 2, 100, 20, 9999.5)
+        self.assertEqual(len(result.MYSERIAL1.frames), 4)

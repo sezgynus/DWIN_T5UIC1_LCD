@@ -96,3 +96,9 @@ without retry, validation failures and future-returning backend actions.
 Packet tests follow the pinned mriscoc DWIN/ProUI reference: color-bearing points,
 padded numeric text, scaled rounding, complete sign fields and invalid-input
 isolation. No physical panel is exercised.
+
+The pinned Marlin fixtures also cover clear/line/rectangle/area movement, JPG
+show/cache, QR and icon animation packets; decimal sign transitions retain a
+complete field and rounding overflow is rejected. The existing real-menu fixture
+runs the updated driver on the UI owner with a fake serial port. These fixtures
+verify source-derived bytes and routing, not screen-side execution or rendering.
