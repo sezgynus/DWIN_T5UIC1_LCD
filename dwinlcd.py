@@ -2208,38 +2208,44 @@ class DWIN_LCD:
             return
         count = mmu['num_gates']
         active = mmu['gate']
-        # The former logo area is 130px wide. Four gates fit at full size;
-        # larger MMUs are compressed dynamically while keeping every gate visible.
-        left, top, width = 71, 48, 130
-        gap = 4 if count <= 4 else 2
+        # Keep the indicator inside the former logo area. Four-gate MMUs get
+        # a full spool silhouette; larger units scale the same shape down.
+        left, top, width = 67, 43, 138
+        gap = 5 if count <= 4 else 2
         slot = max(12, min(30, (width - gap * (count - 1)) // count))
         total = slot * count + gap * (count - 1)
         start = left + max(0, (width - total) // 2)
+        title = "MMU"
         self.lcd.Draw_String(False, True, self.lcd.font6x12,
                              self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                             left, 34, "MMU")
+                             left + (width - 6 * len(title)) // 2, 32, title)
         for gate in range(count):
             x = start + gate * (slot + gap)
             status = mmu['gate_status'][gate]
             rgb = mmu['gate_color_rgb'][gate]
-            # Empty/unknown gates remain visible but deliberately neutral.
             color = self._rgb565(rgb) if status > 0 else 0x8410
             cx = x + slot // 2
-            # Compact spool: two flanges with a colored filament body.
-            self.lcd.Draw_Rectangle(1, 0x4208, x + 1, top + 3, x + slot - 2, top + 25)
-            self.lcd.Draw_Rectangle(1, color, x + 4, top + 5, x + slot - 5, top + 23)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White,
-                                    x + 1, top + 3, x + slot - 2, top + 25)
+            cy = top + 15
+            radius = max(5, min(13, slot // 2 - 1))
+            hub = max(2, radius // 3)
+
+            # Filled reel with dark hub: visually reads as a filament spool
+            # rather than a colored status box.
+            self.lcd.CircleFill(color, cx, cy, radius)
+            self.lcd.Draw_Circle(self.lcd.Color_White, cx, cy, radius)
+            self.lcd.CircleFill(self.lcd.Color_Bg_Black, cx, cy, hub)
+            self.lcd.Draw_Circle(self.lcd.Color_White, cx, cy, hub)
+
             if gate == active:
-                self.lcd.Draw_Rectangle(0, self.lcd.Select_Color,
-                                        x - 2, top, x + slot + 1, top + 39)
-                self.lcd.Draw_Rectangle(0, self.lcd.Color_White,
-                                        x - 1, top + 1, x + slot, top + 38)
+                # Active gate gets a close double halo without hiding its color.
+                self.lcd.Draw_Circle(self.lcd.Select_Color, cx, cy, radius + 3)
+                self.lcd.Draw_Circle(self.lcd.Color_White, cx, cy, radius + 2)
+
             label = str(gate + 1)
             label_x = cx - 3 * len(label)
             self.lcd.Draw_String(False, True, self.lcd.font6x12,
                                  self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                                 label_x, top + 28, label)
+                                 label_x, top + 32, label)
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
