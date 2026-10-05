@@ -50,3 +50,16 @@ class PacketTests(unittest.TestCase):
         self.assertFalse(result.MYSERIAL1.frames)
         result.UpdateLCD()
         self.assertEqual(result.MYSERIAL1.frames[-1], bytes.fromhex('AA 3D CC 33 C3 3C'))
+
+    def test_icon_and_copy_flags_follow_proui_transparency(self):
+        result = self.driver()
+        result.ICON_Show(9, 1, 10, 20)
+        self.assertEqual(result.MYSERIAL1.frames[-1], bytes.fromhex('AA 23 00 0A 00 14 29 01 CC 33 C3 3C'))
+        result.ICON_Show(9, 1, 10, 20, background=True, enhanced=False)
+        self.assertEqual(result.MYSERIAL1.frames[-1][6], 0x89)
+        result.Frame_AreaCopy(1, 0, 0, 10, 20, 30, 40)
+        self.assertEqual(result.MYSERIAL1.frames[-1], bytes.fromhex('AA 27 21 00 00 00 00 00 0A 00 14 00 1E 00 28 CC 33 C3 3C'))
+        result.Frame_AreaCopy(1, 0, 0, 10, 20, 30, 40, background=True, restore=True)
+        self.assertEqual(result.MYSERIAL1.frames[-1][2], 0xE1)
+        with self.assertRaises(ValueError):
+            result.ICON_Show(32, 0, 0, 0)

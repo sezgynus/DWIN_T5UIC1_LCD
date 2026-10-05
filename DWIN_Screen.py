@@ -366,11 +366,18 @@ class T5UIC1_LCD:
 		self.Byte(id)
 		self.Send()  # AA 23 00 00 00 00 08 00 01 02 03 CC 33 C3 3C
 
+	@staticmethod
+	def _image_flags(index, background, restore, enhanced):
+		if not isinstance(index, int) or not 0 <= index <= 31:
+			raise ValueError('Image library/cache index must fit five bits')
+		return (bool(background) << 7 | bool(restore) << 6 | bool(enhanced) << 5 | index)
+
 	#  Draw an Icon
 	#   libID: Icon library ID
 	#   picID: Icon ID
 	#   x/y: Upper-left point
-	def ICON_Show(self, libID, picID, x, y):
+	def ICON_Show(self, libID, picID, x, y, background=False, restore=False, enhanced=True):
+		flags = self._image_flags(libID, background, restore, enhanced)
 		if x > self.DWIN_WIDTH - 1:
 			x = self.DWIN_WIDTH - 1
 		if y > self.DWIN_HEIGHT - 1:
@@ -378,7 +385,7 @@ class T5UIC1_LCD:
 		self.Byte(0x23)
 		self.Word(x)
 		self.Word(y)
-		self.Byte(0x80 | libID)
+		self.Byte(flags)
 		self.Byte(picID)
 		self.Send()
 
@@ -399,9 +406,11 @@ class T5UIC1_LCD:
 	#   xStart/yStart: Upper-left of virtual area
 	#   xEnd/yEnd: Lower-right of virtual area
 	#   x/y: Screen paste point
-	def Frame_AreaCopy(self, cacheID, xStart, yStart, xEnd, yEnd, x, y):
+	def Frame_AreaCopy(self, cacheID, xStart, yStart, xEnd, yEnd, x, y,
+	                   background=False, restore=False, enhanced=True):
+		flags = self._image_flags(cacheID, background, restore, enhanced)
 		self.Byte(0x27)
-		self.Byte(0x80 | cacheID)
+		self.Byte(flags)
 		self.Word(xStart)
 		self.Word(yStart)
 		self.Word(xEnd)

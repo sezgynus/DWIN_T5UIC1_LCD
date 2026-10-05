@@ -331,3 +331,9 @@ accepted but padding uses spaces, as in ProUI. Values exceeding the declared
 whole-digit field are rejected before writing a packet. Native 0x14 numeric
 rendering is no longer used. Actual panel and asset compatibility needs hardware
 validation.
+
+ICON_Show and Frame_AreaCopy default to ProUI's transparent enhanced filtering
+(IBD=0, BIR=0, BFI=1). Keyword arguments background, restore and enhanced expose
+those bits explicitly; library/cache identifiers occupy the lower five bits.
+Transparent filtering requires a pure black asset background. Use background=True,
+enhanced=False for opaque assets.
