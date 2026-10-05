@@ -111,10 +111,10 @@ class CapabilityTests(unittest.TestCase):
         calls = result.lcd.Draw_IntValue.call_args_list
         coordinates = [(call.args[7], call.args[8]) for call in calls]
         self.assertIn((26, 382), coordinates)
-        self.assertIn((82, 382), coordinates)
+        self.assertIn((66, 382), coordinates)
         self.assertIn((26, 416), coordinates)
-        self.assertIn((82, 416), coordinates)
-        self.assertLess(82 + 3 * result.STAT_CHR_W, 116)
+        self.assertIn((66, 416), coordinates)
+        self.assertLess(66 + 3 * result.STAT_CHR_W, 116)
 
     def test_live_dashboard_telemetry_uses_motion_report(self):
         data = snapshot()
