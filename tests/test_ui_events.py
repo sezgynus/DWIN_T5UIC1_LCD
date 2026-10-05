@@ -202,25 +202,23 @@ class InputRoutingTests(unittest.TestCase):
             display._button_pressed()
         self.assertEqual(display._loop.post.call_count, 2)
 
-    def test_rotation_rate_matches_marlin_multiplier_thresholds(self):
+    def test_rotation_rate_uses_continuous_acceleration_curve(self):
         display = self.display()
         with patch.object(ui.time, 'monotonic',
-                          side_effect=[1.0, 1.2, 1.28, 1.32, 1.345]):
+                          side_effect=[1.0, 1.2, 1.3, 1.35, 1.375, 1.39674]):
             display.encoder_has_data(1)   # first step: 1x
             display.encoder_has_data(2)   # 5 steps/s: 1x
-            display.encoder_has_data(3)   # 12.5 steps/s: 5x
-            display.encoder_has_data(4)   # 25 steps/s: 10x
-            display.encoder_has_data(5)   # 40 steps/s: 250x
+            display.encoder_has_data(3)   # 10 steps/s: 1x
+            display.encoder_has_data(4)   # 20 steps/s: proportional
+            display.encoder_has_data(5)   # 40 steps/s: proportional
+            display.encoder_has_data(6)   # about 46 steps/s: 250x
         events = [call.args[0] for call in display._loop.post.call_args_list]
-        self.assertEqual([event.accelerated_value for event in events], [1, 1, 5, 10, 250])
-
-    def test_rotation_rate_uses_intermediate_50x_band(self):
-        display = self.display()
-        with patch.object(ui.time, 'monotonic', side_effect=[1.0, 1.033]):
-            display.encoder_has_data(1)
-            display.encoder_has_data(2)   # about 30.3 steps/s: 50x
-        events = [call.args[0] for call in display._loop.post.call_args_list]
-        self.assertEqual(events[-1].accelerated_value, 50)
+        multipliers = [abs(event.accelerated_value) for event in events]
+        self.assertEqual(multipliers[:3], [1, 1, 1])
+        self.assertGreater(multipliers[3], 1)
+        self.assertLess(multipliers[3], multipliers[4])
+        self.assertLess(multipliers[4], 250)
+        self.assertEqual(multipliers[5], 250)
 
     def test_rotation_never_samples_held_button(self):
         display = self.display()
