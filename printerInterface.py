@@ -302,22 +302,22 @@ class PrinterData:
         self.job_Info = job
         self.file_name = job['print_stats'].get('filename', '')
         self.status = print_state
-        self.HMI_flag.print_finish = self.getPercent() == 100.0
+        self.HMI_flag.print_finish = print_state == 'complete'
         return changed
 
     def printingIsPaused(self):
         return self.job_Info['print_stats']['state'] == "paused" or self.job_Info['print_stats']['state'] == "pausing"
 
     def getPercent(self):
-        if self.job_Info['virtual_sdcard']['is_active']:
-            return self.job_Info['virtual_sdcard']['progress'] * 100
-        else:
+        # Paused/terminal jobs retain their statistics even when SD execution stops.
+        if self.job_Info['print_stats']['state'] == 'standby':
             return 0
+        return max(0, min(100, self.job_Info['virtual_sdcard']['progress'] * 100))
 
     def duration(self):
-        if self.job_Info['virtual_sdcard']['is_active']:
-            return self.job_Info['print_stats']['print_duration']
-        return 0
+        if self.job_Info['print_stats']['state'] == 'standby':
+            return 0
+        return self.job_Info['print_stats'].get('print_duration', 0)
 
     def remain(self):
         percent = self.getPercent()

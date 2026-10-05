@@ -1270,7 +1270,7 @@ class DWIN_LCD:
                     3, 216, self.MBASE(temp_line),
                     self.pd.HMI_ValueStruct.E_Temp
                 )
-                self.pd.setTargetHotend(self.pd.HMI_ValueStruct.E_Temp, 0)
+            self.pd.setExtTemp(self.pd.HMI_ValueStruct.E_Temp)
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1341,7 +1341,7 @@ class DWIN_LCD:
                     3, 216, self.MBASE(bed_line),
                     self.pd.HMI_ValueStruct.Bed_Temp
                 )
-                self.pd.setTargetHotend(self.pd.HMI_ValueStruct.Bed_Temp, 0)
+            self.pd.setBedTemp(self.pd.HMI_ValueStruct.Bed_Temp)
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):

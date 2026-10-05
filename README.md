@@ -97,8 +97,11 @@ Fan edits use percentages and convert to Klipper's M106 scale.
 
 Probe and bed mesh availability are detected, but the calibration wizard is not
 implemented yet. The Z-offset menu changes the runtime G-code offset only.
-Temperature confirmation, progress and preset persistence fixes remain separate
-refactor steps.
+Temperature and Tune confirmations now submit the corresponding live heater
+target; preset editors only change preset values. Paused and terminal jobs retain
+progress and elapsed print duration. Completion follows `print_stats.state`,
+so a rounded progress value cannot mark a running job complete.
+Preset persistence remains a subsequent refactor step.
 Existing installation instructions below are still being modernized.
 
 ### Library requirements 

@@ -44,7 +44,11 @@ class RegressionContracts(unittest.TestCase):
 
     def display(self, mode):
         display = ui.DWIN_LCD.__new__(ui.DWIN_LCD)
-        display.pd = self.printer()
+        # Use discovered devices and real menu indices, with isolated I/O.
+        from test_capabilities import snapshot, printer
+        display.pd = printer(snapshot())
+        display.index_tune = display.MROWS
+        display._configure_menus()
         display.pd.HMI_ValueStruct.show_mode = mode
         display.pd.HMI_ValueStruct.E_Temp = 205
         display.pd.HMI_ValueStruct.Bed_Temp = 65
@@ -60,37 +64,74 @@ class RegressionContracts(unittest.TestCase):
         printer.resume_job()
         printer.postREST.assert_called_once_with('/printer/print/resume', json=None)
 
-    @unittest.expectedFailure
     def test_paused_progress_is_retained(self):
         self.assertAlmostEqual(self.printer().getPercent(), 42.0)
 
-    @unittest.expectedFailure
     def test_paused_duration_is_retained(self):
         self.assertEqual(self.printer().duration(), 120.0)
 
-    @unittest.expectedFailure
     def test_temperature_menu_applies_hotend_target(self):
         display = self.display(-1)
         display.HMI_ETemp()
         display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder TARGET=205')
 
-    @unittest.expectedFailure
     def test_temperature_menu_applies_bed_target(self):
         display = self.display(-1)
         display.HMI_BedTemp()
         display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=65')
 
-    @unittest.expectedFailure
     def test_tune_applies_hotend_target(self):
         display = self.display(0)
         display.HMI_ETemp()
         display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder TARGET=205')
 
-    @unittest.expectedFailure
     def test_tune_applies_bed_target(self):
         display = self.display(0)
         display.HMI_BedTemp()
         display.pd.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=65')
+
+    def test_job_statistics_follow_print_state(self):
+        printer = self.printer()
+        for state in ('printing', 'paused', 'complete', 'cancelled', 'error'):
+            with self.subTest(state=state):
+                printer.job_Info['print_stats']['state'] = state
+                self.assertEqual(printer.getPercent(), 42)
+                self.assertEqual(printer.duration(), 120)
+        printer.job_Info['print_stats']['state'] = 'standby'
+        self.assertEqual(printer.getPercent(), 0)
+        self.assertEqual(printer.duration(), 0)
+
+    def test_live_hotend_edit_addresses_active_extruder(self):
+        from test_capabilities import snapshot, printer
+        display = self.display(-1)
+        display.pd = printer(snapshot(multiple=True))
+        display._configure_menus()
+        display.pd.HMI_ValueStruct.show_mode = -1
+        display.pd.HMI_ValueStruct.E_Temp = 205
+        display.HMI_ETemp()
+        display.pd.sendGCode.assert_called_once_with(
+            'SET_HEATER_TEMPERATURE HEATER=extruder1 TARGET=205')
+
+    def test_preset_edits_do_not_heat_printer(self):
+        for mode, profile in ((-2, 0), (-3, 1)):
+            for method, field, target in (('HMI_ETemp', 'hotend_temp', 205),
+                                           ('HMI_BedTemp', 'bed_temp', 65)):
+                with self.subTest(mode=mode, method=method):
+                    display = self.display(mode)
+                    getattr(display, method)()
+                    self.assertEqual(getattr(display.pd.material_preset[profile], field), target)
+                    display.pd.sendGCode.assert_not_called()
+
+    def test_completion_is_reported_by_print_stats(self):
+        from test_capabilities import snapshot, printer
+        for state, progress, finished in (('printing', 1, False),
+                                           ('complete', .999, True),
+                                           ('cancelled', 1, False)):
+            with self.subTest(state=state):
+                data = snapshot()
+                data['status']['print_stats']['state'] = state
+                data['status']['virtual_sdcard']['progress'] = progress
+                self.assertEqual(printer(data).HMI_flag.print_finish, finished)
 
 
 class BackendConnectionTests(unittest.TestCase):
