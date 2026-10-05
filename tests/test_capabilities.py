@@ -174,6 +174,14 @@ class CapabilityMenuTests(unittest.TestCase):
         result.pd.probe_calibrate.assert_not_called()
         self.assertEqual(result.checkkey, result.Homeoffset)
 
+    def test_case_light_uses_dedicated_light_icon_alias(self):
+        data = snapshot()
+        data['objects'].append('gcode_macro M355')
+        result = display(data)
+        entry = next(item for item in result._menus['control'] if item[0] == 'LIGHT')
+        self.assertEqual(entry[2], result.ICON_CaseLight)
+        self.assertEqual(result.ICON_CaseLight, result.ICON_Motion)
+
     def test_case_light_is_hidden_without_m355_macro(self):
         result = display(snapshot())
         keys = [entry[0] for entry in result._menus['control']]
