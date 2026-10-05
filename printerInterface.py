@@ -326,6 +326,28 @@ class PrinterData:
                     target['celsius'] = int(data[obj]['temperature'])
                     target['target'] = int(data[obj]['target'])
             thermal['fan_speed'][0] = int(data['fan']['speed'] * 100) if caps.fan else 0
+            mmu = None
+            if 'mmu' in data:
+                raw_mmu = data['mmu']
+                num_gates = int(raw_mmu.get('num_gates', 0))
+                gate = int(raw_mmu.get('gate', -1))
+                colors = raw_mmu.get('gate_color_rgb', [])
+                statuses = raw_mmu.get('gate_status', [])
+                if num_gates < 1 or len(colors) < num_gates or len(statuses) < num_gates:
+                    raise ValueError('Invalid MMU status')
+                normalized_colors = []
+                for color in colors[:num_gates]:
+                    if (not isinstance(color, (list, tuple)) or len(color) != 3
+                            or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                                       for value in color)):
+                        raise ValueError('Invalid MMU gate color')
+                    # Happy Hare publishes gate_color_rgb as normalized RGB floats.
+                    normalized_colors.append(tuple(max(0.0, min(1.0, float(value)))
+                                                   for value in color))
+                mmu = {'num_gates': num_gates, 'gate': gate,
+                       'gate_status': tuple(int(value) for value in statuses[:num_gates]),
+                       'gate_color_rgb': tuple(normalized_colors),
+                       'filament': str(raw_mmu.get('filament', 'Unknown'))}
         except (MoonrakerError, KeyError, TypeError, IndexError, ValueError) as exc:
             self.connection_error = str(exc)
             return False
@@ -350,6 +372,7 @@ class PrinterData:
         self.volumetric_flow = volumetric_flow
         self.live_position = live_xyz
         self.dashboard_fan_pwm = round(data['fan']['speed'] * 255) if caps.fan else 0
+        self.mmu = mmu
         self.absolute_moves = absolute_moves
         self.absolute_extrude = absolute_extrude
         self.current_position.x, self.current_position.y, self.current_position.z, self.current_position.e = x, y, z, e
