@@ -174,8 +174,25 @@ class CapabilityMenuTests(unittest.TestCase):
         result.pd.probe_calibrate.assert_not_called()
         self.assertEqual(result.checkkey, result.Homeoffset)
 
-    def test_case_light_opens_submenu_and_queries_initial_state(self):
+    def test_case_light_is_hidden_without_m355_macro(self):
         result = display(snapshot())
+        keys = [entry[0] for entry in result._menus['control']]
+        self.assertNotIn('LIGHT', keys)
+        self.assertEqual(result.CONTROL_CASE_LIGHT, -1)
+
+    def test_case_light_is_visible_with_m355_macro(self):
+        data = snapshot()
+        data['objects'].append('gcode_macro M355')
+        result = display(data)
+        keys = [entry[0] for entry in result._menus['control']]
+        self.assertIn('LIGHT', keys)
+        self.assertLess(keys.index('MOVE'), keys.index('LIGHT'))
+        self.assertLess(keys.index('LIGHT'), keys.index('INFO'))
+
+    def test_case_light_opens_submenu_and_queries_initial_state(self):
+        data = snapshot()
+        data['objects'].append('gcode_macro M355')
+        result = display(data)
         keys = [entry[0] for entry in result._menus['control']]
         self.assertIn('LIGHT', keys)
         self.assertLess(keys.index('MOVE'), keys.index('LIGHT'))
@@ -189,7 +206,9 @@ class CapabilityMenuTests(unittest.TestCase):
         result.pd.query_case_light.assert_called_once_with()
 
     def test_case_light_query_parses_on_and_brightness(self):
-        result = display(snapshot())
+        data = snapshot()
+        data['objects'].append('gcode_macro M355')
+        result = display(data)
         result.checkkey = result.CaseLight
         result._case_light_query_pending = True
         result.pd.pop_gcode_response = Mock(side_effect=['info Light is ON, Brightness=255'])
@@ -200,7 +219,9 @@ class CapabilityMenuTests(unittest.TestCase):
         self.assertFalse(result._case_light_query_pending)
 
     def test_case_light_toggle_and_brightness_commands(self):
-        result = display(snapshot())
+        data = snapshot()
+        data['objects'].append('gcode_macro M355')
+        result = display(data)
         result._case_light_on = True
         result._case_light_brightness = 100
         result.Draw_Case_Light_Menu = Mock()
