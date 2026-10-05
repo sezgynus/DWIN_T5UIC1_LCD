@@ -2209,46 +2209,57 @@ class DWIN_LCD:
             return
         count = mmu['num_gates']
         active = mmu['gate']
-        left, top, width = 67, 43, 138
-        gap = 5 if count <= 4 else 2
-        slot = max(12, min(30, (width - gap * (count - 1)) // count))
+        # Use the full former logo strip for a flat side-profile reel bank.
+        left, top, width = 45, 38, 182
+        gap = 4 if count <= 4 else 2
+        slot = max(14, min(42, (width - gap * (count - 1)) // count))
         total = slot * count + gap * (count - 1)
         start = left + max(0, (width - total) // 2)
-        title = "MMU"
+        title = str(mmu.get('name') or 'MMU')[:22]
+        title_x = max(4, (self.lcd.DWIN_WIDTH - 6 * len(title)) // 2)
         self.lcd.Draw_String(False, True, self.lcd.font6x12,
                              self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                             left + (width - 6 * len(title)) // 2, 32, title)
+                             title_x, 32, title)
+
         for gate in range(count):
             x = start + gate * (slot + gap)
             status = mmu['gate_status'][gate]
-            rgb = mmu['gate_color_rgb'][gate]
-            color = self._rgb565(rgb) if status > 0 else 0x8410
+            color = self._rgb565(mmu['gate_color_rgb'][gate]) if status > 0 else 0x8410
             cx = x + slot // 2
-            outer = max(10, min(24, slot - 4))
-            x0 = cx - outer // 2
-            x1 = cx + outer // 2
-            y0, y1 = top + 3, top + 27
+            body_left, body_right = x + 6, x + slot - 7
+            y0, y1 = top + 9, top + 34
 
-            # Front-facing reel silhouette. Rectangles are intentional here:
-            # unlike software-rendered circles they map to one panel command each,
-            # avoiding visible progressive redraw on the serial display.
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_White, x0 + 3, y0, x1 - 3, y1)
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_White, x0, y0 + 4, x1, y1 - 4)
-            self.lcd.Draw_Rectangle(1, color, x0 + 3, y0 + 3, x1 - 3, y1 - 3)
-            self.lcd.Draw_Rectangle(1, color, x0 + 2, y0 + 6, x1 - 2, y1 - 6)
-            hub = max(4, outer // 4)
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black,
-                                    cx - hub // 2, top + 15 - hub // 2,
-                                    cx + hub // 2, top + 15 + hub // 2)
+            # Flat side-profile spool: two dark flanges with the filament
+            # winding between them. Each shape is a native panel rectangle.
+            flange = 0x2104
+            self.lcd.Draw_Rectangle(1, flange, x + 2, top + 5, x + 6, top + 38)
+            self.lcd.Draw_Rectangle(1, flange, x + slot - 7, top + 5,
+                                    x + slot - 3, top + 38)
+            self.lcd.Draw_Rectangle(1, color, body_left, y0, body_right, y1)
 
-            if gate == active:
-                self.lcd.Draw_Rectangle(0, self.lcd.Select_Color,
-                                        x0 - 2, y0 - 2, x1 + 2, y1 + 2)
+            # A few alternating winding lines make the colored block read as
+            # filament without expensive software rasterization.
+            winding = self.lcd.Color_White if sum(mmu['gate_color_rgb'][gate]) < 0.7 else flange
+            for line_x in range(body_left + 3, body_right, 5):
+                self.lcd.Draw_Line(winding, line_x, y0, line_x, y1)
 
-            label = str(gate + 1)
+            # Happy Hare exposes spool IDs but not a remaining-percentage field.
+            # Keep the percentage location reserved; show -- until such data is available.
+            pct = '--'
             self.lcd.Draw_String(False, True, self.lcd.font6x12,
                                  self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                                 cx - 3 * len(label), top + 32, label)
+                                 cx - 3 * len(pct), top + 15, pct)
+
+            label = str(gate + 1)
+            label_w = max(16, min(26, slot - 4))
+            lx0, lx1 = cx - label_w // 2, cx + label_w // 2
+            label_bg = self.lcd.Select_Color if gate == active else self.lcd.Color_Bg_Black
+            border = self.lcd.Select_Color if gate == active else self.lcd.Line_Color
+            self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 41, lx1, top + 55)
+            self.lcd.Draw_Rectangle(0, border, lx0, top + 41, lx1, top + 55)
+            self.lcd.Draw_String(False, True, self.lcd.font6x12,
+                                 self.lcd.Color_White, label_bg,
+                                 cx - 3 * len(label), top + 42, label)
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
