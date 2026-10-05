@@ -620,6 +620,7 @@ class DWIN_LCD:
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if self.select_page.now == 0:  # Print File
                 self.checkkey = self.SelectFile
+                self._refresh_file_snapshot()
                 self.Draw_Print_File_Menu()
             if self.select_page.now == 1:  # Prepare
                 self.checkkey = self.Prepare
@@ -641,53 +642,80 @@ class DWIN_LCD:
 
         self.lcd.UpdateLCD()
 
+    def _refresh_file_snapshot(self):
+        paths = self.pd.GetFiles()
+        if self.pd.file_error:
+            return False
+        previous = getattr(self, '_file_paths', ())
+        selected = (previous[self.select_file.now - 1]
+                    if 0 < self.select_file.now <= len(previous) else None)
+        self._file_paths = paths
+        self.select_file.set(paths.index(selected) + 1 if selected in paths else 0)
+        self.index_file = max(self.MROWS, self.select_file.now)
+        self._file_view_revision = self.pd.state.file_revision
+        return True
+
     def HMI_SelectFile(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_NO or getattr(self, '_pending_start', None):
             return
-
-        fullCnt = len(self.pd.GetFiles(refresh=True))
-
-        if (encoder_diffState == self.ENCODER_DIFF_CW and fullCnt):
-            if (self.select_file.inc(1 + fullCnt)):
-                itemnum = self.select_file.now - 1  # -1 for "Back"
-                if (self.select_file.now > self.MROWS and self.select_file.now > self.index_file):  # Cursor past the bottom
-                    self.index_file = self.select_file.now  # New bottom line
-                    self.Scroll_Menu(self.DWIN_SCROLL_UP)
-                    self.Draw_SDItem(itemnum, self.MROWS)  # Draw and init the shift name
-                else:
-                    self.Move_Highlight(1, self.select_file.now + self.MROWS - self.index_file)  # Just move highlight
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW and fullCnt):
-            if (self.select_file.dec()):
-                itemnum = self.select_file.now - 1  # -1 for "Back"
-                if (self.select_file.now < self.index_file - self.MROWS):  # Cursor past the top
-                    self.index_file -= 1  # New bottom line
-                    self.Scroll_Menu(self.DWIN_SCROLL_DOWN)
-                    if (self.index_file == self.MROWS):
-                        self.Draw_Back_First()
-                    else:
-                        self.Draw_SDItem(itemnum, 0)  # Draw the item (and init shift name)
-                else:
-                    self.Move_Highlight(-1, self.select_file.now + self.MROWS - self.index_file)  # Just move highlight
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
-            if (self.select_file.now == 0):  # Back
-                self.select_page.set(0)
+        if self.pd.state.file_revision != getattr(self, '_file_view_revision', -1):
+            self._refresh_file_snapshot()
+            self.Redraw_SD_List()
+            # Do not apply an Enter captured against the previous list.
+            return
+        count = len(getattr(self, '_file_paths', ()))
+        if event == self.ENCODER_DIFF_CW:
+            self.select_file.inc(count + 1)
+        elif event == self.ENCODER_DIFF_CCW:
+            self.select_file.dec()
+        elif event == self.ENCODER_DIFF_ENTER:
+            if self.select_file.now == 0:
                 self.Goto_MainMenu()
-            else:
-                filenum = self.select_file.now - 1
-                # Reset highlight for next entry
-                self.select_print.reset()
-                self.select_file.reset()
-
-                # // Start choice and print SD file
-                self.pd.HMI_flag.heat_flag = True
-                self.pd.HMI_flag.print_finish = False
-                self.pd.HMI_ValueStruct.show_mode = 0
-
-                self.pd.openAndPrintFile(filenum)
-                self.Goto_PrintProcess()
-
+                return
+            path = self._file_paths[self.select_file.now - 1]
+            try:
+                future = self.pd.openAndPrintFile(path)
+            except ValueError as error:
+                self._show_message(str(error))
+                self._start_error_visible = True
+                return
+            self._pending_start = (future, self.pd.state.epoch, time.monotonic())
+            self._show_message('Starting print...')
+            return
+        self.index_file = max(self.MROWS, self.select_file.now,
+                              min(self.index_file, self.select_file.now + self.MROWS))
+        self.Redraw_SD_List()
         self.lcd.UpdateLCD()
+
+    def _poll_print_start(self):
+        pending = getattr(self, '_pending_start', None)
+        if not pending:
+            return False
+        future, epoch, started = pending
+        error = None
+        if epoch != self.pd.state.epoch:
+            error = 'Connection changed; check printer'
+        elif future.done():
+            if future.cancelled():
+                error = 'Print start cancelled'
+            elif future.exception():
+                error = 'Print start failed; check log'
+            elif self.pd.status in ('printing', 'paused', 'error'):
+                self._pending_start = None
+                self._present_print_state()
+                return False
+            elif time.monotonic() - started > 30:
+                error = 'Start unconfirmed; check printer'
+        if not error and time.monotonic() - started > 30:
+            future.cancel()  # Only cancels work that has not started.
+            error = 'Start unconfirmed; check printer'
+        if error:
+            self._pending_start = None
+            self.pd.last_command_error = None
+            self._show_message(error)
+            self._start_error_visible = True
+        return True
 
     def HMI_Prepare(self):
         encoder_diffState = self.get_encoder_state()
@@ -1614,7 +1642,7 @@ class DWIN_LCD:
 
     # Display an SD item
     def Draw_SDItem(self, item, row=0):
-        fl = self.pd.GetFiles()[item]
+        fl = self._file_paths[item]
         self.Draw_Menu_Line(row, self.ICON_File, fl)
 
     def Draw_Select_Highlight(self, sel):
@@ -1874,20 +1902,23 @@ class DWIN_LCD:
 
     # Redraw the first set of SD Files
     def Redraw_SD_List(self):
-        self.select_file.reset()
-        self.index_file = self.MROWS
-        self.Clear_Menu_Area()  # Leave title bar unchanged
-        self.Draw_Back_First()
-        fl = self.pd.GetFiles()
-        ed = len(fl)
-        if ed > 0:
-            if ed > self.MROWS:
-                ed = self.MROWS
-            for i in range(ed):
-                self.Draw_SDItem(i, i + 1)
-        else:
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Red, 10, self.MBASE(3) - 10, self.lcd.DWIN_WIDTH - 10, self.MBASE(4))
-            self.lcd.Draw_String(False, False, self.lcd.font16x32, self.lcd.Color_Yellow, self.lcd.Color_Bg_Red, ((self.lcd.DWIN_WIDTH) - 8 * 16) / 2, self.MBASE(3), "No Media")
+        if not hasattr(self, '_file_paths'):
+            self._refresh_file_snapshot()
+        self.Clear_Menu_Area()
+        entries = ('Back',) + getattr(self, '_file_paths', ())
+        start = max(0, self.index_file - self.MROWS)
+        for logical in range(start, min(len(entries), start + self.TROWS)):
+            row = logical - start
+            if logical == 0:
+                self.Draw_Menu_Line(row, self.ICON_Back, 'Back')
+            else:
+                self.Draw_SDItem(logical - 1, row)
+            if logical == self.select_file.now:
+                self.Draw_Menu_Cursor(row)
+        if len(entries) == 1:
+            self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                                 self.lcd.Color_Bg_Black, 20, self.MBASE(2),
+                                 'File list unavailable' if self.pd.file_error else 'No files')
 
     def CompletedHoming(self):
         self.pd.HMI_flag.home_flag = False
@@ -2048,6 +2079,11 @@ class DWIN_LCD:
                 self._show_message('Moonraker unavailable')
             self._offline = True
             return
+        if self._poll_print_start() or getattr(self, '_start_error_visible', False):
+            return
+        if self.checkkey == self.SelectFile and self.pd.state.file_revision != getattr(self, '_file_view_revision', -1):
+            if self._refresh_file_snapshot():
+                self.Redraw_SD_List()
         if self.pd.last_command_error:
             self._offline = True
             self._show_message('Command failed; check log')
@@ -2084,6 +2120,14 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def _dispatch_input(self):
+        if getattr(self, '_pending_start', None):
+            return
+        if getattr(self, '_start_error_visible', False):
+            if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
+                self._start_error_visible = False
+                self.Goto_MainMenu()
+                self.lcd.UpdateLCD()
+            return
         if getattr(self, '_print_error_visible', False):
             if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
                 self._acknowledged_terminal = self._terminal_key()

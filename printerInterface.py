@@ -152,6 +152,8 @@ class PrinterData:
             self.settings_error = str(error)
             logging.warning('Cannot load presets from %s: %s', self.preset_store.path, error)
         self.files = []
+        self.file_error = None
+        self._files_loaded = False
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
 
@@ -244,20 +246,23 @@ class PrinterData:
         return self.update_variable()
 
     def GetFiles(self, refresh=False):
-        if not self.files or refresh:
+        if not self._files_loaded or refresh:
             try:
                 files = self.getREST('/server/files/list')['result']
                 if not isinstance(files, list) or not all(
                         isinstance(item, dict) and isinstance(item.get('path'), str)
-                        for item in files):
+                        and item['path'] for item in files):
                     raise ValueError('Invalid file list')
-                self.files = files
+                paths = [item['path'] for item in files]
+                if len(paths) != len(set(paths)):
+                    raise ValueError('Duplicate file paths')
+                self.files = sorted(files, key=lambda item: item['path'])
+                self.file_error = None
+                self._files_loaded = True
             except (MoonrakerError, KeyError, TypeError, ValueError) as exc:
-                self.connection_error = str(exc)
-        names = []
-        for fl in self.files:
-            names.append(fl["path"])
-        return names
+                self.file_error = str(exc)
+                self._files_loaded = False
+        return tuple(item['path'] for item in self.files)
 
     def update_variable(self):
         self.check_command_results()
@@ -301,7 +306,7 @@ class PrinterData:
         self._apply_capabilities(caps)
         self.SHORT_BUILD_VERSION = state.software_version
         if state.file_revision != self._file_revision:
-            self.files = []
+            self._files_loaded = False
             self._file_revision = state.file_revision
         self.thermalManager = thermal
         self.feedrate_percentage = round(speed_percent)
@@ -344,9 +349,13 @@ class PrinterData:
             return total - duration
         return 0
 
-    def openAndPrintFile(self, filenum):
-        self.file_name = self.files[filenum]['path']
-        self.postREST('/printer/print/start', json={'filename': self.file_name})
+    def openAndPrintFile(self, path):
+        if (not isinstance(path, str) or not self._files_loaded or self.file_error
+                or path not in {item['path'] for item in self.files}):
+            raise ValueError('Selected file is no longer available')
+        if self.status in ('printing', 'paused', 'pausing'):
+            raise ValueError('A print is already active')
+        return self.postREST('/printer/print/start', json={'filename': path})
 
     def cancel_job(self): #fixed
         print('Canceling job:')

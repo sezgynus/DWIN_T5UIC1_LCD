@@ -101,6 +101,19 @@ Temperature and Tune confirmations now submit the corresponding live heater
 target; preset editors only change preset values. Paused and terminal jobs retain
 progress and elapsed print duration. Completion follows `print_stats.state`,
 so a rounded progress value cannot mark a running job complete.
+File selection uses a sorted, cached path snapshot, refreshed after file-list
+notifications. Inserting/reordering files preserves the selected path; deletion
+returns the cursor to Back. An empty list is cached too. List-fetch errors keep
+the old view but block starts until a valid refresh succeeds.
+Print start sends the selected path, blocks duplicate presses, and waits for both
+the HTTP result and subscribed print state before opening the print screen.
+Failure, cancellation, connection-epoch changes or an unconfirmed start after
+30 seconds show an acknowledgement message; start commands are never retried
+automatically. A late successful start can still occur after a timeout: check
+printer state before submitting again. File listing remains a bounded HTTP GET
+on menu entry/notification refresh; rendering and encoder navigation use only
+the cached snapshot.
+
 Print screen selection handles paused startup, completion, cancellation and
 print errors explicitly. Completion stays on the print screen until Enter;
 acknowledging it does not reset the printer's speed. Print error messages remain

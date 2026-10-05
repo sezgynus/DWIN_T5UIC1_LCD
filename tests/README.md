@@ -56,3 +56,8 @@ Klipper error recovery still require live printer validation.
 Print screen coverage checks paused startup/resume, completion confirmation and
 acknowledgement, new-print reset, cancellation/standby, retained error messages,
 external speed updates and editor isolation.
+
+File coverage checks cached empty lists, path selection across insert/delete,
+failed refresh blocking starts, path-based submission, duplicate suppression,
+HTTP/status confirmation, failures/cancellation/epoch changes, timeout without
+retry and snapshot-only scrolling.
