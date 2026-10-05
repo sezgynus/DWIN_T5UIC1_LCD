@@ -203,6 +203,7 @@ class DWIN_LCD:
     ICON_ReadEEPROM = 43
     ICON_ResumeEEPROM = 44
     ICON_Info = 45
+    ICON_CaseLight = ICON_Motion
 
     ICON_SetEndTemp = 46
     ICON_SetBedTemp = 47
@@ -468,7 +469,7 @@ class DWIN_LCD:
         # Klipper exposes configured macros as "gcode_macro <name>" objects.
         # M355 commands are valid only when that compatibility macro exists.
         if any(name.lower() == 'gcode_macro m355' for name in self.pd.state.objects):
-            self._menus['control'].append(('LIGHT', 'Case Light', self.ICON_Cool))
+            self._menus['control'].append(('LIGHT', 'Case Light', self.ICON_CaseLight))
         self._menus['control'].append(('INFO', 'Info', self.ICON_Info))
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
@@ -1995,8 +1996,8 @@ class DWIN_LCD:
         self.Clear_Main_Window()
         self.Draw_Title('Case Light')
         self.Draw_Back_First(self.select_light.now == 0)
-        self.Draw_Menu_Line(1, self.ICON_Cool, 'Light')
-        self.Draw_Menu_Line(2, self.ICON_Cool, 'Brightness')
+        self.Draw_Menu_Line(1, self.ICON_CaseLight, 'Light')
+        self.Draw_Menu_Line(2, self.ICON_CaseLight, 'Brightness')
         if self.select_light.now:
             self.Draw_Menu_Cursor(self.select_light.now)
         self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
