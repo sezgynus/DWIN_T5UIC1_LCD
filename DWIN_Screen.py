@@ -175,6 +175,8 @@ class T5UIC1_LCD:
 	def UpdateLCD(self):
 		if getattr(self, '_closed', False):
 			raise RuntimeError('LCD is closed')
+		if getattr(self, '_defer_updates', False):
+			return
 		if getattr(self, '_needs_update', True):
 			self._packet(0x3D)
 			self._needs_update = False

@@ -13,6 +13,7 @@ class InputEvent:
     value: int
     epoch: int
     ui_epoch: int = 0
+    accelerated_value: int = 0
 
 
 class UIEventLoop:
@@ -42,6 +43,21 @@ class UIEventLoop:
     def post(self, event):
         if self._stop.is_set():
             return False
+        # Collapse adjacent same-direction encoder events while the UI owner is
+        # busy. Raw steps are preserved for menus; accelerated steps are
+        # preserved separately for numeric editors.
+        if isinstance(event, InputEvent) and event.kind == 'rotate':
+            with self._queue.mutex:
+                if self._queue.queue:
+                    previous = self._queue.queue[-1]
+                    if (isinstance(previous, InputEvent) and previous.kind == 'rotate'
+                            and previous.epoch == event.epoch
+                            and previous.ui_epoch == event.ui_epoch
+                            and (previous.value > 0) == (event.value > 0)):
+                        self._queue.queue[-1] = InputEvent(
+                            'rotate', previous.value + event.value, event.epoch, event.ui_epoch,
+                            previous.accelerated_value + event.accelerated_value)
+                        return True
         try:
             self._queue.put_nowait(event)
         except Full:

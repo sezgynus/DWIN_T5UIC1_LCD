@@ -50,6 +50,15 @@ class EventLoopTests(unittest.TestCase):
         for producer in range(4):
             self.assertEqual([index for owner, index in events if owner == producer], list(range(20)))
 
+    def test_adjacent_rotation_events_are_coalesced_without_losing_raw_or_accelerated_steps(self):
+        seen = []
+        loop = UIEventLoop(Mock(), seen.append, Mock(), Mock())
+        loop.post(InputEvent('rotate', 2, 1, 0, 20))
+        loop.post(InputEvent('rotate', 3, 1, 0, 300))
+        queued = loop._queue.get_nowait()
+        self.assertEqual(queued, InputEvent('rotate', 5, 1, 0, 320))
+        loop._queue.task_done()
+
     def test_full_queue_is_nonblocking_and_closed_queue_rejects_input(self):
         loop = UIEventLoop(Mock(), Mock(), Mock(), Mock(), capacity=1)
         self.assertTrue(loop.post(InputEvent('press', 1, 0)))
@@ -139,7 +148,7 @@ class InputRoutingTests(unittest.TestCase):
         display = self.display()
         display.encoder_has_data(-3)
         display._button_pressed()
-        self.assertEqual(display._loop.post.call_args_list[0].args[0], InputEvent('rotate', -3, 1))
+        self.assertEqual(display._loop.post.call_args_list[0].args[0], InputEvent('rotate', -3, 1, 0, -3))
         self.assertEqual(display._loop.post.call_args_list[1].args[0], InputEvent('press', 1, 1))
         display._dispatch_input.assert_not_called()
 
@@ -151,6 +160,15 @@ class InputRoutingTests(unittest.TestCase):
         display._process_input(InputEvent('press', 1, 1))
         self.assertEqual(seen, [display.ENCODER_DIFF_CW] * 3 + [display.ENCODER_DIFF_ENTER])
         self.assertEqual(display.get_encoder_state(), display.ENCODER_DIFF_NO)
+
+    def test_numeric_editor_consumes_accelerated_batch_once(self):
+        display = self.display()
+        display.checkkey = display.Move_X
+        seen = []
+        display._dispatch_input.side_effect = lambda: seen.append(
+            (display.get_encoder_state(), display._encoder_move_value))
+        display._process_input(InputEvent('rotate', -4, 1, 0, -100))
+        self.assertEqual(seen, [(display.ENCODER_DIFF_CW, 100)])
 
     def test_old_epoch_and_offline_events_are_discarded(self):
         display = self.display()
@@ -166,6 +184,16 @@ class InputRoutingTests(unittest.TestCase):
             display._button_pressed()
             display._button_pressed()
         self.assertEqual(display._loop.post.call_count, 2)
+
+    def test_rotation_rate_matches_marlin_multiplier_thresholds(self):
+        display = self.display()
+        with patch.object(ui.time, 'monotonic', side_effect=[1.0, 1.02, 1.03, 1.035]):
+            display.encoder_has_data(1)   # first step: 1x
+            display.encoder_has_data(2)   # 50 steps/s: 5x
+            display.encoder_has_data(3)   # 100 steps/s: 10x
+            display.encoder_has_data(4)   # 200 steps/s: 100x
+        events = [call.args[0] for call in display._loop.post.call_args_list]
+        self.assertEqual([event.accelerated_value for event in events], [1, 5, 10, 100])
 
     def test_rotation_never_samples_held_button(self):
         display = self.display()

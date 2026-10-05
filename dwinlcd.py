@@ -135,6 +135,10 @@ class DWIN_LCD:
     ENCODER_DIFF_CCW = 2  # counterclockwise rotation
     ENCODER_DIFF_ENTER = 3   # click
     ENCODER_WAIT_ENTER = 300
+    ENCODER_5X_STEPS_PER_SEC = 30
+    ENCODER_10X_STEPS_PER_SEC = 80
+    ENCODER_100X_STEPS_PER_SEC = 130
+    _encoder_move_value = 1
 
 
     dwin_zoffset = 0.0
@@ -304,7 +308,9 @@ class DWIN_LCD:
         self._input_lock = Lock()
         self._producer_value = 0
         self._last_press = float('-inf')
+        self._last_encoder_time = None
         self._encoder_event = self.ENCODER_DIFF_NO
+        self._encoder_move_value = 1
         self._loop = UIEventLoop(self._initialize, self._process_input,
                                  self._ui_tick, self._close_resources)
         self._loop.start()
@@ -560,7 +566,7 @@ class DWIN_LCD:
                              10, 50, message)
         self.lcd.UpdateLCD()
 
-    def _enqueue_input(self, kind, value):
+    def _enqueue_input(self, kind, value, accelerated_value=0):
         feedback = getattr(self, '_action_feedback', None)
         if (self.pd is None or self._closed or not getattr(self, '_uart_online', True)
                 or (feedback is not None and not (feedback.phase == 'error' and kind == 'press'))):
@@ -568,7 +574,7 @@ class DWIN_LCD:
         snapshot = self.pd.subscription.snapshot()
         if snapshot['state'] != 'ready':
             return
-        if not self._loop.post(InputEvent(kind, value, snapshot['epoch'], getattr(self, '_uart_epoch', 0))):
+        if not self._loop.post(InputEvent(kind, value, snapshot['epoch'], getattr(self, '_uart_epoch', 0), accelerated_value)):
             logging.warning('LCD input queue full or closed; input discarded')
 
     def encoder_has_data(self, value):
@@ -576,8 +582,23 @@ class DWIN_LCD:
         with self._input_lock:
             delta = value - self._producer_value
             self._producer_value = value
-            if delta:
-                self._enqueue_input('rotate', delta)
+            if not delta:
+                return
+            now = time.monotonic()
+            multiplier = 1
+            last_encoder_time = getattr(self, '_last_encoder_time', None)
+            if last_encoder_time is not None:
+                elapsed = now - last_encoder_time
+                if elapsed > 0:
+                    rate = abs(delta) / elapsed
+                    if rate >= self.ENCODER_100X_STEPS_PER_SEC:
+                        multiplier = 100
+                    elif rate >= self.ENCODER_10X_STEPS_PER_SEC:
+                        multiplier = 10
+                    elif rate >= self.ENCODER_5X_STEPS_PER_SEC:
+                        multiplier = 5
+            self._last_encoder_time = now
+            self._enqueue_input('rotate', delta, delta * multiplier)
 
     def _button_pressed(self):
         # Capture a press edge once; rotation while held must not create Enter.
@@ -605,6 +626,12 @@ class DWIN_LCD:
             return False
         return True
 
+    def _accelerated_editor(self):
+        return getattr(self, 'checkkey', None) in (
+            self.PrintSpeed, self.Move_X, self.Move_Y, self.Move_Z, self.Extruder,
+            self.ETemp, self.BedTemp, self.FanSpeed, self.MotionValue, self.Homeoffset,
+        )
+
     def _process_input(self, event):
         if (not getattr(self, '_uart_online', True)
                 or event.ui_epoch != getattr(self, '_uart_epoch', 0)):
@@ -620,17 +647,24 @@ class DWIN_LCD:
             direction, count = self.ENCODER_DIFF_ENTER, 1
         else:
             return
+        if not self._sync_input_state(event):
+            return
+        accelerated = event.kind == 'rotate' and self._accelerated_editor()
+        if accelerated:
+            count = 1
+            self._encoder_move_value = abs(event.accelerated_value or event.value)
+        else:
+            self._encoder_move_value = 1
+        lcd = getattr(self, 'lcd', None)
+        if lcd is not None:
+            lcd._defer_updates = True
         try:
             for _ in range(count):
                 current = self.pd.subscription.snapshot()
                 if current['state'] != 'ready' or current['epoch'] != event.epoch:
                     break
-                if not self._sync_input_state(event):
-                    break
                 self._encoder_event = direction
                 self._dispatch_input()
-                if getattr(self, 'lcd', None) is not None:
-                    self.lcd.UpdateLCD()
                 if getattr(self, '_action_feedback', None):
                     self._poll_action()
                     break
@@ -641,6 +675,10 @@ class DWIN_LCD:
                 raise
         finally:
             self._encoder_event = self.ENCODER_DIFF_NO
+            self._encoder_move_value = 1
+            if lcd is not None:
+                lcd._defer_updates = False
+                lcd.UpdateLCD()
 
     def MBASE(self, L):
         return 49 + self.MLINE * L
@@ -1077,10 +1115,10 @@ class DWIN_LCD:
             return
 
         if (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.print_speed += 1
+            self.pd.HMI_ValueStruct.print_speed += self._encoder_move_value
 
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.print_speed = max(1, self.pd.HMI_ValueStruct.print_speed - 1)
+            self.pd.HMI_ValueStruct.print_speed = max(1, self.pd.HMI_ValueStruct.print_speed - self._encoder_move_value)
 
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.Tune
@@ -1176,9 +1214,9 @@ class DWIN_LCD:
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.Move_X_scale += 1
+            self.pd.HMI_ValueStruct.Move_X_scale += self._encoder_move_value
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.Move_X_scale -= 1
+            self.pd.HMI_ValueStruct.Move_X_scale -= self._encoder_move_value
 
         if self.pd.HMI_ValueStruct.Move_X_scale < (self.pd.X_MIN_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_X_scale = (self.pd.X_MIN_POS) * self.MINUNITMULT
@@ -1207,9 +1245,9 @@ class DWIN_LCD:
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.Move_Y_scale += 1
+            self.pd.HMI_ValueStruct.Move_Y_scale += self._encoder_move_value
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.Move_Y_scale -= 1
+            self.pd.HMI_ValueStruct.Move_Y_scale -= self._encoder_move_value
 
         if self.pd.HMI_ValueStruct.Move_Y_scale < (self.pd.Y_MIN_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_Y_scale = (self.pd.Y_MIN_POS) * self.MINUNITMULT
@@ -1237,9 +1275,9 @@ class DWIN_LCD:
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.Move_Z_scale += 1
+            self.pd.HMI_ValueStruct.Move_Z_scale += self._encoder_move_value
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.Move_Z_scale -= 1
+            self.pd.HMI_ValueStruct.Move_Z_scale -= self._encoder_move_value
 
         if self.pd.HMI_ValueStruct.Move_Z_scale < (self.pd.Z_MIN_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_Z_scale = (self.pd.Z_MIN_POS) * self.MINUNITMULT
@@ -1267,9 +1305,9 @@ class DWIN_LCD:
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.Move_E_scale += 1
+            self.pd.HMI_ValueStruct.Move_E_scale += self._encoder_move_value
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.Move_E_scale -= 1
+            self.pd.HMI_ValueStruct.Move_E_scale -= self._encoder_move_value
 
         if ((self.pd.HMI_ValueStruct.Move_E_scale - self.pd.last_E_scale) > (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT):
             self.pd.HMI_ValueStruct.Move_E_scale = self.pd.last_E_scale + (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT
@@ -1349,7 +1387,7 @@ class DWIN_LCD:
                 self.checkkey = self.TemperatureID if mode == -1 else self.Tune
                 self.Draw_Temperature_Menu() if mode == -1 else self.Draw_Tune_Menu()
         elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
-            value = self.pd.HMI_ValueStruct.Fan_speed + (1 if event == self.ENCODER_DIFF_CW else -1)
+            value = self.pd.HMI_ValueStruct.Fan_speed + (self._encoder_move_value if event == self.ENCODER_DIFF_CW else -self._encoder_move_value)
             self.pd.HMI_ValueStruct.Fan_speed = max(0, min(100, value))
             self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
                                    self.lcd.Color_White, self.lcd.Select_Color,
@@ -1407,10 +1445,10 @@ class DWIN_LCD:
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.E_Temp += 1
+            self.pd.HMI_ValueStruct.E_Temp += self._encoder_move_value
 
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.E_Temp -= 1
+            self.pd.HMI_ValueStruct.E_Temp -= self._encoder_move_value
 
         # E_Temp limit
         if self.pd.HMI_ValueStruct.E_Temp > self.pd.MAX_E_TEMP:
@@ -1478,10 +1516,10 @@ class DWIN_LCD:
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.Bed_Temp += 1
+            self.pd.HMI_ValueStruct.Bed_Temp += self._encoder_move_value
 
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.Bed_Temp -= 1
+            self.pd.HMI_ValueStruct.Bed_Temp -= self._encoder_move_value
 
         # Bed_Temp limit
         if self.pd.HMI_ValueStruct.Bed_Temp > self.pd.BED_MAX_TARGET:
@@ -1536,7 +1574,7 @@ class DWIN_LCD:
             self.checkkey = self.Motion
         elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             step = setting[3]
-            change = step if event == self.ENCODER_DIFF_CW else -step
+            change = step * self._encoder_move_value if event == self.ENCODER_DIFF_CW else -step * self._encoder_move_value
             previous = self._motion_target
             minimum = min(step, previous) if self._motion_field in ('max_velocity', 'max_accel') else 0
             self._motion_target = round(max(minimum, self._motion_target + change), 6)
@@ -1630,9 +1668,9 @@ class DWIN_LCD:
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self._zoffset_target += 1
+            self._zoffset_target += self._encoder_move_value
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self._zoffset_target -= 1
+            self._zoffset_target -= self._encoder_move_value
 
         if (self._zoffset_target < (self.pd.Z_PROBE_OFFSET_RANGE_MIN) * 100):
             self._zoffset_target = self.pd.Z_PROBE_OFFSET_RANGE_MIN * 100
