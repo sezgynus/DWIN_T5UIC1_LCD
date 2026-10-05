@@ -221,7 +221,8 @@ class PrinterData:
 
     def postREST(self, path, json, cleanup=None):
         snapshot = self.subscription.snapshot()
-        if self.connection_error or snapshot['state'] != 'ready':
+        if (self.connection_error or not self.state.ready or snapshot['state'] != 'ready'
+                or snapshot['epoch'] != self.state.epoch):
             from concurrent.futures import Future
             future = Future()
             future.set_exception(MoonrakerError('Printer connection is not ready'))

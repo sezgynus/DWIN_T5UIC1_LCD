@@ -588,13 +588,31 @@ class DWIN_LCD:
                 self._last_press = now
                 self._enqueue_input('press', 1)
 
+    def _sync_input_state(self, event):
+        previous_epoch = self.pd.state.epoch
+        self.pd.update_variable()
+        if (self.pd.connection_error or not self.pd.state.ready
+                or self.pd.state.epoch != event.epoch):
+            return False
+        changed = self._configure_menus()
+        if previous_epoch != self.pd.state.epoch or changed:
+            # Input was captured against an older menu/capability model.
+            for name in self.SELECTIONS:
+                getattr(self, name).reset()
+            self.index_prepare = self.index_tune = self.MROWS
+            self._offline = False
+            self.HMI_StartFrame(False)
+            self.lcd.UpdateLCD()
+            return False
+        return True
+
     def _process_input(self, event):
         if (not getattr(self, '_uart_online', True)
                 or event.ui_epoch != getattr(self, '_uart_epoch', 0)):
             return
         snapshot = self.pd.subscription.snapshot()
         if (snapshot['state'] != 'ready' or snapshot['epoch'] != event.epoch
-                or self.pd.connection_error or self._closed):
+                or self._closed):
             return
         if event.kind == 'rotate':
             direction = self.ENCODER_DIFF_CCW if event.value > 0 else self.ENCODER_DIFF_CW
@@ -607,6 +625,8 @@ class DWIN_LCD:
             for _ in range(count):
                 current = self.pd.subscription.snapshot()
                 if current['state'] != 'ready' or current['epoch'] != event.epoch:
+                    break
+                if not self._sync_input_state(event):
                     break
                 self._encoder_event = direction
                 self._dispatch_input()

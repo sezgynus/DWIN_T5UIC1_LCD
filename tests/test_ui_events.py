@@ -129,6 +129,8 @@ class InputRoutingTests(unittest.TestCase):
         display._encoder_event = display.ENCODER_DIFF_NO
         display._loop = Mock()
         display.pd = Mock(connection_error=None)
+        display.pd.state = PrinterState.from_snapshot({'state': 'ready', 'epoch': 1})
+        display._configure_menus = Mock(return_value=False)
         display.pd.subscription.snapshot.return_value = {'state': 'ready', 'epoch': 1}
         display._dispatch_input = Mock()
         return display

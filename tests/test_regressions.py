@@ -220,6 +220,7 @@ class BackendConnectionTests(unittest.TestCase):
         with patch.object(backend, 'MoonrakerClient') as transport, patch.object(backend, 'MoonrakerSubscription'):
             printer = backend.PrinterData()
         printer.subscription.snapshot.return_value = {'state': 'ready', 'epoch': 1}
+        printer.state = backend.PrinterState.from_snapshot({'state': 'ready', 'epoch': 1})
         printer.postREST('/printer/print/start', {'filename': 'test.gcode'})
         guard = transport.return_value.post.call_args.kwargs['guard']
         self.assertTrue(guard())
