@@ -2182,7 +2182,10 @@ class DWIN_LCD:
         self.Clear_Main_Window()
 
         self.lcd.Frame_AreaCopy(1, 0, 2, 39, 12, 14, 9)
-        self.lcd.ICON_Show(self.ICON, self.ICON_LOGO, 71, 52)
+        if self.pd.mmu is None:
+            self.lcd.ICON_Show(self.ICON, self.ICON_LOGO, 71, 52)
+        else:
+            self.Draw_MMU_Status()
 
         self.ICON_Print()
         self.ICON_Prepare()
@@ -2191,6 +2194,52 @@ class DWIN_LCD:
             self.ICON_Leveling(self.select_page.now == 3)
         else:
             self.ICON_StartInfo(self.select_page.now == 3)
+
+    @staticmethod
+    def _rgb565(rgb):
+        r, g, b = (int(round(max(0.0, min(1.0, value)) * 31)) for value in rgb)
+        # Green has 6 bits in RGB565.
+        g = int(round(max(0.0, min(1.0, rgb[1])) * 63))
+        return (r << 11) | (g << 5) | b
+
+    def Draw_MMU_Status(self):
+        mmu = self.pd.mmu
+        if not mmu:
+            return
+        count = mmu['num_gates']
+        active = mmu['gate']
+        # The former logo area is 130px wide. Four gates fit at full size;
+        # larger MMUs are compressed dynamically while keeping every gate visible.
+        left, top, width = 71, 48, 130
+        gap = 4 if count <= 4 else 2
+        slot = max(12, min(30, (width - gap * (count - 1)) // count))
+        total = slot * count + gap * (count - 1)
+        start = left + max(0, (width - total) // 2)
+        self.lcd.Draw_String(False, True, self.lcd.font6x12,
+                             self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                             left, 34, "MMU")
+        for gate in range(count):
+            x = start + gate * (slot + gap)
+            status = mmu['gate_status'][gate]
+            rgb = mmu['gate_color_rgb'][gate]
+            # Empty/unknown gates remain visible but deliberately neutral.
+            color = self._rgb565(rgb) if status > 0 else 0x8410
+            cx = x + slot // 2
+            # Compact spool: two flanges with a colored filament body.
+            self.lcd.Draw_Rectangle(1, 0x4208, x + 1, top + 3, x + slot - 2, top + 25)
+            self.lcd.Draw_Rectangle(1, color, x + 4, top + 5, x + slot - 5, top + 23)
+            self.lcd.Draw_Rectangle(0, self.lcd.Color_White,
+                                    x + 1, top + 3, x + slot - 2, top + 25)
+            if gate == active:
+                self.lcd.Draw_Rectangle(0, self.lcd.Select_Color,
+                                        x - 2, top, x + slot + 1, top + 39)
+                self.lcd.Draw_Rectangle(0, self.lcd.Color_White,
+                                        x - 1, top + 1, x + slot, top + 38)
+            label = str(gate + 1)
+            label_x = cx - 3 * len(label)
+            self.lcd.Draw_String(False, True, self.lcd.font6x12,
+                                 self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                                 label_x, top + 28, label)
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
@@ -2558,6 +2607,9 @@ class DWIN_LCD:
                 self.CompletedHoming()
 
         if update:
+            if self.checkkey == self.MainMenu and self.pd.mmu is not None:
+                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 69, 31, 203, 91)
+                self.Draw_MMU_Status()
             self.Draw_Status_Area(update)
         self.lcd.UpdateLCD()
 
