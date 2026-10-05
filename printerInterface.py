@@ -416,6 +416,19 @@ class PrinterData:
                 if isinstance(unit_info, Mapping):
                     unit_name = str(unit_info.get('display_name') or
                                     unit_info.get('name') or 'MMU')
+                exit_led_data = data.get('unit0_mmu_exit_leds', {}).get('color_data', ())
+                exit_led_rgb = ()
+                if len(exit_led_data) >= num_gates:
+                    normalized_leds = []
+                    for led_color in exit_led_data[:num_gates]:
+                        if (not isinstance(led_color, (list, tuple)) or len(led_color) < 3
+                                or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                                           for value in led_color[:3])):
+                            normalized_leds = []
+                            break
+                        normalized_leds.append(tuple(max(0.0, min(1.0, float(value)))
+                                                     for value in led_color[:3]))
+                    exit_led_rgb = tuple(normalized_leds)
                 mmu = {'num_gates': num_gates, 'gate': gate,
                        'gate_status': tuple(int(value) for value in statuses[:num_gates]),
                        'gate_color_rgb': tuple(normalized_colors),
@@ -424,6 +437,7 @@ class PrinterData:
                            self._spoolman_percentages.get(int(sid))
                            if isinstance(sid, (int, float)) and int(sid) > 0 else None
                            for sid in spool_ids),
+                       'exit_led_rgb': exit_led_rgb,
                        'name': unit_name,
                        'filament': str(raw_mmu.get('filament', 'Unknown'))}
         except (MoonrakerError, KeyError, TypeError, IndexError, ValueError) as exc:
