@@ -105,6 +105,12 @@ class PrinterData:
 
     BABY_Z_VAR = 0
     feedrate_percentage = 100
+    flow_percentage = 100
+    live_velocity = 0.0
+    live_extruder_velocity = 0.0
+    volumetric_flow = 0.0
+    live_position = (0.0, 0.0, 0.0)
+    dashboard_fan_pwm = 0
     temphot = 0
     tempbed = 0
 
@@ -141,6 +147,12 @@ class PrinterData:
         self.last_command_error = None
         self.absolute_moves = True
         self.absolute_extrude = True
+        self.flow_percentage = 100
+        self.live_velocity = 0.0
+        self.live_extruder_velocity = 0.0
+        self.volumetric_flow = 0.0
+        self.live_position = (0.0, 0.0, 0.0)
+        self.dashboard_fan_pwm = 0
         self.file_name = ''
         self.job_Info = {'virtual_sdcard': {'is_active': False, 'progress': 0},
                          'print_stats': {'state': 'standby', 'print_duration': 0,
@@ -283,8 +295,28 @@ class PrinterData:
             absolute_moves = gcm['absolute_coordinates']
             absolute_extrude = gcm['absolute_extrude']
             speed_percent = float(gcm.get('speed_factor', 1.0)) * 100
+            flow_percent = float(gcm.get('extrude_factor', 1.0)) * 100
             if not math.isfinite(speed_percent) or speed_percent <= 0:
                 raise ValueError('Invalid feedrate percentage')
+            if not math.isfinite(flow_percent) or flow_percent <= 0:
+                raise ValueError('Invalid flow percentage')
+            motion = data.get('motion_report', {})
+            live_position = motion.get('live_position', position)
+            if not isinstance(live_position, (list, tuple)) or len(live_position) < 3:
+                raise ValueError('Invalid live position')
+            live_xyz = tuple(float(value) for value in live_position[:3])
+            live_velocity = float(motion.get('live_velocity', 0.0))
+            live_extruder_velocity = float(motion.get('live_extruder_velocity', 0.0))
+            if (not all(math.isfinite(value) for value in live_xyz)
+                    or not math.isfinite(live_velocity)
+                    or not math.isfinite(live_extruder_velocity)):
+                raise ValueError('Invalid live motion telemetry')
+            hotend_settings = state.settings.get(caps.active_hotend.name, {}) if caps.active_hotend else {}
+            filament_diameter = float(hotend_settings.get('filament_diameter', 1.75))
+            if not math.isfinite(filament_diameter) or filament_diameter <= 0:
+                raise ValueError('Invalid filament diameter')
+            filament_area = math.pi * (filament_diameter * 0.5) ** 2
+            volumetric_flow = live_extruder_velocity * filament_area
             thermal = copy.deepcopy(self.thermalManager)
             for obj, target in [(caps.active_hotend.name if caps.active_hotend else None, thermal['temp_hotend'][0]),
                                 ('heater_bed' if caps.bed else None, thermal['temp_bed'])]:
@@ -312,6 +344,12 @@ class PrinterData:
             self._file_revision = state.file_revision
         self.thermalManager = thermal
         self.feedrate_percentage = round(speed_percent)
+        self.flow_percentage = round(flow_percent)
+        self.live_velocity = live_velocity
+        self.live_extruder_velocity = live_extruder_velocity
+        self.volumetric_flow = volumetric_flow
+        self.live_position = live_xyz
+        self.dashboard_fan_pwm = round(data['fan']['speed'] * 255) if caps.fan else 0
         self.absolute_moves = absolute_moves
         self.absolute_extrude = absolute_extrude
         self.current_position.x, self.current_position.y, self.current_position.z, self.current_position.e = x, y, z, e
