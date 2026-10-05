@@ -683,9 +683,10 @@ class DWIN_LCD:
                 return
             self._live_jog_future = None
             if done.cancelled() or done.exception() is not None:
+                # Live jog is best-effort handwheel input.  A rejected segment
+                # is dropped locally; the next encoder event is re-clamped
+                # against fresh authoritative position.
                 self._live_jog_pending = None
-                logging.warning('Live jog failed: %s',
-                                'cancelled' if done.cancelled() else done.exception())
                 return
         pending = self._live_jog_pending
         if pending is None or abs(pending[1]) < 1e-9:
@@ -706,8 +707,8 @@ class DWIN_LCD:
                 return
         try:
             future = self.pd.moveRelative(axis, distance, speed)
-        except ValueError as error:
-            logging.warning('Live jog rejected: %s', error)
+        except ValueError:
+            # Limits and transient state changes are silent for handwheel input.
             return
         if isinstance(future, Future):
             self._live_jog_future = future
