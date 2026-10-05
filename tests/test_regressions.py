@@ -101,7 +101,7 @@ class RegressionContracts(unittest.TestCase):
 
 class BackendConnectionTests(unittest.TestCase):
     def test_initialization_does_not_open_klipper_socket(self):
-        with patch.object(backend, 'MoonrakerClient') as transport:
+        with patch.object(backend, 'MoonrakerClient') as transport, patch.object(backend, 'MoonrakerSubscription') as subscription:
             printer = backend.PrinterData(URL='http://localhost:7125', timeout=2)
             transport.assert_called_once_with('http://localhost:7125', '', 2)
             self.assertIsNone(printer.status)
@@ -109,23 +109,57 @@ class BackendConnectionTests(unittest.TestCase):
             transport.return_value.close.assert_called_once()
 
     def test_missing_snapshot_preserves_previous_state(self):
-        with patch.object(backend, 'MoonrakerClient'):
+        with patch.object(backend, 'MoonrakerClient'), patch.object(backend, 'MoonrakerSubscription'):
             printer = backend.PrinterData()
         printer.check_command_results = Mock()
-        printer.getREST = Mock(return_value={'result': {'status': {}}})
+        printer.subscription.snapshot.return_value = {'state': 'ready', 'status': {}}
         printer.status = 'paused'
         self.assertFalse(printer.update_variable())
         self.assertEqual(printer.status, 'paused')
         self.assertIsNotNone(printer.connection_error)
 
     def test_offline_command_is_rejected_without_network(self):
-        with patch.object(backend, 'MoonrakerClient') as transport:
+        with patch.object(backend, 'MoonrakerClient') as transport, patch.object(backend, 'MoonrakerSubscription') as subscription:
             printer = backend.PrinterData()
             printer.connection_error = 'Disconnected'
             future = printer.postREST('/printer/print/start', {'filename': 'test.gcode'})
             with self.assertRaises(backend.MoonrakerError):
                 future.result()
             transport.return_value.post.assert_not_called()
+
+    def test_ready_snapshot_updates_without_http_polling(self):
+        with patch.object(backend, 'MoonrakerClient'), patch.object(backend, 'MoonrakerSubscription'):
+            printer = backend.PrinterData()
+        printer.check_command_results = Mock()
+        printer.getREST = Mock(side_effect=AssertionError('status must not poll HTTP'))
+        printer.subscription.snapshot.return_value = {
+            'state': 'ready', 'file_revision': 1,
+            'status': {
+                'toolhead': {'position': [1, 2, 3, 4], 'axis_maximum': [220, 220, 250, 0],
+                             'homed_axes': 'xy'},
+                'gcode_move': {'homing_origin': [0, 0, 0.1, 0],
+                               'absolute_coordinates': True, 'absolute_extrude': False},
+                'print_stats': {'state': 'paused', 'filename': 'test.gcode'},
+                'virtual_sdcard': {'is_active': False, 'progress': 0.4},
+                'extruder': {'temperature': 200, 'target': 205},
+            },
+        }
+        self.assertTrue(printer.update_variable())
+        self.assertEqual(printer.status, 'paused')
+        self.assertFalse(printer.absolute_extrude)
+        self.assertFalse(printer.current_position.home_z)
+        self.assertEqual(printer.thermalManager['temp_hotend'][0]['target'], 205)
+        printer.getREST.assert_not_called()
+
+    def test_backend_guard_rejects_new_epoch(self):
+        with patch.object(backend, 'MoonrakerClient') as transport, patch.object(backend, 'MoonrakerSubscription'):
+            printer = backend.PrinterData()
+        printer.subscription.snapshot.return_value = {'state': 'ready', 'epoch': 1}
+        printer.postREST('/printer/print/start', {'filename': 'test.gcode'})
+        guard = transport.return_value.post.call_args.kwargs['guard']
+        self.assertTrue(guard())
+        printer.subscription.snapshot.return_value = {'state': 'ready', 'epoch': 2}
+        self.assertFalse(guard())
 
 
 if __name__ == '__main__':

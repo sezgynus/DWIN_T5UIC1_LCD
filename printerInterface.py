@@ -1,6 +1,7 @@
 import copy
 import logging
 from moonraker_client import MoonrakerClient, MoonrakerError
+from moonraker_subscription import MoonrakerSubscription
 
 class xyze_t:
     x = 0.0
@@ -167,8 +168,11 @@ class PrinterData:
         self.thermalManager = copy.deepcopy(type(self).thermalManager)
         self.material_preset = copy.deepcopy(type(self).material_preset)
         self.files = []
+        self._file_revision = -1
+        self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
 
     def close(self):
+        self.subscription.close()
         self.client.close()
 
     def check_command_results(self):
@@ -247,25 +251,24 @@ class PrinterData:
         return self.client.get(path)
 
     def postREST(self, path, json):
-        if self.connection_error:
+        snapshot = self.subscription.snapshot()
+        if self.connection_error or snapshot['state'] != 'ready':
             from concurrent.futures import Future
             future = Future()
             future.set_exception(MoonrakerError('Printer connection is not ready'))
             self.last_command_error = 'Printer connection is not ready'
             return future
-        return self.client.post(path, json)
+        epoch = snapshot['epoch']
+
+        def guard():
+            current = self.subscription.snapshot()
+            return current['state'] == 'ready' and current['epoch'] == epoch
+
+        return self.client.post(path, json, guard=guard)
 
     def init_Webservices(self):
-        try:
-            info = self.getREST('/printer/info')['result']
-            self.SHORT_BUILD_VERSION = info.get('software_version', 'unknown')
-            if info.get('state') != 'ready':
-                self.connection_error = info.get('state_message', 'Klipper is not ready')
-                return False
-            return self.update_variable()
-        except (MoonrakerError, KeyError, TypeError, ValueError) as exc:
-            self.connection_error = str(exc)
-            return False
+        # Bootstrap and reconnection run on the subscription thread.
+        return self.update_variable()
 
     def GetFiles(self, refresh=False):
         if not self.files or refresh:
@@ -286,8 +289,11 @@ class PrinterData:
     def update_variable(self):
         self.check_command_results()
         try:
-            response = self.getREST('/printer/objects/query?extruder&heater_bed&gcode_move&fan&toolhead&virtual_sdcard&print_stats')
-            data = response['result']['status']
+            snapshot = self.subscription.snapshot()
+            if snapshot['state'] != 'ready':
+                self.connection_error = snapshot['error'] or 'Klipper is not ready'
+                return False
+            data = snapshot['status']
             gcm = data['gcode_move']
             toolhead = data['toolhead']
             # Validate required fields before committing the snapshot.
@@ -313,6 +319,10 @@ class PrinterData:
             self.connection_error = str(exc)
             return False
         self.connection_error = None
+        self.SHORT_BUILD_VERSION = snapshot.get('software_version', 'unknown')
+        if snapshot['file_revision'] != self._file_revision:
+            self.files = []
+            self._file_revision = snapshot['file_revision']
         self.thermalManager = thermal
         self.absolute_moves = absolute_moves
         self.absolute_extrude = absolute_extrude

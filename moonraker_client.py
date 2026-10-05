@@ -73,14 +73,14 @@ class MoonrakerClient:
         # Each polling attempt opens a fresh request: recovery needs no restart.
         return self.request('GET', path)
 
-    def post(self, path, payload=None):
+    def post(self, path, payload=None, guard=None):
         future = Future()
         with self._lock:
             if self._stop.is_set():
                 future.set_exception(MoonrakerError('Client is closed'))
             else:
                 try:
-                    self._queue.put_nowait((future, path, payload))
+                    self._queue.put_nowait((future, path, payload, guard))
                 except Full:
                     future.set_exception(MoonrakerError('Command queue is full'))
         if future.done():
@@ -90,7 +90,7 @@ class MoonrakerClient:
     def _discard_pending(self, message):
         while True:
             try:
-                future, path, _ = self._queue.get_nowait()
+                future, path, _, _ = self._queue.get_nowait()
             except Empty:
                 return
             if not future.done():
@@ -101,13 +101,15 @@ class MoonrakerClient:
     def _run(self):
         while not self._stop.is_set():
             try:
-                future, path, payload = self._queue.get(timeout=0.1)
+                future, path, payload, guard = self._queue.get(timeout=0.1)
             except Empty:
                 continue
             if self._stop.is_set():
                 future.cancel()
             elif future.set_running_or_notify_cancel():
                 try:
+                    if guard is not None and not guard():
+                        raise MoonrakerError('Printer connection changed before command execution')
                     future.set_result(self.request('POST', path, payload))
                 except Exception as exc:
                     future.set_exception(exc)

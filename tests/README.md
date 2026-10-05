@@ -24,3 +24,10 @@ Transport coverage now also checks optional authentication, timeout forwarding,
 HTTP/JSON error handling, recovery on the next GET, observable POST results,
 closed-client rejection and cancellation of pending commands after failure.
 Resume routing and homing invalidation are fixed and no longer expected failures.
+
+WebSocket coverage checks JSON-RPC identification, optional auth, available-object
+subscriptions, partial snapshot merging, out-of-order updates, notifications
+arriving before the subscription response, Klipper lifecycle changes, reconnect,
+file-list invalidation and command rejection after a connection-epoch change.
+The fake socket exercises the subscriber's real bootstrap/reconnect code; no
+running Moonraker server or physical printer is required.

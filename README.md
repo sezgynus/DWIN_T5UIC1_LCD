@@ -29,7 +29,7 @@ https://github.com/arksine/moonraker
 
 ### Moonraker connection (refactor branch)
 
-The LCD now connects to Moonraker over HTTP; no direct Klipper socket path or
+The LCD connects to Moonraker over HTTP and WebSocket; no direct Klipper socket path or
 OctoPrint compatibility endpoint is required. The default URL is
 `http://127.0.0.1:7125`. If using a reverse proxy, set its URL explicitly:
 
@@ -48,13 +48,30 @@ set 26/19 explicitly if following the older wiring diagram below.
 Commands execute on a dedicated serial worker and expose their result through
 Futures. HTTP failures, invalid JSON and timeouts are checked. Failed commands
 are never replayed; pending dependent commands are discarded. The LCD displays
-a generic failure message and logs the error. Status polling retries after
+a generic failure message and logs the error. The WebSocket subscriber reconnects after
 connection failure without restarting the application; offline input is ignored.
 A timed-out command may already have executed: inspect printer state before
 issuing it again.
 
-This is the transport foundation. WebSocket subscriptions, a unified UI event
-queue and full device capability discovery are subsequent refactor steps.
+Status uses JSON-RPC at `/websocket`: client identification, printer object
+list discovery and subscriptions. Only existing objects are subscribed. Partial
+notifications merge into the initial snapshot; older notifications cannot replace
+newer data. Klipper shutdown/restart/disconnect discards the old snapshot and
+triggers a new discovery/subscription. Ping/pong checks detect silent disconnects.
+Queued HTTP commands retain their connection epoch and are rejected if the
+printer reconnects before execution. Already executing commands cannot be undone.
+
+Install the refactor dependencies in a virtual environment:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python run.py --moonraker-url http://127.0.0.1:7125
+```
+
+The legacy systemd unit still needs to be updated to use this interpreter.
+A unified UI event queue and full device capability discovery are subsequent
+refactor steps.
 Existing installation instructions below are still being modernized.
 
 ### Library requirements 
