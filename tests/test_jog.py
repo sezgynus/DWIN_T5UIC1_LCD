@@ -96,14 +96,33 @@ class JogTests(unittest.TestCase):
         result._live_jog_future = None
         result._live_jog_pending = None
         result._encoder_move_value = 50
+        result._encoder_jog_rate = result.ENCODER_ACCEL_FULL_STEPS_PER_SEC
         result.pd.HMI_ValueStruct.Move_X_scale = 0
         result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CW)
         result.HMI_Move_X()
-        self.assertIn('G1 X5 F5000', result.pd.sendGCode.call_args.args[0])
+        self.assertIn('G1 X5 F9000', result.pd.sendGCode.call_args.args[0])
         result.pd.sendGCode.reset_mock()
         result.get_encoder_state.return_value = result.ENCODER_DIFF_ENTER
         result.HMI_Move_X()
         result.pd.sendGCode.assert_not_called()
+
+    def test_live_jog_feedrate_tracks_encoder_rate_and_axis_limits(self):
+        data = snapshot()
+        data['settings']['printer']['max_z_velocity'] = 5
+        result = display(data)
+        result._encoder_jog_rate = result.ENCODER_ACCEL_FULL_STEPS_PER_SEC / 2
+        self.assertEqual(result._live_jog_speed('X'), 4500)
+        self.assertEqual(result._live_jog_speed('Z'), 150)
+        result._encoder_jog_rate = result.ENCODER_ACCEL_FULL_STEPS_PER_SEC * 2
+        self.assertEqual(result._live_jog_speed('X'), 9000)
+        self.assertEqual(result._live_jog_speed('Z'), 300)
+
+    def test_live_jog_reversal_replaces_queued_motion(self):
+        result = display(snapshot())
+        result._live_jog_future = Future()
+        result._live_jog_pending = ['X', 4.0, 3000]
+        result._queue_live_jog('X', -1.0, 2000)
+        self.assertEqual(result._live_jog_pending, ['X', -1.0, 2000])
 
     def test_live_jog_coalesces_input_while_move_is_in_flight(self):
         result = display(snapshot())
@@ -139,9 +158,10 @@ class JogTests(unittest.TestCase):
         result._live_jog_future = None
         result._live_jog_pending = None
         result._encoder_move_value = 50
+        result._encoder_jog_rate = result.ENCODER_ACCEL_FULL_STEPS_PER_SEC
         result.pd.HMI_ValueStruct.Move_X_scale = result.pd.X_MAX_POS * result.MINUNITMULT - 10
         result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CW)
         result.HMI_Move_X()
-        self.assertIn('G1 X1 F5000', result.pd.sendGCode.call_args.args[0])
+        self.assertIn('G1 X1 F9000', result.pd.sendGCode.call_args.args[0])
         self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale,
                          result.pd.X_MAX_POS * result.MINUNITMULT)
