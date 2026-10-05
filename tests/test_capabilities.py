@@ -174,6 +174,26 @@ class CapabilityMenuTests(unittest.TestCase):
         result.pd.probe_calibrate.assert_not_called()
         self.assertEqual(result.checkkey, result.Homeoffset)
 
+    def test_case_light_is_in_control_menu_and_toggles_m355(self):
+        result = display(snapshot())
+        keys = [entry[0] for entry in result._menus['control']]
+        self.assertIn('LIGHT', keys)
+        self.assertLess(keys.index('MOVE'), keys.index('LIGHT'))
+        self.assertLess(keys.index('LIGHT'), keys.index('INFO'))
+
+        result.select_control.set(result.CONTROL_CASE_LIGHT)
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
+        result.Draw_Control_Menu = Mock()
+
+        result.HMI_Control()
+        result.pd.sendGCode.assert_called_once_with('M355 S1')
+        self.assertTrue(result._case_light_on)
+
+        result.pd.sendGCode.reset_mock()
+        result.HMI_Control()
+        result.pd.sendGCode.assert_called_once_with('M355 S0')
+        self.assertFalse(result._case_light_on)
+
     def test_fan_edit_uses_percentage_scale(self):
         result = display(snapshot())
         result.pd.HMI_ValueStruct.show_mode = -1
