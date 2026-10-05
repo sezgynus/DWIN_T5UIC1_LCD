@@ -153,6 +153,7 @@ class PrinterData:
         self.volumetric_flow = 0.0
         self.live_position = (0.0, 0.0, 0.0)
         self.dashboard_fan_pwm = 0
+        self.mmu = None
         self.file_name = ''
         self.job_Info = {'virtual_sdcard': {'is_active': False, 'progress': 0},
                          'print_stats': {'state': 'standby', 'print_duration': 0,
