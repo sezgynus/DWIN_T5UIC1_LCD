@@ -59,6 +59,17 @@ class EventLoopTests(unittest.TestCase):
         self.assertEqual(queued, InputEvent('rotate', 5, 1, 0, 320))
         loop._queue.task_done()
 
+    def test_coalesced_rotation_keeps_latest_measured_rate(self):
+        seen = []
+        loop = UIEventLoop(Mock(), seen.append, Mock(), Mock())
+        loop.post(InputEvent('rotate', 2, 1, 0, 20, 12.0))
+        loop.post(InputEvent('rotate', 3, 1, 0, 60, 30.0))
+        queued = loop._queue.get_nowait()
+        self.assertEqual(queued.value, 5)
+        self.assertEqual(queued.accelerated_value, 80)
+        self.assertEqual(queued.rate, 30.0)
+        loop._queue.task_done()
+
     def test_full_queue_is_nonblocking_and_closed_queue_rejects_input(self):
         loop = UIEventLoop(Mock(), Mock(), Mock(), Mock(), capacity=1)
         self.assertTrue(loop.post(InputEvent('press', 1, 0)))
