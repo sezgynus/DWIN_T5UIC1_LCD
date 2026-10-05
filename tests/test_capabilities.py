@@ -177,13 +177,13 @@ class CapabilityTests(unittest.TestCase):
         result.lcd.Select_Color = 0x33bb
         result.lcd.font6x12 = 0
         result.Draw_MMU_Status()
-        frames = [call.args for call in result.lcd.Draw_Rectangle.call_args_list
-                  if call.args[0] == 0]
-        self.assertTrue(any(frame[1] == 0x33bb for frame in frames))
-        fills = [call.args[1] for call in result.lcd.Draw_Rectangle.call_args_list
-                 if call.args[0] == 1]
+        circles = result.lcd.Draw_Circle.call_args_list
+        self.assertTrue(any(call.args[0] == 0x33bb for call in circles))
+        fills = [call.args[0] for call in result.lcd.CircleFill.call_args_list]
         self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
         self.assertIn(0x8410, fills)
+        # Four spool bodies plus four dark hubs are rendered.
+        self.assertEqual(result.lcd.CircleFill.call_count, 8)
 
     def test_live_dashboard_telemetry_uses_motion_report(self):
         data = snapshot()
