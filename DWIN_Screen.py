@@ -388,7 +388,7 @@ class T5UIC1_LCD:
 	#   libID: Icon library ID
 	#   picID: Icon ID
 	#   x/y: Upper-left point
-	def ICON_Show(self, libID, picID, x, y, background=False, restore=False, enhanced=True):
+	def ICON_Show(self, libID, picID, x, y, background=True, restore=False, enhanced=False):
 		flags = self._image_flags(libID, background, restore, enhanced)
 		# Validate before clipping, then build atomically.
 		self._words(x, y)
