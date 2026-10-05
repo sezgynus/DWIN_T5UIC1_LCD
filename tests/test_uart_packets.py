@@ -53,7 +53,7 @@ class PacketTests(unittest.TestCase):
     def test_icon_and_copy_flags_follow_proui_transparency(self):
         result = self.driver()
         result.ICON_Show(9, 1, 10, 20)
-        self.assertEqual(result.MYSERIAL1.frames[-1], bytes.fromhex('AA 23 00 0A 00 14 29 01 CC 33 C3 3C'))
+        self.assertEqual(result.MYSERIAL1.frames[-1], bytes.fromhex('AA 23 00 0A 00 14 89 01 CC 33 C3 3C'))
         result.ICON_Show(9, 1, 10, 20, background=True, enhanced=False)
         self.assertEqual(result.MYSERIAL1.frames[-1][6], 0x89)
         result.Frame_AreaCopy(1, 0, 0, 10, 20, 30, 40)

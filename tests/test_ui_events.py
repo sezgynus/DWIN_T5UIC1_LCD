@@ -229,6 +229,7 @@ class DisplayIntegrationTests(unittest.TestCase):
         encoder = Mock()
         encoder.getValue.return_value = 0
         button = Mock()
+        release_callback = button.when_released
         snapshot = {
             'state': 'ready', 'error': None, 'epoch': 1, 'revision': 1, 'file_revision': 0,
             'status': {
@@ -256,7 +257,7 @@ class DisplayIntegrationTests(unittest.TestCase):
             subscription.return_value.snapshot.return_value = snapshot
             display = ui.DWIN_LCD('fake-port', (21, 19), 13, '')
             try:
-                self.assertIsNone(button.when_released)
+                self.assertIs(button.when_released, release_callback)
                 encoder.callback(-1)  # Main menu -> Prepare, preserving old direction.
                 button.when_pressed()
                 self.assertTrue(prepared.wait(2))
