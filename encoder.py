@@ -41,6 +41,5 @@ class Encoder:
             return self.value
 
     def close(self):
-        self.encoder.when_rotated = None
         self.callback = None
         self.encoder.close()
