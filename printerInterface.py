@@ -501,6 +501,25 @@ class PrinterData:
     def moveAbsolute(self, axis, position, speed):
         return self._jog(axis, position, speed, True)
 
+    def clear_gcode_responses(self):
+        from queue import Empty
+        while True:
+            try:
+                self.subscription.gcode_responses.get_nowait()
+            except Empty:
+                return
+
+    def pop_gcode_response(self):
+        from queue import Empty
+        try:
+            return self.subscription.gcode_responses.get_nowait()
+        except Empty:
+            return None
+
+    def query_case_light(self):
+        self.clear_gcode_responses()
+        return self.sendGCode('M355')
+
     def sendGCodeObserved(self, gcode):
         """Dispatch long-running G-Code without waiting for its completion response.
 
