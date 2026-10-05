@@ -447,16 +447,23 @@ class PrinterData:
         if self.HAS_FAN:
             return self.setFanSpeed(0)
 
+    @staticmethod
+    def _fan_command(percent):
+        percent = float(percent)
+        if not math.isfinite(percent) or not 0 <= percent <= 100:
+            raise ValueError('Fan speed is out of range')
+        return 'M106 S{:g}'.format(percent * 255 / 100)
+
     def setFanSpeed(self, percent):
-        if not self.HAS_FAN or not 0 <= float(percent) <= 100:
-            raise ValueError('Fan is unavailable or speed is out of range')
-        return self.sendGCode('M106 S{:g}'.format(float(percent) * 255 / 100))
+        if not self.HAS_FAN:
+            raise ValueError('Fan is unavailable')
+        return self.sendGCode(self._fan_command(percent))
 
     def preheat(self, profile):
-        if profile == "PLA":
-            self.preHeat(self.material_preset[0].bed_temp, self.material_preset[0].hotend_temp)
-        elif profile == "ABS":
-            self.preHeat(self.material_preset[1].bed_temp, self.material_preset[1].hotend_temp)
+        preset = next((item for item in self.material_preset if item.name == profile), None)
+        if preset is None:
+            raise ValueError('Unknown preheat profile')
+        return self.preHeat(preset.bed_temp, preset.hotend_temp, fan_speed=preset.fan_speed)
 
     def save_settings(self):
         try:
@@ -485,7 +492,7 @@ class PrinterData:
         value = heater.validate_target(target)
         return self.sendGCode('SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET={:g}'.format(value))
 
-    def preHeat(self, bedtemp, exttemp, toolnum=None):
+    def preHeat(self, bedtemp, exttemp, toolnum=None, fan_speed=None):
         # Validate the whole preset before sending any command.
         commands = []
         if self.capabilities.bed:
@@ -500,6 +507,8 @@ class PrinterData:
         if heater:
             value = heater.validate_target(exttemp)
             commands.append('SET_HEATER_TEMPERATURE HEATER={} TARGET={:g}'.format(heater.name, value))
+        if fan_speed is not None and self.capabilities.fan:
+            commands.append(self._fan_command(fan_speed))
         if commands:
             return self.sendGCode('\n'.join(commands))
 

@@ -130,8 +130,11 @@ the parent directory. Edits remain in memory until Save is selected.
 The versioned file is validated before loading; missing files use defaults and
 invalid files are logged and preserved. Writes use a flushed temporary file and
 atomic replacement; failed saves return failure to the menu's audio feedback.
-Loading presets never sends heater commands. Applying a profile still validates
-against the connected printer's current heater limits.
+Loading presets never sends heater commands. Applying a profile validates all
+installed heater targets and the available part fan's percentage before sending
+one script. The script sets the bed, active hotend and preset fan speed; absent
+devices are skipped. Validation prevents partial submission, but the script is
+not a transaction if Klipper rejects a command while executing it.
 Existing installation instructions below are still being modernized.
 
 Jog targets use `gcode_move.position` (command space before transforms), not
