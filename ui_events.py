@@ -14,6 +14,7 @@ class InputEvent:
     epoch: int
     ui_epoch: int = 0
     accelerated_value: int = 0
+    rate: float = 0.0
 
 
 class UIEventLoop:
@@ -56,7 +57,7 @@ class UIEventLoop:
                             and (previous.value > 0) == (event.value > 0)):
                         self._queue.queue[-1] = InputEvent(
                             'rotate', previous.value + event.value, event.epoch, event.ui_epoch,
-                            previous.accelerated_value + event.accelerated_value)
+                            previous.accelerated_value + event.accelerated_value, event.rate)
                         return True
         try:
             self._queue.put_nowait(event)
