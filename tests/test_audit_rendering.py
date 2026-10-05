@@ -82,6 +82,8 @@ class AuditRenderingTests(unittest.TestCase):
         result.Draw_Motion_Menu()
         frames = [frame for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11]
         self.assertEqual(frames[-1][11:-4], b' 1.23e+12')
+        self.assertEqual(int.from_bytes(frames[-1][7:9], 'big'), 168)
+        self.assertLessEqual(168 + 9 * result.MENU_CHR_W, 240)
 
     def test_extreme_finite_numbers_render_marker_without_decimal_overflow(self):
         result = self.screen()
