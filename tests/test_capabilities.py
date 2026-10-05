@@ -247,6 +247,12 @@ class CapabilityTests(unittest.TestCase):
 
     def test_mmu_lane_led_hue_is_normalized_for_lcd_visibility(self):
         result = display(snapshot())
+        result.lcd.DWIN_WIDTH = 272
+        result.lcd.DWIN_HEIGHT = 480
+        result.lcd.Color_White = 0xffff
+        result.lcd.Color_Bg_Black = 0x0841
+        result.lcd.Select_Color = 0x33bb
+        result.lcd.font6x12 = 0
         result.pd.mmu = {
             'num_gates': 1, 'gate': 0, 'gate_status': (1,),
             'gate_color_rgb': ((1.0, 0.0, 0.0),),
