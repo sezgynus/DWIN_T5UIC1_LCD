@@ -218,7 +218,7 @@ class CapabilityTests(unittest.TestCase):
         result.lcd.font6x12 = 0
         result.Draw_MMU_Status()
         rectangles = result.lcd.Draw_Rectangle.call_args_list
-        self.assertTrue(any(call.args[0] == 1 and call.args[1] == 0x33bb
+        self.assertTrue(any(call.args[0] == 1 and call.args[1] == 0x07E0
                             for call in rectangles))
         fills = [call.args[1] for call in rectangles if call.args[0] == 1]
         self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
