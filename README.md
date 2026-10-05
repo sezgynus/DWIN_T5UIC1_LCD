@@ -70,8 +70,21 @@ python3 -m venv .venv
 ```
 
 The legacy systemd unit still needs to be updated to use this interpreter.
-A unified UI event queue and full device capability discovery are subsequent
-refactor steps.
+UI initialization, menu handlers, periodic rendering and cleanup now run on
+one owner thread. GPIO callbacks enqueue immutable rotation/press events; they
+never write to the display. Presses use edge events and capture-time debounce;
+rotation counts are preserved rather than sampled and dropped by a rate limiter.
+The bounded queue rejects overload and logs dropped input. Events from a previous
+printer connection are discarded.
+
+`PrinterData.state` is the immutable authoritative status snapshot. Existing HMI
+edit values remain separate compatibility fields; editing them cannot change the
+snapshot. Menu selection objects belong to each display instance.
+
+`run.py` waits for the UI owner and handles SIGTERM/KeyboardInterrupt cleanup.
+When constructing `DWIN_LCD` directly, call `display.wait()` to keep the process
+running and `display.lcdExit()` to stop it. Device capability discovery and further
+feature fixes are subsequent refactor steps.
 Existing installation instructions below are still being modernized.
 
 ### Library requirements 
@@ -80,7 +93,7 @@ Existing installation instructions below are still being modernized.
 
   `sudo apt-get install python3-pip python3-gpiozero python3-serial git`
 
-  `sudo pip3 install multitimer`
+  Install the refactor dependencies with the virtual-environment commands above.
 
   `git clone https://github.com/bustedlogic/DWIN_T5UIC1_LCD.git`
 
@@ -129,6 +142,10 @@ DWINLCD = DWIN_LCD(
 	button_Pin,
 	API_Key
 )
+try:
+    DWINLCD.wait()
+finally:
+    DWINLCD.lcdExit()
 ```
 
 If your control wheel is reversed (Voxelab Aquila) use this instead.
@@ -147,6 +164,10 @@ DWINLCD = DWIN_LCD(
 	button_Pin,
 	API_Key
 )
+try:
+    DWINLCD.wait()
+finally:
+    DWINLCD.lcdExit()
 ```
 
 Run with `python3 ./run.py`

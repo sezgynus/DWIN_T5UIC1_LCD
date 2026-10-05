@@ -2,6 +2,7 @@ import copy
 import logging
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
+from printer_state import PrinterState
 
 class xyze_t:
     x = 0.0
@@ -153,6 +154,7 @@ class PrinterData:
 
     def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0):
         self.client = MoonrakerClient(URL, API_Key, timeout)
+        self.state = PrinterState()
         self.status = None
         self.connection_error = None
         self.last_command_error = None
@@ -190,39 +192,6 @@ class PrinterData:
                 logging.error('LCD command %s failed: %s', path, error)
 
     # ------------- Klipper Function ----------
-
-    def klippy_callback(self, line):
-        import json
-        klippyData = json.loads(line)
-        status = None
-        if 'result' in klippyData:
-            if 'status' in klippyData['result']:
-                status = klippyData['result']['status']
-        if 'params' in klippyData:
-            if 'status' in klippyData['params']:
-                status = klippyData['params']['status']
-
-        if status:
-            if 'toolhead' in status:
-                if 'position' in status['toolhead']:
-                    self.current_position.x = status['toolhead']['position'][0]
-                    self.current_position.y = status['toolhead']['position'][1]
-                    self.current_position.z = status['toolhead']['position'][2]
-                    self.current_position.e = status['toolhead']['position'][3]
-                if 'homed_axes' in status['toolhead']:
-                    homed = status['toolhead']['homed_axes']
-                    self.current_position.home_x = 'x' in homed
-                    self.current_position.home_y = 'y' in homed
-                    self.current_position.home_z = 'z' in homed
-
-            if 'configfile' in status:
-                if 'config' in status['configfile']:
-                    if 'bltouch' in status['configfile']['config']:
-                        if 'z_offset' in status['configfile']['config']['bltouch']:
-                            if status['configfile']['config']['bltouch']['z_offset']:
-                                self.BABY_Z_VAR = float(status['configfile']['config']['bltouch']['z_offset'])
-
-            # print(status)
 
     def ishomed(self):
         if not self.connection_error and self.current_position.home_x and self.current_position.home_y and self.current_position.home_z:
@@ -289,16 +258,17 @@ class PrinterData:
     def update_variable(self):
         self.check_command_results()
         try:
-            snapshot = self.subscription.snapshot()
-            if snapshot['state'] != 'ready':
-                self.connection_error = snapshot['error'] or 'Klipper is not ready'
+            state = PrinterState.from_snapshot(self.subscription.snapshot())
+            if not state.ready:
+                self.state = state
+                self.connection_error = state.error or 'Klipper is not ready'
                 return False
-            data = snapshot['status']
+            data = state.status
             gcm = data['gcode_move']
             toolhead = data['toolhead']
             # Validate required fields before committing the snapshot.
             job = {'virtual_sdcard': data['virtual_sdcard'], 'print_stats': data['print_stats']}
-            state = job['print_stats']['state']
+            print_state = job['print_stats']['state']
             position = toolhead['position']
             x, y, z, e = position[:4]
             origin = gcm['homing_origin'][2]
@@ -319,10 +289,12 @@ class PrinterData:
             self.connection_error = str(exc)
             return False
         self.connection_error = None
-        self.SHORT_BUILD_VERSION = snapshot.get('software_version', 'unknown')
-        if snapshot['file_revision'] != self._file_revision:
+        changed = state != self.state
+        self.state = state
+        self.SHORT_BUILD_VERSION = state.software_version
+        if state.file_revision != self._file_revision:
             self.files = []
-            self._file_revision = snapshot['file_revision']
+            self._file_revision = state.file_revision
         self.thermalManager = thermal
         self.absolute_moves = absolute_moves
         self.absolute_extrude = absolute_extrude
@@ -337,9 +309,9 @@ class PrinterData:
         self.HMI_ValueStruct.offset_value = origin * 100
         self.job_Info = job
         self.file_name = job['print_stats'].get('filename', '')
-        self.status = state
+        self.status = print_state
         self.HMI_flag.print_finish = self.getPercent() == 100.0
-        return True
+        return changed
 
     def printingIsPaused(self):
         return self.job_Info['print_stats']['state'] == "paused" or self.job_Info['print_stats']['state'] == "pausing"

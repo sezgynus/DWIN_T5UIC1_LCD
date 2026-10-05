@@ -1,5 +1,4 @@
 gpiozero
 lgpio
 pyserial
-multitimer
 websocket-client>=1.6

@@ -8,6 +8,8 @@ from unittest.mock import Mock, patch
 
 def load_application():
     # Only import-time dependencies are replaced. Application methods stay real.
+    importlib.import_module('ui_events')
+    importlib.import_module('printer_state')
     dependencies = {}
     for name in ('requests', 'requests.exceptions', 'multitimer', 'encoder',
                  'gpiozero', 'gpiozero.pins', 'gpiozero.pins.lgpio', 'serial'):
@@ -65,14 +67,6 @@ class RegressionContracts(unittest.TestCase):
     @unittest.expectedFailure
     def test_paused_duration_is_retained(self):
         self.assertEqual(self.printer().duration(), 120.0)
-
-    def test_unhomed_axes_clear_previous_flags(self):
-        printer = self.printer()
-        printer.klippy_callback('{"result":{"status":{"toolhead":{"homed_axes":"xyz"}}}}')
-        printer.klippy_callback('{"result":{"status":{"toolhead":{"homed_axes":""}}}}')
-        self.assertFalse(printer.current_position.home_x)
-        self.assertFalse(printer.current_position.home_y)
-        self.assertFalse(printer.current_position.home_z)
 
     @unittest.expectedFailure
     def test_temperature_menu_applies_hotend_target(self):
@@ -150,6 +144,30 @@ class BackendConnectionTests(unittest.TestCase):
         self.assertFalse(printer.current_position.home_z)
         self.assertEqual(printer.thermalManager['temp_hotend'][0]['target'], 205)
         printer.getREST.assert_not_called()
+
+    def test_unhomed_axes_clear_previous_flags(self):
+        with patch.object(backend, 'MoonrakerClient'), patch.object(backend, 'MoonrakerSubscription'):
+            printer = backend.PrinterData()
+        printer.check_command_results = Mock()
+        snapshot = {
+            'state': 'ready', 'file_revision': 0,
+            'status': {
+                'toolhead': {'position': [0, 0, 0, 0], 'axis_maximum': [220, 220, 250, 0],
+                             'homed_axes': 'xyz'},
+                'gcode_move': {'homing_origin': [0, 0, 0, 0],
+                               'absolute_coordinates': True, 'absolute_extrude': True},
+                'print_stats': {'state': 'standby'},
+                'virtual_sdcard': {'is_active': False, 'progress': 0},
+            },
+        }
+        printer.subscription.snapshot.return_value = snapshot
+        self.assertTrue(printer.update_variable())
+        self.assertTrue(printer.current_position.home_x)
+        snapshot['status']['toolhead']['homed_axes'] = ''
+        self.assertTrue(printer.update_variable())
+        self.assertFalse(printer.current_position.home_x)
+        self.assertFalse(printer.current_position.home_y)
+        self.assertFalse(printer.current_position.home_z)
 
     def test_backend_guard_rejects_new_epoch(self):
         with patch.object(backend, 'MoonrakerClient') as transport, patch.object(backend, 'MoonrakerSubscription'):

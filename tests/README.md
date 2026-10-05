@@ -31,3 +31,9 @@ arriving before the subscription response, Klipper lifecycle changes, reconnect,
 file-list invalidation and command rejection after a connection-epoch change.
 The fake socket exercises the subscriber's real bootstrap/reconnect code; no
 running Moonraker server or physical printer is required.
+
+UI coverage checks concurrent producers, FIFO order, one thread for initialization,
+events/ticks/cleanup, bounded queue overload, startup failures, exception recovery,
+press debounce, stale connection events and deeply immutable printer snapshots.
+An integration test runs real menu rendering and UART packet construction against
+a fake serial port and confirms writes and close all occur on the UI owner.

@@ -1,17 +1,13 @@
 import time
-import multitimer
-import atexit
+import logging
+from threading import Lock
+from ui_events import UIEventLoop, InputEvent
 
 from encoder import Encoder
 from gpiozero import Button, Device
 from gpiozero.pins.lgpio import LGPIOFactory
 from printerInterface import PrinterData
 from DWIN_Screen import T5UIC1_LCD
-Device.pin_factory = LGPIOFactory()
-
-def current_milli_time():
-    return round(time.time() * 1000)
-
 
 def _MAX(lhs, rhs):
     if lhs > rhs:
@@ -28,8 +24,9 @@ def _MIN(lhs, rhs):
 
 
 class select_t:
-    now = 0
-    last = 0
+    def __init__(self):
+        self.now = 0
+        self.last = 0
 
     def set(self, v):
         self.now = self.last = v
@@ -74,18 +71,9 @@ class DWIN_LCD:
     DWIN_SCROLL_UP = 2
     DWIN_SCROLL_DOWN = 3
 
-    select_page = select_t()
-    select_file = select_t()
-    select_print = select_t()
-    select_prepare = select_t()
-
-    select_control = select_t()
-    select_axis = select_t()
-    select_temp = select_t()
-    select_motion = select_t()
-    select_tune = select_t()
-    select_PLA = select_t()
-    select_ABS = select_t()
+    SELECTIONS = ('select_page', 'select_file', 'select_print', 'select_prepare',
+                  'select_control', 'select_axis', 'select_temp',
+                  'select_motion', 'select_tune', 'select_PLA', 'select_ABS')
 
     index_file = MROWS
     index_prepare = MROWS
@@ -142,9 +130,7 @@ class DWIN_LCD:
     ENCODER_DIFF_CW = 1  # clockwise rotation
     ENCODER_DIFF_CCW = 2  # counterclockwise rotation
     ENCODER_DIFF_ENTER = 3   # click
-    ENCODER_WAIT = 80
     ENCODER_WAIT_ENTER = 300
-    EncoderRateLimit = True
 
 
     dwin_zoffset = 0.0
@@ -302,41 +288,118 @@ class DWIN_LCD:
     # Dwen serial screen initialization
     # Passing parameters: serial port number
     # DWIN screen uses serial port 1 to send
-    def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key, moonraker_url='http://127.0.0.1:7125', request_timeout=5.0):
+    def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key,
+                 moonraker_url='http://127.0.0.1:7125', request_timeout=5.0):
+        self._closed = False
+        self.encoder = self.button = self.lcd = self.pd = None
+        self._settings = (USARTx, encoder_pins, button_pin, octoPrint_API_Key,
+                          moonraker_url, request_timeout)
+        self._input_lock = Lock()
+        self._producer_value = 0
+        self._last_press = float('-inf')
+        self._encoder_event = self.ENCODER_DIFF_NO
+        self._loop = UIEventLoop(self._initialize, self._process_input,
+                                 self.EachMomentUpdate, self._close_resources)
+        self._loop.start()
+
+    def _initialize(self):
+        USARTx, encoder_pins, button_pin, api_key, url, timeout = self._settings
+        Device.pin_factory = LGPIOFactory()
+        for name in self.SELECTIONS:
+            setattr(self, name, select_t())
         self.encoder = Encoder(encoder_pins[0], encoder_pins[1])
-        self.button_pin = button_pin
-        self.button = Button(self.button_pin, pull_up=True)
-        self.button.when_pressed = self.encoder_has_data
-        self.button.when_released = self.encoder_has_data
-        self.encoder.callback = self.encoder_has_data
-        self.EncodeLast = 0
-        self.EncodeMS = current_milli_time() + self.ENCODER_WAIT
-        self.EncodeEnter = current_milli_time() + self.ENCODER_WAIT_ENTER
+        self.button = Button(button_pin, pull_up=True, bounce_time=0.05)
         self.next_rts_update_ms = 0
         self.last_cardpercentValue = 101
         self.lcd = T5UIC1_LCD(USARTx)
         self.checkkey = self.MainMenu
-        self.pd = PrinterData(octoPrint_API_Key, moonraker_url, request_timeout)
-        self.timer = multitimer.MultiTimer(interval=2, function=self.EachMomentUpdate)
+        self.pd = PrinterData(api_key, url, timeout)
         self.HMI_ShowBoot()
-        print("Boot looks good")
-        print("Testing Web-services")
         self.pd.init_Webservices()
         self.HMI_Init()
         self.HMI_StartFrame(False)
         self._offline = bool(self.pd.connection_error)
         if self._offline:
-            self.HMI_ShowBoot('Moonraker unavailable')
+            self._show_message('Moonraker unavailable')
+        # Enable producers only after all UI/backend resources are initialized.
+        with self._input_lock:
+            self._producer_value = self.encoder.getValue()
+            self.encoder.callback = self.encoder_has_data
+        self.button.when_pressed = self._button_pressed
+        self.button.when_released = None
 
     def lcdExit(self):
-        if getattr(self, '_closed', False):
+        self._loop.close()
+
+    def wait(self):
+        self._loop.wait()
+
+    def _close_resources(self):
+        if self._closed:
             return
         self._closed = True
-        self.timer.stop()
-        self.button.close()
-        self.encoder.close()
-        self.pd.close()
-        self.lcd.MYSERIAL1.close()
+        for resource in (self.button, self.encoder, self.pd):
+            if resource is not None:
+                try:
+                    resource.close()
+                except Exception:
+                    logging.exception('LCD resource cleanup failed')
+        if self.lcd is not None:
+            self.lcd.MYSERIAL1.close()
+
+    def _show_message(self, message):
+        self.Clear_Main_Window()
+        self.lcd.Draw_String(False, True, self.lcd.DWIN_FONT_STAT,
+                             self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                             10, 50, message)
+        self.lcd.UpdateLCD()
+
+    def _enqueue_input(self, kind, value):
+        if self.pd is None or self._closed:
+            return
+        snapshot = self.pd.subscription.snapshot()
+        if snapshot['state'] != 'ready':
+            return
+        if not self._loop.post(InputEvent(kind, value, snapshot['epoch'])):
+            logging.warning('LCD input queue full or closed; input discarded')
+
+    def encoder_has_data(self, value):
+        # GPIO thread: capture rotation only; never draw or execute UI handlers.
+        with self._input_lock:
+            delta = value - self._producer_value
+            self._producer_value = value
+            if delta:
+                self._enqueue_input('rotate', delta)
+
+    def _button_pressed(self):
+        # Capture a press edge once; rotation while held must not create Enter.
+        with self._input_lock:
+            now = time.monotonic()
+            if now - self._last_press >= self.ENCODER_WAIT_ENTER / 1000:
+                self._last_press = now
+                self._enqueue_input('press', 1)
+
+    def _process_input(self, event):
+        snapshot = self.pd.subscription.snapshot()
+        if (snapshot['state'] != 'ready' or snapshot['epoch'] != event.epoch
+                or self.pd.connection_error or self._closed):
+            return
+        if event.kind == 'rotate':
+            direction = self.ENCODER_DIFF_CCW if event.value > 0 else self.ENCODER_DIFF_CW
+            count = abs(event.value)
+        elif event.kind == 'press':
+            direction, count = self.ENCODER_DIFF_ENTER, 1
+        else:
+            return
+        try:
+            for _ in range(count):
+                current = self.pd.subscription.snapshot()
+                if current['state'] != 'ready' or current['epoch'] != event.epoch:
+                    break
+                self._encoder_event = direction
+                self._dispatch_input()
+        finally:
+            self._encoder_event = self.ENCODER_DIFF_NO
 
     def MBASE(self, L):
         return 49 + self.MLINE * L
@@ -365,8 +428,6 @@ class DWIN_LCD:
         # HMI_SDCardInit()
 
         self.HMI_SetLanguage()
-        self.timer.start()
-        atexit.register(self.lcdExit)
 
     def HMI_StartFrame(self, with_update):
         self.last_status = self.pd.status
@@ -584,7 +645,6 @@ class DWIN_LCD:
                     self.MBASE(self.PREPARE_CASE_ZOFF + self.MROWS - self.index_prepare),
                     self.pd.HMI_ValueStruct.offset_value
                 )
-                self.EncoderRateLimit = False
 
             elif self.select_prepare.now == self.PREPARE_CASE_PLA:  # PLA preheat
                 self.pd.preheat("PLA")
@@ -787,7 +847,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.TUNE_CASE_SPEED + self.MROWS - self.index_tune),
                     self.pd.feedrate_percentage
                 )
-                self.EncoderRateLimit = False
             elif self.select_tune.now == self.TUNE_CASE_ZOFF:   #z offset
                 self.checkkey = self.Homeoffset
                 self.lcd.Draw_Signed_Float(
@@ -874,7 +933,6 @@ class DWIN_LCD:
                     3, 1, 216, self.MBASE(1),
                     self.pd.HMI_ValueStruct.Move_X_scale
                 )
-                self.EncoderRateLimit = False
             elif self.select_axis.now == 2:  # Y axis move
                 self.checkkey = self.Move_Y
                 self.pd.HMI_ValueStruct.Move_Y_scale = self.pd.current_position.y * self.MINUNITMULT
@@ -883,7 +941,6 @@ class DWIN_LCD:
                     3, 1, 216, self.MBASE(2),
                     self.pd.HMI_ValueStruct.Move_Y_scale
                 )
-                self.EncoderRateLimit = False
             elif self.select_axis.now == 3:  # Z axis move
                 self.checkkey = self.Move_Z
                 self.pd.HMI_ValueStruct.Move_Z_scale = self.pd.current_position.z * self.MINUNITMULT
@@ -892,7 +949,6 @@ class DWIN_LCD:
                     3, 1, 216, self.MBASE(3),
                     self.pd.HMI_ValueStruct.Move_Z_scale
                 )
-                self.EncoderRateLimit = False
             elif self.select_axis.now == 4:  # Extruder
                 # window tips
                 if self.pd.PREVENT_COLD_EXTRUSION:
@@ -907,7 +963,6 @@ class DWIN_LCD:
                     self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4),
                     self.pd.HMI_ValueStruct.Move_E_scale
                 )
-                self.EncoderRateLimit = False
         self.lcd.UpdateLCD()
 
     def HMI_Move_X(self):
@@ -916,7 +971,6 @@ class DWIN_LCD:
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.EncoderRateLimit = True
             self.lcd.Draw_FloatValue(
                 True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 3, 1, 216, self.MBASE(1),
@@ -948,7 +1002,6 @@ class DWIN_LCD:
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.EncoderRateLimit = True
             self.lcd.Draw_FloatValue(
                 True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 3, 1, 216, self.MBASE(2),
@@ -981,7 +1034,6 @@ class DWIN_LCD:
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.EncoderRateLimit = True
             self.lcd.Draw_FloatValue(
                 True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 3, 1, 216, self.MBASE(3),
@@ -1015,7 +1067,6 @@ class DWIN_LCD:
 
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.EncoderRateLimit = True
             self.pd.last_E_scale = self.pd.HMI_ValueStruct.Move_E_scale
             self.lcd.Draw_Signed_Float(
                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1, 216,
@@ -1061,7 +1112,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(1),
                     self.pd.thermalManager['temp_hotend'][0]['target']
                 )
-                self.EncoderRateLimit = False
             elif self.select_temp.now == self.TEMP_CASE_BED:  # Bed temperature
                 self.checkkey = self.BedTemp
                 self.pd.HMI_ValueStruct.Bed_Temp = self.pd.thermalManager['temp_bed']['target']
@@ -1070,7 +1120,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(2),
                     self.pd.thermalManager['temp_bed']['target']
                 )
-                self.EncoderRateLimit = False
             elif self.select_temp.now == self.TEMP_CASE_FAN:  # Fan speed
                 self.checkkey = self.FanSpeed
                 self.pd.HMI_ValueStruct.Fan_speed = self.pd.thermalManager['fan_speed'][0]
@@ -1078,7 +1127,6 @@ class DWIN_LCD:
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 216, self.MBASE(3), self.pd.thermalManager['fan_speed'][0]
                 )
-                self.EncoderRateLimit = False
 
             elif self.select_temp.now == self.TEMP_CASE_PLA:  # PLA preheat setting
                 self.checkkey = self.PLAPreheat
@@ -1201,7 +1249,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.PREHEAT_CASE_TEMP),
                     self.pd.material_preset[0].hotend_temp
                 )
-                self.EncoderRateLimit = False
             elif self.select_PLA.now == self.PREHEAT_CASE_BED:  # Bed temperature
                 self.checkkey = self.BedTemp
                 self.pd.HMI_ValueStruct.Bed_Temp = self.pd.material_preset[0].bed_temp
@@ -1210,7 +1257,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.PREHEAT_CASE_BED),
                     self.pd.material_preset[0].bed_temp
                 )
-                self.EncoderRateLimit = False
             elif self.select_PLA.now == self.PREHEAT_CASE_FAN:  # Fan speed
                 self.checkkey = self.FanSpeed
                 self.pd.HMI_ValueStruct.Fan_speed = self.pd.material_preset[0].fan_speed
@@ -1219,7 +1265,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.PREHEAT_CASE_FAN),
                     self.pd.material_preset[0].fan_speed
                 )
-                self.EncoderRateLimit = False
             elif self.select_PLA.now == self.PREHEAT_CASE_SAVE:  # Save PLA configuration
                 success = self.pd.save_settings()
                 self.HMI_AudioFeedback(success)
@@ -1253,7 +1298,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.PREHEAT_CASE_TEMP),
                     self.pd.material_preset[1].hotend_temp
                 )
-                self.EncoderRateLimit = False
             elif self.select_ABS.now == self.PREHEAT_CASE_BED:  # Bed temperature
                 self.checkkey = self.BedTemp
                 self.pd.HMI_ValueStruct.Bed_Temp = self.pd.material_preset[1].bed_temp
@@ -1262,7 +1306,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.PREHEAT_CASE_BED),
                     self.pd.material_preset[1].bed_temp
                 )
-                self.EncoderRateLimit = False
             elif self.select_ABS.now == self.PREHEAT_CASE_FAN:  # Fan speed
                 self.checkkey = self.FanSpeed
                 self.pd.HMI_ValueStruct.Fan_speed = self.pd.material_preset[1].fan_speed
@@ -1271,7 +1314,6 @@ class DWIN_LCD:
                     3, 216, self.MBASE(self.PREHEAT_CASE_FAN),
                     self.pd.material_preset[1].fan_speed
                 )
-                self.EncoderRateLimit = False
             elif self.select_ABS.now == self.PREHEAT_CASE_SAVE:  # Save PLA configuration
                 success = self.pd.save_settings()
                 self.HMI_AudioFeedback(success)
@@ -1292,7 +1334,6 @@ class DWIN_LCD:
             temp_line = self.TUNE_CASE_TEMP + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER):
-            self.EncoderRateLimit = True
             if (self.pd.HMI_ValueStruct.show_mode == -1):  # temperature
                 self.checkkey = self.TemperatureID
                 self.lcd.Draw_IntValue(
@@ -1361,7 +1402,6 @@ class DWIN_LCD:
             bed_line = self.TUNE_CASE_TEMP + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER):
-            self.EncoderRateLimit = True
             if (self.pd.HMI_ValueStruct.show_mode == -1):  # temperature
                 self.checkkey = self.TemperatureID
                 self.lcd.Draw_IntValue(
@@ -1446,7 +1486,6 @@ class DWIN_LCD:
             zoff_line = self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER): #if (applyencoder(encoder_diffstate, offset_value))
-            self.EncoderRateLimit = True
             if self.pd.HAS_BED_PROBE:
                 self.pd.offset_z(self.dwin_zoffset)
             else:
@@ -2214,12 +2253,13 @@ class DWIN_LCD:
         # variable update
         update = self.pd.update_variable()
         if self.pd.connection_error:
+            if not self._offline:
+                self._show_message('Moonraker unavailable')
             self._offline = True
-            self.HMI_ShowBoot('Moonraker unavailable')
             return
         if self.pd.last_command_error:
             self._offline = True
-            self.HMI_ShowBoot('Command failed; check log')
+            self._show_message('Command failed; check log')
             self.pd.last_command_error = None
             return
         if getattr(self, '_offline', False):
@@ -2261,9 +2301,7 @@ class DWIN_LCD:
             self.Draw_Status_Area(update)
         self.lcd.UpdateLCD()
 
-    def encoder_has_data(self, val):
-        if not hasattr(self, 'pd') or self.pd.connection_error or getattr(self, '_closed', False):
-            return
+    def _dispatch_input(self):
         if self.checkkey == self.MainMenu:
             self.HMI_MainMenu()
         elif self.checkkey == self.SelectFile:
@@ -2326,24 +2364,8 @@ class DWIN_LCD:
             self.HMI_StepXYZE()
 
     def get_encoder_state(self):
-        if self.EncoderRateLimit:
-            if self.EncodeMS > current_milli_time():
-                return self.ENCODER_DIFF_NO
-            self.EncodeMS = current_milli_time() + self.ENCODER_WAIT
-
-        if self.encoder.value < self.EncodeLast:
-            self.EncodeLast = self.encoder.value
-            return self.ENCODER_DIFF_CW
-        elif self.encoder.value > self.EncodeLast:
-            self.EncodeLast = self.encoder.value
-            return self.ENCODER_DIFF_CCW
-        elif self.button.is_pressed:
-            if self.EncodeEnter > current_milli_time(): # prevent double clicks
-                return self.ENCODER_DIFF_NO
-            self.EncodeEnter = current_milli_time() + self.ENCODER_WAIT_ENTER
-            return self.ENCODER_DIFF_ENTER
-        else:
-            return self.ENCODER_DIFF_NO
+        # Input is an immutable queued event, not a sample of current GPIO levels.
+        return self._encoder_event
 
     def HMI_AudioFeedback(self, success=True):
         if (success):
