@@ -460,8 +460,7 @@ class PrinterData:
         with self._jog_lock:
             self._jog_restore = restore
         try:
-            future = self.postREST('/printer/gcode/script', json={'script': script},
-                                   cleanup={'script': restore}, report_error=False)
+            future = self.sendGCode(script, cleanup=restore, report_error=False)
         except Exception:
             # Submission failed before sending anything.
             with self._jog_lock:
@@ -519,7 +518,7 @@ class PrinterData:
             raise ValueError('Restore jog state before sending motion commands')
         return self.subscription.notify('printer.gcode.script', {'script': gcode})
 
-    def sendGCode(self, gcode, cleanup=None):
+    def sendGCode(self, gcode, cleanup=None, report_error=True):
         if cleanup is None and self.jog_recovery_required:
             # Heater/fan shutdown and temperature control do not depend on modes.
             allowed = {'TURN_OFF_HEATERS', 'SET_HEATER_TEMPERATURE', 'M106', 'M107'}
@@ -528,8 +527,9 @@ class PrinterData:
                 raise ValueError('Restore jog state before sending motion commands')
         if cleanup is not None:
             return self.postREST('/printer/gcode/script', json={'script': gcode},
-                                 cleanup={'script': cleanup})
-        return self.postREST('/printer/gcode/script', json={'script': gcode})
+                                 cleanup={'script': cleanup}, report_error=report_error)
+        return self.postREST('/printer/gcode/script', json={'script': gcode},
+                             report_error=report_error)
 
     def disable_all_heaters(self):
         if not self.capabilities.has_heaters:
