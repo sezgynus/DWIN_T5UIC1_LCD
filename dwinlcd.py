@@ -2231,7 +2231,7 @@ class DWIN_LCD:
             flange_edge = 0xD58A
             # Keep lane spacing unchanged, but narrow the reel itself so its
             # height-to-width ratio resembles a physical filament spool.
-            reel_w = max(28, int(slot * 0.78))
+            reel_w = max(28, int(slot * 0.70))
             reel_x = x + (slot - reel_w) // 2
             flange_w = max(5, reel_w // 9)
             body_left = reel_x + flange_w
@@ -2267,8 +2267,9 @@ class DWIN_LCD:
             label = str(gate + 1)
             label_w = max(24, min(38, slot - 8))
             lx0, lx1 = cx - label_w // 2, cx + label_w // 2
-            label_bg = self.lcd.Select_Color if gate == active else self.lcd.Color_Bg_Black
-            border = self.lcd.Select_Color if gate == active else self.lcd.Line_Color
+            active_green = 0x07E0
+            label_bg = active_green if gate == active else self.lcd.Color_Bg_Black
+            border = active_green if gate == active else self.lcd.Line_Color
             self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
             self.lcd.Draw_Rectangle(0, border, lx0, top + 64, lx1, top + 78)
             self.lcd.Draw_String(False, True, self.lcd.font6x12,
