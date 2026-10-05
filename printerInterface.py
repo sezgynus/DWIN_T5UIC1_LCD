@@ -162,6 +162,7 @@ class PrinterData:
         self.files = []
         self.file_error = None
         self._files_loaded = False
+        self._file_epoch = -1
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
         self.probe_wizard = ProbeWizard(self)
@@ -265,6 +266,7 @@ class PrinterData:
             state = PrinterState.from_snapshot(self.subscription.snapshot())
             if not state.ready:
                 self.state = state
+                self._files_loaded = False
                 self.connection_error = state.error or 'Klipper is not ready'
                 return False
             data = state.status
@@ -300,6 +302,10 @@ class PrinterData:
         self.capabilities = caps
         self._apply_capabilities(caps)
         self.SHORT_BUILD_VERSION = state.software_version
+        if state.epoch != self._file_epoch:
+            self._files_loaded = False
+            self.files = []
+            self._file_epoch = state.epoch
         if state.file_revision != self._file_revision:
             self._files_loaded = False
             self._file_revision = state.file_revision

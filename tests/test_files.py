@@ -123,3 +123,27 @@ class FileTests(unittest.TestCase):
         self.assertEqual(result.Draw_Menu_Line.call_count, result.TROWS)
         self.assertEqual(result.Draw_Menu_Line.call_args.args[-1], '09.gcode')
         result.pd.getREST.assert_called_once()
+
+    def test_reconnect_same_revision_invalidates_cache_and_refetches(self):
+        result = self.backend(['old.gcode'])
+        data = snapshot()
+        data['epoch'] = 2
+        result.subscription.snapshot.return_value = data
+        result.update_variable()
+        self.assertFalse(result._files_loaded)
+        self.assertEqual(result.files, [])
+        with self.assertRaises(ValueError):
+            result.openAndPrintFile('old.gcode')
+        result.getREST.return_value = {'result': [{'path': 'new.gcode'}]}
+        self.assertEqual(result.GetFiles(), ('new.gcode',))
+        self.assertEqual(result.getREST.call_count, 2)
+
+    def test_offline_drops_start_authority_before_ready_snapshot(self):
+        result = self.backend(['old.gcode'])
+        data = snapshot()
+        data.update(state='disconnected', epoch=2)
+        result.subscription.snapshot.return_value = data
+        result.update_variable()
+        self.assertFalse(result._files_loaded)
+        with self.assertRaises(ValueError):
+            result.openAndPrintFile('old.gcode')

@@ -781,6 +781,7 @@ class DWIN_LCD:
         self._file_paths = paths
         self.select_file.set(paths.index(selected) + 1 if selected in paths else 0)
         self.index_file = max(self.MROWS, self.select_file.now)
+        self._file_view_epoch = self.pd.state.epoch
         self._file_view_revision = self.pd.state.file_revision
         return True
 
@@ -788,7 +789,8 @@ class DWIN_LCD:
         event = self.get_encoder_state()
         if event == self.ENCODER_DIFF_NO or getattr(self, '_pending_start', None):
             return
-        if self.pd.state.file_revision != getattr(self, '_file_view_revision', -1):
+        if (self.pd.state.epoch != getattr(self, '_file_view_epoch', -1)
+                or self.pd.state.file_revision != getattr(self, '_file_view_revision', -1)):
             self._refresh_file_snapshot()
             self.Redraw_SD_List()
             # Do not apply an Enter captured against the previous list.
@@ -2240,7 +2242,9 @@ class DWIN_LCD:
         self.pd.probe_wizard.update()
         if self._poll_print_start() or getattr(self, '_start_error_visible', False):
             return
-        if self.checkkey == self.SelectFile and self.pd.state.file_revision != getattr(self, '_file_view_revision', -1):
+        if self.checkkey == self.SelectFile and (
+                self.pd.state.epoch != getattr(self, '_file_view_epoch', -1)
+                or self.pd.state.file_revision != getattr(self, '_file_view_revision', -1)):
             if self._refresh_file_snapshot():
                 self.Redraw_SD_List()
         if self.pd.last_command_error:
