@@ -171,6 +171,7 @@ class JogTests(unittest.TestCase):
     def test_active_move_editor_tracks_external_position_when_idle(self):
         data = snapshot()
         result = display(data)
+        result.last_status = result.pd.status
         result.checkkey = result.Move_X
         result._live_jog = True
         result._live_jog_future = None
@@ -185,6 +186,7 @@ class JogTests(unittest.TestCase):
     def test_manual_move_editor_preserves_unconfirmed_value(self):
         data = snapshot()
         result = display(data)
+        result.last_status = result.pd.status
         result.checkkey = result.Move_X
         result._live_jog = False
         result._live_jog_future = None
@@ -199,6 +201,7 @@ class JogTests(unittest.TestCase):
     def test_active_move_editor_does_not_resync_during_live_jog(self):
         data = snapshot()
         result = display(data)
+        result.last_status = result.pd.status
         result.checkkey = result.Move_X
         result._live_jog_future = Future()
         result._live_jog_pending = None
