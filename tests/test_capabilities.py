@@ -109,7 +109,7 @@ class CapabilityTests(unittest.TestCase):
         with patch.object(ui.time, 'monotonic', return_value=0):
             result.Draw_Status_Area(True)
         calls = result.lcd.Draw_IntValue.call_args_list
-        coordinates = [(call.args[8], call.args[9]) for call in calls]
+        coordinates = [(call.args[7], call.args[8]) for call in calls]
         self.assertIn((26, 382), coordinates)
         self.assertIn((82, 382), coordinates)
         self.assertIn((26, 416), coordinates)
