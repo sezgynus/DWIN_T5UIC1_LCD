@@ -297,3 +297,20 @@ a disconnect can leave its outcome uncertain until the printer reconnects.
 The session/state and acceptance checks follow [manual_probe.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/manual_probe.py)
 and [probe.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/probe.py).
 Physical calibration has not been validated by the isolated tests.
+
+### Command feedback
+
+Temperature/fan targets, preheat/cooldown, jog, homing, runtime offset, motion
+limits, print speed and pause/resume/cancel use a common waiting/error flow.
+While a command is pending, new input is ignored. HTTP failure, cancellation,
+connection change or an unconfirmed result after 30 seconds produces a retained
+error message; Enter dismisses it without retrying the command. A timeout can
+still leave a running command's outcome uncertain.
+
+Successful HTTP acceptance restores the current menu and plays the acceptance
+sound. Pause/resume/cancel additionally wait for subscribed print state; homing
+waits for homed axes. For other G-code actions the sound means command acceptance,
+not that motion/temperature has physically reached its goal. Displayed printer
+values remain based on subscription data. Cooldown submits installed heaters
+and part-fan shutdown in one script. Print start and probe calibration retain
+their dedicated result/state flows.

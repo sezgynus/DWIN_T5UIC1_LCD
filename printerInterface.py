@@ -347,15 +347,15 @@ class PrinterData:
 
     def cancel_job(self): #fixed
         print('Canceling job:')
-        self.postREST('/printer/print/cancel', json=None)
+        return self.postREST('/printer/print/cancel', json=None)
 
     def pause_job(self): #fixed
         print('Pausing job:')
-        self.postREST('/printer/print/pause', json=None)
+        return self.postREST('/printer/print/pause', json=None)
 
     def resume_job(self): #fixed
         print('Resuming job:')
-        self.postREST('/printer/print/resume', json=None)
+        return self.postREST('/printer/print/resume', json=None)
 
     def set_feedrate(self, fr):
         fr = float(fr)
@@ -452,6 +452,15 @@ class PrinterData:
             return None
         return self.sendGCode('TURN_OFF_HEATERS')
 
+    def cooldown(self):
+        commands = []
+        if self.capabilities.has_heaters:
+            commands.append('TURN_OFF_HEATERS')
+        if self.capabilities.fan:
+            commands.append(self._fan_command(0))
+        if commands:
+            return self.sendGCode('\n'.join(commands))
+
     def zero_fan_speeds(self):
         if self.HAS_FAN:
             return self.setFanSpeed(0)
@@ -522,4 +531,4 @@ class PrinterData:
             return self.sendGCode('\n'.join(commands))
 
     def setZOffset(self, offset):
-        self.sendGCode('SET_GCODE_OFFSET Z=%s MOVE=1' % offset)
+        return self.sendGCode('SET_GCODE_OFFSET Z=%s MOVE=1' % offset)

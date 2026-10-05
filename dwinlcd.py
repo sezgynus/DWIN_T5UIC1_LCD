@@ -1,5 +1,7 @@
 import time
 import logging
+from concurrent.futures import Future
+from command_feedback import CommandFeedback
 from threading import Lock
 from ui_events import UIEventLoop, InputEvent
 
@@ -373,6 +375,46 @@ class DWIN_LCD:
             else:
                 raise
 
+    def _action(self, label, callback, expected=None):
+        if getattr(self, '_action_feedback', None) is not None:
+            return None
+        try:
+            future = callback()
+        except ValueError as error:
+            logging.warning('LCD action %s rejected: %s', label, error)
+            future = Future()
+            future.set_exception(error)
+        if isinstance(future, Future):
+            self._action_feedback = CommandFeedback(future, label, self.pd.state.epoch, expected)
+        return future
+
+    def _restore_action_screen(self):
+        screens = {self.Prepare: self.Draw_Prepare_Menu, self.Control: self.Draw_Control_Menu,
+                   self.TemperatureID: self.Draw_Temperature_Menu, self.Tune: self.Draw_Tune_Menu,
+                   self.Motion: self.Draw_Motion_Menu, self.AxisMove: self.Draw_Move_Menu}
+        if self.checkkey == self.Last_Prepare and self.pd.ishomed():
+            self.CompletedHoming()
+        elif self.checkkey in screens:
+            screens[self.checkkey]()
+        else:
+            self.HMI_StartFrame(False)
+        self.lcd.UpdateLCD()
+
+    def _poll_action(self):
+        feedback = getattr(self, '_action_feedback', None)
+        if feedback is None:
+            return False
+        phase = feedback.update(self.pd.state, bool(self.pd.connection_error))
+        if phase == 'accepted':
+            self._action_feedback = None
+            self.HMI_AudioFeedback(True)
+            self._restore_action_screen()
+            return False
+        if phase == 'error':
+            self.pd.last_command_error = None
+        self._show_message(feedback.message)
+        return True
+
     def _configure_menus(self):
         caps = self.pd.capabilities
         if getattr(self, '_menu_capabilities', None) == caps:
@@ -515,7 +557,8 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def _enqueue_input(self, kind, value):
-        if self.pd is None or self._closed or not getattr(self, '_uart_online', True):
+        if (self.pd is None or self._closed or not getattr(self, '_uart_online', True)
+                or getattr(self, '_action_feedback', None) is not None):
             return
         snapshot = self.pd.subscription.snapshot()
         if snapshot['state'] != 'ready':
@@ -561,6 +604,9 @@ class DWIN_LCD:
                     break
                 self._encoder_event = direction
                 self._dispatch_input()
+                if getattr(self, '_action_feedback', None):
+                    self._poll_action()
+                    break
         except OSError:
             if self.lcd is not None and getattr(self.lcd, '_closed', False):
                 self._uart_failed()
@@ -805,14 +851,14 @@ class DWIN_LCD:
                     self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1,
                                                216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
             elif self.select_prepare.now == self.PREPARE_CASE_DISA:  # Disable steppers
-                self.pd.sendGCode("M84")
+                self._action("Disable steppers", lambda: self.pd.sendGCode("M84"))
             elif self.select_prepare.now == self.PREPARE_CASE_HOME:  # Homing
                 self.checkkey = self.Last_Prepare
                 self.index_prepare = self.MROWS
                 self.pd.current_position.homing()
                 self.pd.HMI_flag.home_flag = True
                 self.Popup_Window_Home()
-                self.pd.sendGCode("G28")
+                self._action("Home", lambda: self.pd.sendGCode("G28"), self.pd.ishomed)
             elif self.select_prepare.now == self.PREPARE_CASE_ZOFF:  # Z-offset
                 self.checkkey = self.Homeoffset
 
@@ -825,15 +871,13 @@ class DWIN_LCD:
                 )
 
             elif self.select_prepare.now == self.PREPARE_CASE_PLA:  # PLA preheat
-                self.pd.preheat("PLA")
+                self._action("Preheat PLA", lambda: self.pd.preheat("PLA"))
 
             elif self.select_prepare.now == self.PREPARE_CASE_ABS:  # ABS preheat
-                self.pd.preheat("ABS")
+                self._action("Preheat ABS", lambda: self.pd.preheat("ABS"))
 
             elif self.select_prepare.now == self.PREPARE_CASE_COOL:  # Cool
-                if self.pd.HAS_FAN:
-                    self.pd.zero_fan_speeds()
-                self.pd.disable_all_heaters()
+                self._action('Cooldown', self.pd.cooldown)
 
             elif self.select_prepare.now == self.PREPARE_CASE_LANG:  # Toggle Language
                 self.HMI_ToggleLanguage()
@@ -960,8 +1004,7 @@ class DWIN_LCD:
                 self.Draw_Tune_Menu()
             elif self.select_print.now == 1:  # Pause
                 if (self.pd.HMI_flag.pause_flag):
-                    self.ICON_Pause()
-                    self.pd.resume_job()
+                    self._action("Resume", self.pd.resume_job, lambda: self.pd.status == "printing")
                 else:
                     self.pd.HMI_flag.select_flag = True
                     self.checkkey = self.Print_window
@@ -985,14 +1028,11 @@ class DWIN_LCD:
             if (self.select_print.now == 1):  # pause window
                 if (self.pd.HMI_flag.select_flag):
                     self.pd.HMI_flag.pause_action = True
-                    self.ICON_Continue()
-                    self.pd.pause_job()
+                    self._action("Pause", self.pd.pause_job, self.pd.printingIsPaused)
                 self.Goto_PrintProcess()
             elif (self.select_print.now == 2):  # stop window
                 if (self.pd.HMI_flag.select_flag):
-                    self.dwin_abort_flag = True
-                    self.pd.cancel_job()
-                    self.Goto_MainMenu()
+                    self._action("Cancel", self.pd.cancel_job, lambda: self.pd.status == "cancelled")
                 else:
                     self.Goto_PrintProcess()  # cancel stop
         self.lcd.UpdateLCD()
@@ -1043,7 +1083,7 @@ class DWIN_LCD:
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.Tune
             self.encoderRate = True
-            self.pd.set_feedrate(self.pd.HMI_ValueStruct.print_speed)
+            self._action("Print speed", lambda: self.pd.set_feedrate(self.pd.HMI_ValueStruct.print_speed))
 
         self.lcd.Draw_IntValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
@@ -1149,7 +1189,7 @@ class DWIN_LCD:
                 3, 1, 216, self.MBASE(1),
                 self.pd.HMI_ValueStruct.Move_X_scale
             )
-            self.pd.moveAbsolute('X', self.pd.HMI_ValueStruct.Move_X_scale / self.MINUNITMULT, 5000)
+            self._action("Jog X", lambda: self.pd.moveAbsolute('X', self.pd.HMI_ValueStruct.Move_X_scale / self.MINUNITMULT, 5000))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1180,7 +1220,7 @@ class DWIN_LCD:
                 self.pd.HMI_ValueStruct.Move_Y_scale
             )
 
-            self.pd.moveAbsolute('Y', self.pd.HMI_ValueStruct.Move_Y_scale / self.MINUNITMULT, 5000)
+            self._action("Jog Y", lambda: self.pd.moveAbsolute('Y', self.pd.HMI_ValueStruct.Move_Y_scale / self.MINUNITMULT, 5000))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1210,7 +1250,7 @@ class DWIN_LCD:
                 3, 1, 216, self.MBASE(3),
                 self.pd.HMI_ValueStruct.Move_Z_scale
             )
-            self.pd.moveAbsolute('Z', self.pd.HMI_ValueStruct.Move_Z_scale / self.MINUNITMULT, 600)
+            self._action("Jog Z", lambda: self.pd.moveAbsolute('Z', self.pd.HMI_ValueStruct.Move_Z_scale / self.MINUNITMULT, 600))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1240,7 +1280,7 @@ class DWIN_LCD:
                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1, 216,
                 self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale
             )
-            self.pd.moveAbsolute('E', self.pd.HMI_ValueStruct.Move_E_scale / self.MINUNITMULT, 300)
+            self._action("Jog E", lambda: self.pd.moveAbsolute('E', self.pd.HMI_ValueStruct.Move_E_scale / self.MINUNITMULT, 300))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1322,7 +1362,7 @@ class DWIN_LCD:
                 selection = self.select_PLA if profile == 0 else self.select_ABS
                 self._draw_capability_menu('preheat', selection, profile=profile)
             else:
-                self.pd.setFanSpeed(value)
+                self._action("Fan speed", lambda: self.pd.setFanSpeed(value))
                 self.checkkey = self.TemperatureID if mode == -1 else self.Tune
                 self.Draw_Temperature_Menu() if mode == -1 else self.Draw_Tune_Menu()
         elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
@@ -1380,7 +1420,7 @@ class DWIN_LCD:
                     3, 216, self.MBASE(temp_line),
                     self.pd.HMI_ValueStruct.E_Temp
                 )
-            self.pd.setExtTemp(self.pd.HMI_ValueStruct.E_Temp)
+            self._action("Hotend target", lambda: self.pd.setExtTemp(self.pd.HMI_ValueStruct.E_Temp))
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1451,7 +1491,7 @@ class DWIN_LCD:
                     3, 216, self.MBASE(bed_line),
                     self.pd.HMI_ValueStruct.Bed_Temp
                 )
-            self.pd.setBedTemp(self.pd.HMI_ValueStruct.Bed_Temp)
+            self._action("Bed target", lambda: self.pd.setBedTemp(self.pd.HMI_ValueStruct.Bed_Temp))
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1509,7 +1549,7 @@ class DWIN_LCD:
             self.checkkey = self.Motion
             self.select_motion.reset()
         elif event == self.ENCODER_DIFF_ENTER:
-            self.pd.set_motion_limit(self._motion_field, self._motion_target)
+            self._action("Motion limit", lambda: self.pd.set_motion_limit(self._motion_field, self._motion_target))
             self.checkkey = self.Motion
         elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             step = setting[3]
@@ -1586,7 +1626,7 @@ class DWIN_LCD:
             zoff_line = self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER): #if (applyencoder(encoder_diffstate, offset_value))
-            self.pd.setZOffset(self.dwin_zoffset)
+            self._action("Runtime Z offset", lambda: self.pd.setZOffset(self.dwin_zoffset))
 
             self.checkkey = self.Prepare if self.pd.HMI_ValueStruct.show_mode == -4 else self.Tune
             self.lcd.Draw_Signed_Float(
@@ -2169,6 +2209,8 @@ class DWIN_LCD:
                 getattr(self, name).reset()
             self.index_prepare = self.index_tune = self.MROWS
             self._offline = True
+        if self._poll_action():
+            return
         if self.pd.connection_error:
             if not self._offline:
                 self._show_message('Moonraker unavailable')
@@ -2220,6 +2262,12 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def _dispatch_input(self):
+        feedback = getattr(self, '_action_feedback', None)
+        if feedback is not None:
+            if feedback.phase == 'error' and self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
+                self._action_feedback = None
+                self._restore_action_screen()
+            return
         if getattr(self, '_pending_start', None):
             return
         if getattr(self, '_start_error_visible', False):

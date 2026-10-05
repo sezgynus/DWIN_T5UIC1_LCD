@@ -88,3 +88,7 @@ Probe coverage checks homing, active-session/config/print guards, start-result
 and manual-state gating, owned TESTZ and serialization, accept plus pending
 offset confirmation, abort without save, explicit save guards and epoch changes
 without replay. No physical probing is performed.
+
+Command feedback tests distinguish HTTP acceptance from expected printer state,
+check errors/cancellation/epochs/timeouts, duplicate suppression, acknowledgement
+without retry, validation failures and future-returning backend actions.
