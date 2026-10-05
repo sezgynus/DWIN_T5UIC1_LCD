@@ -46,3 +46,9 @@ Preset coverage uses temporary directories: save/restart round trips, instance
 isolation, corrupt and unsupported files, invalid numeric values, XDG defaults,
 and failed atomic replacement preserving the old file and cleaning temporary
 files. No user settings are written by these tests.
+
+Jog coverage checks all coordinate/extrusion mode combinations, save/restore
+without G92, displacement from command space, negative limits, homing, cold
+and excessive extrusion, paused/printing rejection, numeric/axis validation,
+Z velocity caps and local UI edits until confirmation. Actual motion and
+Klipper error recovery still require live printer validation.

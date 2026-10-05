@@ -10,9 +10,9 @@ from test_regressions import backend, ui
 def snapshot(hotend=True, bed=True, fan=True, probe=False, multiple=False):
     status = {
         'toolhead': {'position': [0, 0, 0, 0], 'axis_minimum': [-10, -20, -2, 0],
-                     'axis_maximum': [250, 260, 350, 0], 'homed_axes': 'xyz'},
+                     'axis_maximum': [250, 260, 350, 0], 'homed_axes': 'xyz', 'max_velocity': 150},
         'gcode_move': {'homing_origin': [0, 0, 0, 0], 'absolute_coordinates': True,
-                       'absolute_extrude': True},
+                       'absolute_extrude': True, 'position': [0, 0, 0, 0]},
         'print_stats': {'state': 'standby'},
         'virtual_sdcard': {'is_active': False, 'progress': 0},
     }

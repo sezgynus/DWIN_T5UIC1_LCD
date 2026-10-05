@@ -1,5 +1,6 @@
 import copy
 import logging
+import math
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
 from preset_store import PresetStore
@@ -363,13 +364,59 @@ class PrinterData:
             script += (' Z')
         self.sendGCode(script)
 
+    def _jog(self, axis, value, speed, absolute):
+        axis = str(axis).upper()
+        if axis not in ('X', 'Y', 'Z', 'E'):
+            raise ValueError('Invalid jog axis')
+        value, speed = float(value), float(speed)
+        if not math.isfinite(value) or not math.isfinite(speed) or speed <= 0:
+            raise ValueError('Invalid jog value or speed')
+        state = self.state
+        if not state.ready or self.connection_error:
+            raise ValueError('Printer is unavailable')
+        if state.status['print_stats']['state'] in ('printing', 'paused', 'pausing'):
+            raise ValueError('Jogging is unavailable during a print')
+        toolhead = state.status['toolhead']
+        # Use command-space position before transforms such as bed mesh.
+        position = state.status['gcode_move']['position']
+        index = 'XYZE'.index(axis)
+        current = float(position[index])
+        if not math.isfinite(current):
+            raise ValueError('Invalid printer position')
+        delta = value - current if absolute else value
+        target = current + delta
+        if axis == 'E':
+            heater = self.capabilities.active_hotend
+            if heater is None or not state.status.get(heater.name, {}).get('can_extrude', False):
+                raise ValueError('Extruder is unavailable or too cold')
+            if abs(delta) > heater.max_extrude_distance:
+                raise ValueError('Extrusion exceeds configured distance')
+        else:
+            if axis.lower() not in toolhead.get('homed_axes', ''):
+                raise ValueError('Axis must be homed before jogging')
+            if not self.capabilities.axis_minimum[index] <= target <= self.capabilities.axis_maximum[index]:
+                raise ValueError('Jog exceeds configured axis range')
+        max_velocity = float(toolhead['max_velocity'])
+        if axis == 'Z':
+            max_velocity = min(max_velocity, float(state.settings.get('printer', {}).get('max_z_velocity', max_velocity)))
+        if not math.isfinite(max_velocity) or max_velocity <= 0:
+            raise ValueError('Invalid configured velocity')
+        speed = min(speed, max_velocity * 60)
+        if delta == 0:
+            return None
+        # Klipper saves/restores feed and extrusion factors as well as G90/M82.
+        # Relative displacement avoids changing the G92/work origin.
+        script = '\n'.join(('SAVE_GCODE_STATE NAME=_DWIN_JOG', 'G91', 'M83',
+                            'M220 S100', 'M221 S100',
+                            'G1 {}{:g} F{:g}'.format(axis, delta, speed),
+                            'RESTORE_GCODE_STATE NAME=_DWIN_JOG MOVE=0'))
+        return self.sendGCode(script)
+
     def moveRelative(self, axis, distance, speed):
-        self.sendGCode('%s \n%s %s%s F%s%s' % ('G91', 'G1', axis, distance, speed,
-            '\nG90' if self.absolute_moves else ''))
+        return self._jog(axis, distance, speed, False)
 
     def moveAbsolute(self, axis, position, speed):
-        self.sendGCode('%s \n%s %s%s F%s%s' % ('G90', 'G1', axis, position, speed,
-            '\nG91' if not self.absolute_moves else ''))
+        return self._jog(axis, position, speed, True)
 
     def sendGCode(self, gcode):
         return self.postREST('/printer/gcode/script', json={'script': gcode})

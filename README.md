@@ -113,6 +113,22 @@ Loading presets never sends heater commands. Applying a profile still validates
 against the connected printer's current heater limits.
 Existing installation instructions below are still being modernized.
 
+Jog targets use `gcode_move.position` (command space before transforms), not
+G-code coordinates shifted by G92 or runtime offsets. Each jog saves Klipper's
+G-code state, performs a relative displacement with explicit extrusion/feed
+factors, then restores state with `MOVE=0`. It does not reset the work origin or
+move back to the starting point. XYZ requires the selected axis to be homed and
+its target inside discovered bounds. Extrusion requires `can_extrude` and the
+configured maximum extrusion distance. Jogging during printing/paused jobs is
+rejected; feed is capped by toolhead velocity and configured Z velocity.
+Encoder edits remain local until confirmation; position follows status updates.
+
+The command sequence is not a transaction: if Klipper rejects a movement, later
+commands (including restore) may not execute. Transport failures are surfaced
+and queued commands are cancelled; inspect printer state before continuing after
+a movement error. Bed mesh and other transforms remain under Klipper's checks.
+The save/restore semantics were checked against [Klipper gcode_move.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/gcode_move.py).
+
 ### Library requirements 
 
   Thanks to [wolfstlkr](https://www.reddit.com/r/ender3v2/comments/mdtjvk/octoprint_klipper_v2_lcd/gspae7y)

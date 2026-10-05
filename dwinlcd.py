@@ -692,7 +692,7 @@ class DWIN_LCD:
                     3, 1, 216, self.MBASE(3), self.pd.current_position.z * self.MINUNITMULT
                 )
                 if self.pd.HAS_HOTEND:
-                    self.pd.HMI_ValueStruct.Move_E_scale = self.pd.current_position.e * self.MINUNITMULT
+                    self.pd.HMI_ValueStruct.Move_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
                     self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1,
                                                216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
             elif self.select_prepare.now == self.PREPARE_CASE_DISA:  # Disable steppers
@@ -947,7 +947,7 @@ class DWIN_LCD:
             if (self.pd.HMI_flag.ETempTooLow_flag):
                 if (encoder_diffState == self.ENCODER_DIFF_ENTER):
                     self.pd.HMI_flag.ETempTooLow_flag = False
-                    self.pd.current_position.e = self.pd.HMI_ValueStruct.Move_E_scale = 0
+                    self.pd.HMI_ValueStruct.Move_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
                     self.Draw_Move_Menu()
                     self.lcd.Draw_FloatValue(
                         True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
@@ -985,7 +985,7 @@ class DWIN_LCD:
 
             elif self.select_axis.now == 1:  # axis move
                 self.checkkey = self.Move_X
-                self.pd.HMI_ValueStruct.Move_X_scale = self.pd.current_position.x * self.MINUNITMULT
+                self.pd.HMI_ValueStruct.Move_X_scale = self.pd.state.status['gcode_move']['position'][0] * self.MINUNITMULT
                 self.lcd.Draw_FloatValue(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 1, 216, self.MBASE(1),
@@ -993,7 +993,7 @@ class DWIN_LCD:
                 )
             elif self.select_axis.now == 2:  # Y axis move
                 self.checkkey = self.Move_Y
-                self.pd.HMI_ValueStruct.Move_Y_scale = self.pd.current_position.y * self.MINUNITMULT
+                self.pd.HMI_ValueStruct.Move_Y_scale = self.pd.state.status['gcode_move']['position'][1] * self.MINUNITMULT
                 self.lcd.Draw_FloatValue(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 1, 216, self.MBASE(2),
@@ -1001,7 +1001,7 @@ class DWIN_LCD:
                 )
             elif self.select_axis.now == 3:  # Z axis move
                 self.checkkey = self.Move_Z
-                self.pd.HMI_ValueStruct.Move_Z_scale = self.pd.current_position.z * self.MINUNITMULT
+                self.pd.HMI_ValueStruct.Move_Z_scale = self.pd.state.status['gcode_move']['position'][2] * self.MINUNITMULT
                 self.lcd.Draw_FloatValue(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 1, 216, self.MBASE(3),
@@ -1016,7 +1016,8 @@ class DWIN_LCD:
                         self.lcd.UpdateLCD()
                         return
                 self.checkkey = self.Extruder
-                self.pd.HMI_ValueStruct.Move_E_scale = self.pd.current_position.e * self.MINUNITMULT
+                self.pd.last_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
+                self.pd.HMI_ValueStruct.Move_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
                 self.lcd.Draw_Signed_Float(
                     self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4),
                     self.pd.HMI_ValueStruct.Move_E_scale
@@ -1034,7 +1035,7 @@ class DWIN_LCD:
                 3, 1, 216, self.MBASE(1),
                 self.pd.HMI_ValueStruct.Move_X_scale
             )
-            self.pd.moveAbsolute('X',self.pd.current_position.x, 5000)
+            self.pd.moveAbsolute('X', self.pd.HMI_ValueStruct.Move_X_scale / self.MINUNITMULT, 5000)
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1048,7 +1049,6 @@ class DWIN_LCD:
         if self.pd.HMI_ValueStruct.Move_X_scale > (self.pd.X_MAX_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_X_scale = (self.pd.X_MAX_POS) * self.MINUNITMULT
 
-        self.pd.current_position.x = self.pd.HMI_ValueStruct.Move_X_scale / 10
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(1), self.pd.HMI_ValueStruct.Move_X_scale)
@@ -1066,7 +1066,7 @@ class DWIN_LCD:
                 self.pd.HMI_ValueStruct.Move_Y_scale
             )
 
-            self.pd.moveAbsolute('Y',self.pd.current_position.y, 5000)
+            self.pd.moveAbsolute('Y', self.pd.HMI_ValueStruct.Move_Y_scale / self.MINUNITMULT, 5000)
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1080,7 +1080,6 @@ class DWIN_LCD:
         if self.pd.HMI_ValueStruct.Move_Y_scale > (self.pd.Y_MAX_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_Y_scale = (self.pd.Y_MAX_POS) * self.MINUNITMULT
 
-        self.pd.current_position.y = self.pd.HMI_ValueStruct.Move_Y_scale / 10
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(2), self.pd.HMI_ValueStruct.Move_Y_scale)
@@ -1097,7 +1096,7 @@ class DWIN_LCD:
                 3, 1, 216, self.MBASE(3),
                 self.pd.HMI_ValueStruct.Move_Z_scale
             )
-            self.pd.moveAbsolute('Z',self.pd.current_position.z, 600)
+            self.pd.moveAbsolute('Z', self.pd.HMI_ValueStruct.Move_Z_scale / self.MINUNITMULT, 600)
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1111,27 +1110,25 @@ class DWIN_LCD:
         if self.pd.HMI_ValueStruct.Move_Z_scale > (self.pd.Z_MAX_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_Z_scale = (self.pd.Z_MAX_POS) * self.MINUNITMULT
 
-        self.pd.current_position.z = self.pd.HMI_ValueStruct.Move_Z_scale / 10
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(3), self.pd.HMI_ValueStruct.Move_Z_scale)
         self.lcd.UpdateLCD()
 
     def HMI_Move_E(self):
-        self.pd.last_E_scale = 0
         encoder_diffState = self.get_encoder_state()
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.pd.last_E_scale = self.pd.HMI_ValueStruct.Move_E_scale
             self.lcd.Draw_Signed_Float(
                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1, 216,
                 self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale
             )
-            self.pd.moveAbsolute('E',self.pd.current_position.e, 300)
+            self.pd.moveAbsolute('E', self.pd.HMI_ValueStruct.Move_E_scale / self.MINUNITMULT, 300)
             self.lcd.UpdateLCD()
+            return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
             self.pd.HMI_ValueStruct.Move_E_scale += 1
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
@@ -1141,7 +1138,6 @@ class DWIN_LCD:
             self.pd.HMI_ValueStruct.Move_E_scale = self.pd.last_E_scale + (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT
         elif ((self.pd.last_E_scale - self.pd.HMI_ValueStruct.Move_E_scale) > (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT):
             self.pd.HMI_ValueStruct.Move_E_scale = self.pd.last_E_scale - (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT
-        self.pd.current_position.e = self.pd.HMI_ValueStruct.Move_E_scale / 10
         self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
         self.lcd.UpdateLCD()
 
