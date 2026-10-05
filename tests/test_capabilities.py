@@ -223,6 +223,13 @@ class CapabilityTests(unittest.TestCase):
         fills = [call.args[1] for call in rectangles if call.args[0] == 1]
         self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
         self.assertIn(0x8410, fills)
+        self.assertIn(0x9B46, fills)
+        self.assertTrue(any(call.args[0] == 0 and call.args[1] == 0xD58A
+                            for call in rectangles))
+        # Reel height stays fixed while its body is narrower than the lane slot.
+        wood_fills = [call.args for call in rectangles
+                      if call.args[0] == 1 and call.args[1] == 0x9B46]
+        self.assertTrue(all(args[5] - args[3] == 51 for args in wood_fills))
         self.assertGreater(result.lcd.Draw_Line.call_count, 0)
         result.lcd.CircleFill.assert_not_called()
         result.lcd.Draw_Circle.assert_not_called()
