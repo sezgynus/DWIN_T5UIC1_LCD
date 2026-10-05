@@ -232,6 +232,21 @@ class CapabilityTests(unittest.TestCase):
                         (0.0, 0.0, 1.0), (1.0, 0.5, 0.0)):
             self.assertTrue(any(call.args[0] == 1 and call.args[1] == result._rgb565(led_rgb)
                                 for call in rectangles))
+
+    def test_mmu_lane_led_hue_is_normalized_for_lcd_visibility(self):
+        result = self.make_dwinlcd()
+        result.pd.mmu = {
+            'num_gates': 1, 'gate': 0, 'gate_status': (1,),
+            'gate_color_rgb': ((1.0, 0.0, 0.0),),
+            'remaining_percent': (50,), 'exit_led_rgb': ((0.1, 0.0, 0.0),),
+            'name': 'MMU', 'filament': 'Loaded',
+        }
+        result.lcd.Draw_Rectangle.reset_mock()
+        result.Draw_MMU_Status()
+        fills = [call.args[1] for call in result.lcd.Draw_Rectangle.call_args_list
+                 if call.args[0] == 1]
+        self.assertIn(result._rgb565((1.0, 0.0, 0.0)), fills)
+        self.assertNotIn(result._rgb565((0.1, 0.0, 0.0)), fills)
         fills = [call.args[1] for call in rectangles if call.args[0] == 1]
         self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
         self.assertIn(0x8410, fills)
