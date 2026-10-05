@@ -793,7 +793,11 @@ class DWIN_LCD:
             message = self.pd.job_Info['print_stats'].get('message') or 'Print failed'
             self._show_message(str(message))
         else:
-            self.Goto_MainMenu()
+            # Idle/standby updates must not tear down the screen the user is
+            # currently interacting with. Startup/reconnect begins on
+            # MainMenu, where drawing it is still required.
+            if self.checkkey == self.MainMenu:
+                self.Goto_MainMenu()
 
     def _terminal_key(self):
         return (self.pd.state.epoch, self.pd.status, self.pd.file_name,
