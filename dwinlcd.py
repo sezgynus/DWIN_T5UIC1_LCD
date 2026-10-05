@@ -465,7 +465,10 @@ class DWIN_LCD:
             self._menus['control'].append(('PROBE', 'Probe calibration', self.ICON_Zoffset))
         if recovery:
             self._menus['control'].append(('RECOVERY', 'Restore jog state', self.ICON_Homing))
-        self._menus['control'].append(('LIGHT', 'Case Light', self.ICON_Cool))
+        # Klipper exposes configured macros as "gcode_macro <name>" objects.
+        # M355 commands are valid only when that compatibility macro exists.
+        if any(name.lower() == 'gcode_macro m355' for name in self.pd.state.objects):
+            self._menus['control'].append(('LIGHT', 'Case Light', self.ICON_Cool))
         self._menus['control'].append(('INFO', 'Info', self.ICON_Info))
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
