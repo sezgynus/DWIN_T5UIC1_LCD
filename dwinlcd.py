@@ -75,7 +75,7 @@ class DWIN_LCD:
 
     SELECTIONS = ('select_page', 'select_file', 'select_print', 'select_prepare',
                   'select_control', 'select_axis', 'select_temp',
-                  'select_motion', 'select_tune', 'select_PLA', 'select_ABS')
+                  'select_motion', 'select_tune', 'select_PLA', 'select_ABS', 'select_light')
 
     index_file = MROWS
     index_prepare = MROWS
@@ -127,6 +127,8 @@ class DWIN_LCD:
     Popup_Window = 34
     ProbeWizardID = 36
     MotionValue = 35
+    CaseLight = 37
+    CaseLightBrightness = 38
 
     MINUNITMULT = 10
 
@@ -1063,9 +1065,11 @@ class DWIN_LCD:
             if self.select_control.now == self.CONTROL_CASE_RECOVERY:
                 self._action('Restore jog state', self.pd.restore_jog_state)
             if self.select_control.now == self.CONTROL_CASE_LIGHT:
-                self._case_light_on = not getattr(self, '_case_light_on', False)
-                self.pd.sendGCode('M355 S{}'.format(1 if self._case_light_on else 0))
-                self.Draw_Control_Menu()
+                self.checkkey = self.CaseLight
+                self.select_light.reset()
+                self._case_light_query_pending = True
+                self.pd.query_case_light()
+                self.Draw_Case_Light_Menu()
             if (self.select_control.now == self.CONTROL_CASE_INFO):  # Info
                 self.checkkey = self.Info
                 self.Draw_Info_Menu()
@@ -1983,11 +1987,79 @@ class DWIN_LCD:
 
     def Draw_Control_Menu(self):
         self._draw_capability_menu('control', self.select_control)
-        row = self.CONTROL_CASE_LIGHT + self.MROWS - self.index_control
-        if 1 <= row <= self.MROWS:
-            self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
-                                 self.lcd.Color_Bg_Black, 224, self.MBASE(row),
-                                 '[X]' if getattr(self, '_case_light_on', False) else '[ ]')
+
+    def Draw_Case_Light_Menu(self):
+        self.Clear_Main_Window()
+        self.Draw_Title('Case Light')
+        self.Draw_Back_First(self.select_light.now == 0)
+        self.Draw_Menu_Line(1, self.ICON_Cool, 'Light')
+        self.Draw_Menu_Line(2, self.ICON_Cool, 'Brightness')
+        if self.select_light.now:
+            self.Draw_Menu_Cursor(self.select_light.now)
+        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+                             self.lcd.Color_Bg_Black, 224, self.MBASE(1),
+                             '[X]' if getattr(self, '_case_light_on', False) else '[ ]')
+        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                               self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                               3, 216, self.MBASE(2), getattr(self, '_case_light_brightness', 0))
+
+    def _poll_case_light_query(self):
+        if not getattr(self, '_case_light_query_pending', False):
+            return False
+        import re
+        while True:
+            response = self.pd.pop_gcode_response()
+            if response is None:
+                return False
+            match = re.search(r'Light is (ON|OFF),\s*Brightness=(\d+)', response, re.IGNORECASE)
+            if match:
+                self._case_light_on = match.group(1).upper() == 'ON'
+                self._case_light_brightness = max(0, min(255, int(match.group(2))))
+                self._case_light_query_pending = False
+                if self.checkkey == self.CaseLight:
+                    self.Draw_Case_Light_Menu()
+                    self.lcd.UpdateLCD()
+                return True
+
+    def HMI_Case_Light(self):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_CW:
+            self.select_light.inc(3)
+            self.Draw_Case_Light_Menu()
+        elif event == self.ENCODER_DIFF_CCW:
+            self.select_light.dec()
+            self.Draw_Case_Light_Menu()
+        elif event == self.ENCODER_DIFF_ENTER:
+            if self.select_light.now == 0:
+                self.checkkey = self.Control
+                self.select_control.set(self.CONTROL_CASE_LIGHT)
+                self.Draw_Control_Menu()
+            elif self.select_light.now == 1:
+                self._case_light_on = not getattr(self, '_case_light_on', False)
+                self.pd.sendGCode('M355 S{}'.format(1 if self._case_light_on else 0))
+                self.Draw_Case_Light_Menu()
+            else:
+                self.checkkey = self.CaseLightBrightness
+                self._case_light_brightness_target = getattr(self, '_case_light_brightness', 0)
+                self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                                       self.lcd.Color_White, self.lcd.Select_Color,
+                                       3, 216, self.MBASE(2), self._case_light_brightness_target)
+        self.lcd.UpdateLCD()
+
+    def HMI_Case_Light_Brightness(self):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_ENTER:
+            self._case_light_brightness = self._case_light_brightness_target
+            self.pd.sendGCode('M355 P{}'.format(self._case_light_brightness))
+            self.checkkey = self.CaseLight
+            self.Draw_Case_Light_Menu()
+        elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            delta = self._encoder_move_value if event == self.ENCODER_DIFF_CW else -self._encoder_move_value
+            self._case_light_brightness_target = max(0, min(255, self._case_light_brightness_target + delta))
+            self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                                   self.lcd.Color_White, self.lcd.Select_Color,
+                                   3, 216, self.MBASE(2), self._case_light_brightness_target)
+        self.lcd.UpdateLCD()
 
     def _draw_info_text(self, value, y):
         text = T5UIC1_LCD._panel_text(value)[:self.lcd.DWIN_WIDTH // self.MENU_CHR_W]
@@ -2374,6 +2446,7 @@ class DWIN_LCD:
     # --------------------------------------------------------------#
 
     def EachMomentUpdate(self):
+        self._poll_case_light_query()
         # variable update
         update = self.pd.update_variable()
         if not self.pd.connection_error and self._configure_menus():
@@ -2535,6 +2608,10 @@ class DWIN_LCD:
             self.HMI_FanSpeed()
         elif self.checkkey == self.PrintSpeed:
             self.HMI_PrintSpeed()
+        elif self.checkkey == self.CaseLight:
+            self.HMI_Case_Light()
+        elif self.checkkey == self.CaseLightBrightness:
+            self.HMI_Case_Light_Brightness()
 
     def get_encoder_state(self):
         # Input is an immutable queued event, not a sample of current GPIO levels.
