@@ -1906,9 +1906,14 @@ class DWIN_LCD:
                 value = self._motion_target
             if self.select_motion.now == row:
                 self.Draw_Menu_Cursor(row)
-            self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+            text = '{:g}'.format(value)
+            if len(text) > 9:
+                text = '{:.3g}'.format(value)
+            if len(text) > 9:
+                text = '#' * 9
+            self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
                                  self.lcd.Select_Color if editing else self.lcd.Color_Bg_Black,
-                                 200, self.MBASE(row), '{:g}'.format(value))
+                                 200, self.MBASE(row), text.rjust(9))
 
     def Draw_Move_Menu(self):
         self.Clear_Main_Window()

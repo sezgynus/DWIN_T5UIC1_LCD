@@ -336,19 +336,24 @@ class T5UIC1_LCD:
 		if any(not 0 <= int(item) <= 0xFFFF for item in (color, bColor, x, y)):
 			raise ValueError('Numeric color or coordinate outside word range')
 		try:
-			number = Decimal(str(value))
+			number = Decimal(value) if isinstance(value, int) else Decimal(str(value))
 			if not number.is_finite():
 				raise ValueError('Numeric value must be finite')
-			# Round scaled fractions before decimal placement, including negatives.
-			number = number.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+			# Check the field before rounding very large finite numbers.
+			limit = Decimal(10) ** (int(iNum) + int(fNum))
+			if abs(number) < limit:
+				number = number.quantize(Decimal(1), rounding=ROUND_HALF_UP)
 			if number == 0:
 				number = abs(number)
-			if abs(number) >= Decimal(10) ** (int(iNum) + int(fNum)):
-				raise ValueError('Numeric value exceeds display field')
-			text = format(number.scaleb(-int(fNum)), f'.{int(fNum)}f')
+			width = int(iNum) + (int(fNum) + 1 if fNum else 0) + int(signed)
+			if abs(number) >= limit:
+				text = '#' * width
+			else:
+				text = format(number.scaleb(-int(fNum)), f'.{int(fNum)}f')
+				if len(text) > width:
+					text = '#' * width
 		except InvalidOperation as error:
 			raise ValueError('Invalid numeric value') from error
-		width = int(iNum) + (int(fNum) + 1 if fNum else 0) + int(signed or number < 0)
 		text = text.rjust(width)
 		self.Draw_String(False, bShow, size, color, bColor, x, y, text)
 

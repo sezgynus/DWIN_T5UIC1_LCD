@@ -108,3 +108,31 @@ class JogRecoveryTests(unittest.TestCase):
             result.moveRelative('X', 1, 300).result(2)
         self.assertEqual(opener.open.call_count, 2)
         self.assertTrue(result.jog_recovery_required)
+
+    def test_closed_client_rejects_jog_without_leaving_restore_block(self):
+        result, opener = self.setup_printer([])
+        result.client.close()
+        with self.assertRaises(MoonrakerError):
+            result.moveRelative('X', 1, 300).result(2)
+        opener.open.assert_not_called()
+        self.assertFalse(result.jog_recovery_required)
+
+    def test_rejected_backend_submission_cannot_change_modes(self):
+        result, opener = self.setup_printer([])
+        data = snapshot()
+        data['epoch'] = 2
+        result.subscription.snapshot.return_value = data
+        with self.assertRaises(backend.MoonrakerError):
+            result.moveRelative('X', 1, 300).result(2)
+        opener.open.assert_not_called()
+        self.assertFalse(result.jog_recovery_required)
+
+    def test_cancelled_explicit_restore_keeps_unknown_state_block(self):
+        from concurrent.futures import Future
+        result, opener = self.setup_printer([])
+        result._jog_restore = 'RESTORE_GCODE_STATE NAME=test MOVE=0'
+        future = Future()
+        future.cancel()
+        result.postREST = Mock(return_value=future)
+        result.restore_jog_state()
+        self.assertTrue(result.jog_recovery_required)

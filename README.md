@@ -132,10 +132,9 @@ configured maximum extrusion distance. Jogging during printing/paused jobs is
 rejected; feed is capped by toolhead velocity and configured Z velocity.
 Encoder edits remain local until confirmation; position follows status updates.
 
-The command sequence is not a transaction: if Klipper rejects a movement, later
-commands (including restore) may not execute. Transport failures are surfaced
-and queued commands are cancelled; inspect printer state before continuing after
-a movement error. Bed mesh and other transforms remain under Klipper's checks.
+The movement sequence is not a transaction. Its failure triggers a separate
+non-moving restore as described below; unconfirmed restoration blocks further
+motion. Bed mesh and other transforms remain under Klipper's checks.
 The save/restore semantics were checked against [Klipper gcode_move.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/gcode_move.py).
 
 The Motion menu edits Klipper runtime `max_velocity`, `max_accel`,
@@ -327,8 +326,8 @@ Existing Draw_FloatValue / Draw_Signed_Float callers still pass values scaled by
 from zero, before placing the decimal point. Decimal fields reserve a sign
 column one font width left of the supplied x coordinate, and replace the whole
 field on each background-enabled draw. Legacy zeroFill / zeroMode arguments are
-accepted but padding uses spaces, as in ProUI. Values exceeding the declared
-whole-digit field are rejected before writing a packet. Native 0x14 numeric
+accepted but padding uses spaces, as in ProUI. Finite values exceeding the declared field show # markers across the whole
+field; non-finite inputs are rejected before writing a packet. Native 0x14 numeric
 rendering is no longer used. Actual panel and asset compatibility needs hardware
 validation.
 
@@ -359,8 +358,8 @@ separate UTF-8 encoding and is not processed as visible text.
 ### Source audit status
 
 The first ten LCD reference tasks are recorded in [source-audit.md](docs/source-audit.md).
-The audit identifies remaining command-feedback, runtime-offset, epoch/cache and
-field-boundary defects; passing isolated tests is not a release-readiness claim.
+All nine findings (A01–A09) are fixed in source and covered by regression tests;
+passing isolated tests is not a release-readiness claim.
 See [lcd-assets.md](docs/lcd-assets.md) for verified reference assets. No hardware
 or live-printer tests were performed in this source adaptation pass.
 
@@ -384,3 +383,8 @@ All high-level UART commands build and validate their complete payload before
 replacing the scratch buffer. Invalid fields leave the next packet intact.
 QR data is separately encoded as UTF-8 and must contain 1–94 bytes; oversized
 payloads are rejected without truncating a URL or splitting a character.
+
+Numeric fields display # markers when a finite value does not fit. This only
+changes rendering: the authoritative value and pending command target are never
+clamped or truncated. Motion values use complete scientific notation when
+necessary and pad the entire field so shorter values erase older characters.

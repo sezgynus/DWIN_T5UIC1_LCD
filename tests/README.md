@@ -99,11 +99,13 @@ isolation. No physical panel is exercised.
 
 The pinned Marlin fixtures also cover clear/line/rectangle/area movement, JPG
 show/cache, QR and icon animation packets; decimal sign transitions retain a
-complete field and rounding overflow is rejected. The existing real-menu fixture
+complete field and numeric overflow draws explicit # markers. The existing real-menu fixture
 runs the updated driver on the UI owner with a fake serial port. These fixtures
 verify source-derived bytes and routing, not screen-side execution or rendering.
 
 Final audit rendering coverage includes 100% progress, completed-minute time
 formatting (including 100-hour prints), negative zero, immediate reconnect flush
-and input-owner flush for early-returning editors. Remaining findings and the
-limits of these isolated fixtures are listed in docs/source-audit.md.
+and input-owner flush for early-returning editors. A01–A09 regressions cover GPIO
+error acknowledgement, isolated offset editing, epoch/cache invalidation, jog
+recovery, atomic packet validation and bounded numeric rendering. The limits of
+these isolated fixtures are listed in docs/source-audit.md.

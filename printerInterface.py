@@ -226,6 +226,7 @@ class PrinterData:
                 or snapshot['epoch'] != self.state.epoch):
             from concurrent.futures import Future
             future = Future()
+            future.cleanup_complete = cleanup is not None
             future.set_exception(MoonrakerError('Printer connection is not ready'))
             self.last_command_error = 'Printer connection is not ready'
             return future
@@ -475,7 +476,7 @@ class PrinterData:
             return self._jog_restore is not None
 
     def _jog_finished(self, future, restore):
-        if not future.cancelled() and getattr(future, 'cleanup_complete', False):
+        if future.cancelled() or getattr(future, 'cleanup_complete', False):
             with self._jog_lock:
                 if self._jog_restore == restore:
                     self._jog_restore = None
@@ -488,7 +489,10 @@ class PrinterData:
         if self.status in ('printing', 'paused', 'pausing'):
             raise ValueError('Stop the print before restoring jog state')
         future = self.postREST('/printer/gcode/script', json={'script': restore})
-        future.add_done_callback(lambda done: self._jog_finished(done, restore))
+        def recovered(done):
+            if not done.cancelled() and done.exception() is None:
+                self._jog_finished(done, restore)
+        future.add_done_callback(recovered)
         return future
 
     def moveRelative(self, axis, distance, speed):

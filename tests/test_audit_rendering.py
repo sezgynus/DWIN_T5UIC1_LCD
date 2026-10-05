@@ -55,3 +55,36 @@ class AuditRenderingTests(unittest.TestCase):
         for frame in frames:
             self.assertEqual(int.from_bytes(frame[7:9], 'big'), 0)
             self.assertEqual(len(frame[11:-4]), 34)
+
+    def test_large_printer_values_show_overflow_without_changing_target(self):
+        result = self.screen()
+        result.pd.feedrate_percentage = 1000
+        result.pd.thermalManager['temp_hotend'][0]['target'] = 1200
+        result.Draw_Status_Area(False)
+        self.assertTrue(any(frame[11:-4] == b'###' for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11))
+        self.assertEqual(result.pd.feedrate_percentage, 1000)
+        self.assertEqual(result.pd.thermalManager['temp_hotend'][0]['target'], 1200)
+        result.lcd.Draw_Signed_Float(1, 0, 3, 1, 216, 50, 1234567890)
+        self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'######')
+        result.lcd.Draw_Signed_Float(1, 0, 3, 1, 216, 50, 5)
+        self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'   0.5')
+
+    def test_negative_integer_sign_transition_clears_entire_field(self):
+        result = self.screen()
+        for value, expected in ((-5, b' -5'), (5, b'  5'), (-999, b'###')):
+            result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
+            self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], expected)
+
+    def test_motion_value_is_complete_scientific_text_with_fixed_padding(self):
+        result = self.screen()
+        result.checkkey = result.Motion
+        result.pd.motion_settings = lambda: (('max_accel', 'ACCEL', 'Accel', 10, 1234567890123),)
+        result.Draw_Motion_Menu()
+        frames = [frame for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11]
+        self.assertEqual(frames[-1][11:-4], b' 1.23e+12')
+
+    def test_extreme_finite_numbers_render_marker_without_decimal_overflow(self):
+        result = self.screen()
+        for value in (1e300, -1e300, 10**100):
+            result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
+            self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'###')

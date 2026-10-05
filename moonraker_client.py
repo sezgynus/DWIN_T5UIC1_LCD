@@ -75,7 +75,7 @@ class MoonrakerClient:
 
     def post(self, path, payload=None, guard=None, cleanup=None):
         future = Future()
-        future.cleanup_complete = False
+        future.cleanup_complete = cleanup is not None
         with self._lock:
             if self._stop.is_set():
                 future.set_exception(MoonrakerError('Client is closed'))
@@ -109,6 +109,7 @@ class MoonrakerClient:
                 future.cancel()
             elif future.set_running_or_notify_cancel():
                 mutated = False
+                future.cleanup_complete = False
                 try:
                     if guard is not None and not guard():
                         raise MoonrakerError('Printer connection changed before command execution')

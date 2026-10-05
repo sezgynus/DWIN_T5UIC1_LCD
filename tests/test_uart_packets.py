@@ -42,7 +42,6 @@ class PacketTests(unittest.TestCase):
         for operation in (lambda: result.DrawPoint(0, 0, 1, 0, 0),
                           lambda: result.DrawPoint(0, 1, 1, -1, 0),
                           lambda: result.Draw_IntValue(True, True, False, 1, 0, 0, 3, 0, 0, float('nan')),
-                          lambda: result.Draw_FloatValue(True, True, False, 1, 0, 0, 3, 1, 0, 0, 2**32),
                           lambda: result.Draw_FloatValue(True, True, False, 1, 0, 0, 19, 1, 0, 0, 1)):
             with self.assertRaises((ValueError, OverflowError)):
                 operation()
@@ -146,9 +145,9 @@ class PacketTests(unittest.TestCase):
             frame = result.MYSERIAL1.frames[-1]
             self.assertEqual(frame[7:11], bytes.fromhex('00 5C 00 14'))
             self.assertEqual(frame[11:-4], expected)
-        with self.assertRaises(ValueError):
-            result.Draw_Signed_Float(1, 0, 2, 2, 100, 20, 9999.5)
-        self.assertEqual(len(result.MYSERIAL1.frames), 4)
+        result.Draw_Signed_Float(1, 0, 2, 2, 100, 20, 9999.5)
+        self.assertEqual(result.MYSERIAL1.frames[-1][11:-4], b'######')
+        self.assertEqual(len(result.MYSERIAL1.frames), 5)
 
     def test_invalid_packet_fields_never_poison_following_command(self):
         operations = (
