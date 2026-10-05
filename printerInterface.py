@@ -347,7 +347,10 @@ class PrinterData:
                                                    for value in color))
                 unit_name = 'MMU'
                 machine = data.get('mmu_machine', {})
-                unit_index = int(raw_mmu.get('unit', 0))
+                # Happy Hare reports the selected unit as "unit" on current
+                # releases and "unit_selected" on older controller status.
+                unit_index = int(raw_mmu.get('unit',
+                                             raw_mmu.get('unit_selected', 0)))
                 unit_info = machine.get('unit_%d' % unit_index, {})
                 if isinstance(unit_info, dict):
                     unit_name = str(unit_info.get('display_name') or
