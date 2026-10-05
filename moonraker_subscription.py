@@ -1,13 +1,15 @@
-"""Read-only Moonraker JSON-RPC subscription with reconnect and delta merging.
+"""Moonraker JSON-RPC subscription with reconnect, delta merging, and observed commands.
 
-This transport never sends printer commands. HTTP remains the command transport;
-losing a subscription cannot replay a movement or start a print.
+Long-running commands may be sent as JSON-RPC notifications so transport acknowledgement
+is decoupled from physical completion. Completion is confirmed from subscribed printer state.
 """
 import copy
 import json
 import math
 import socket
 import time
+from concurrent.futures import Future
+from queue import Empty, Full, Queue
 from threading import Event, Lock, Thread
 from urllib.parse import urlsplit, urlunsplit
 
@@ -62,6 +64,7 @@ class MoonrakerSubscription:
         self._file_revision = 0
         self._subscribing = False
         self._buffered = []
+        self._outbound = Queue(maxsize=32)
         self._last_receive = time.monotonic()
         self._last_ping = time.monotonic()
         self._thread = Thread(target=self._run, name='moonraker-status', daemon=True)
@@ -125,6 +128,53 @@ class MoonrakerSubscription:
         elif method == 'notify_filelist_changed':
             with self._lock:
                 self._file_revision += 1
+
+    def notify(self, method, params=None):
+        future = Future()
+        with self._lock:
+            if self._stop.is_set() or self._state != 'ready' or self._socket is None:
+                future.set_exception(MoonrakerError('Moonraker subscription is not ready'))
+                return future
+            epoch = self._epoch
+        try:
+            self._outbound.put_nowait((future, epoch, method, params or {}))
+        except Full:
+            future.set_exception(MoonrakerError('Subscription command queue is full'))
+        return future
+
+    def _fail_outbound(self, message):
+        while True:
+            try:
+                future, _, _, _ = self._outbound.get_nowait()
+            except Empty:
+                return
+            if not future.done():
+                future.set_exception(MoonrakerError(message))
+            self._outbound.task_done()
+
+    def _drain_outbound(self):
+        while True:
+            try:
+                future, epoch, method, params = self._outbound.get_nowait()
+            except Empty:
+                return
+            try:
+                with self._lock:
+                    valid = self._state == 'ready' and self._epoch == epoch and self._socket is not None
+                if not valid:
+                    raise MoonrakerError('Printer connection changed before command dispatch')
+                # JSON-RPC notification: deliberately omit id. Moonraker/Klipper do not send
+                # a completion response, so long-running G-Code cannot block this transport.
+                self._socket.send(json.dumps({'jsonrpc': '2.0', 'method': method, 'params': params}))
+                future.set_result(None)
+            except Exception as exc:
+                if not future.done():
+                    future.set_exception(exc if isinstance(exc, MoonrakerError)
+                                         else MoonrakerError('WebSocket command dispatch failed'))
+                if not isinstance(exc, MoonrakerError):
+                    raise MoonrakerError('WebSocket command dispatch failed') from exc
+            finally:
+                self._outbound.task_done()
 
     def _receive(self):
         # websocket-client exposes pong frames here, enabling idle liveness checks.
@@ -234,6 +284,7 @@ class MoonrakerSubscription:
                 self._last_receive = self._last_ping = time.monotonic()
                 self._bootstrap()
                 while not self._stop.is_set():
+                    self._drain_outbound()
                     message = self._receive()
                     if message is not None:
                         self._notification(message)
@@ -245,6 +296,7 @@ class MoonrakerSubscription:
                         self._last_ping = now
             except Exception:
                 # Do not log exception payloads: connector errors may contain headers.
+                self._fail_outbound('Moonraker subscription unavailable')
                 self._invalidate('Moonraker subscription unavailable')
             finally:
                 with self._lock:
@@ -258,6 +310,7 @@ class MoonrakerSubscription:
 
     def close(self):
         self._stop.set()
+        self._fail_outbound('Moonraker subscription is closed')
         with self._lock:
             connection = self._socket
         if connection is not None:

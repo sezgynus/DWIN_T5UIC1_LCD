@@ -23,6 +23,8 @@ class FakeSocket:
     def send(self, data):
         request = json.loads(data)
         self.sent.append(request)
+        if 'id' not in request:
+            return
         results = {'server.connection.identify': {'connection_id': 1},
                    'server.info': {'klippy_state': 'ready'},
                    'printer.info': {'software_version': 'test-klipper'},
@@ -148,6 +150,21 @@ class SubscriptionTests(unittest.TestCase):
         client._socket = connection
         with self.assertRaisesRegex(MoonrakerError, 'timed out'):
             client._rpc('server.info')
+
+    def test_observed_command_is_notification_and_does_not_wait_for_response(self):
+        client = self.subscription()
+        connection = FakeSocket()
+        client._socket = connection
+        client._state = 'ready'
+        future = client.notify('printer.gcode.script', {'script': 'G28'})
+        self.assertFalse(future.done())
+        client._drain_outbound()
+        self.assertIsNone(future.result())
+        request = connection.sent[-1]
+        self.assertEqual(request['method'], 'printer.gcode.script')
+        self.assertEqual(request['params'], {'script': 'G28'})
+        self.assertNotIn('id', request)
+        self.assertEqual(len(connection.messages), 0)
 
     def test_filelist_notification_invalidates_revision(self):
         client = self.subscription()

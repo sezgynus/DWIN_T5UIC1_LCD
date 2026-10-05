@@ -21,7 +21,8 @@ class CommandFeedback:
                 self.phase, self.message = 'error', 'Command failed; check log'
             elif self.expected is None or self.expected():
                 self.phase, self.message = 'accepted', 'Accepted: ' + self.label
-        if self.phase == 'waiting' and time.monotonic() - self.started > 30:
+        if (self.phase == 'waiting' and self.expected is None
+                and time.monotonic() - self.started > 30):
             self.future.cancel()
             self.phase, self.message = 'error', 'Result unconfirmed; check printer'
         return self.phase

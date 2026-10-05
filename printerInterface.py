@@ -501,6 +501,23 @@ class PrinterData:
     def moveAbsolute(self, axis, position, speed):
         return self._jog(axis, position, speed, True)
 
+    def sendGCodeObserved(self, gcode):
+        """Dispatch long-running G-Code without waiting for its completion response.
+
+        The returned Future completes when the JSON-RPC notification is written to the
+        live Moonraker WebSocket. Physical completion must be confirmed from subscribed
+        printer state by the caller.
+        """
+        snapshot = self.subscription.snapshot()
+        if (self.connection_error or not self.state.ready or snapshot['state'] != 'ready'
+                or snapshot['epoch'] != self.state.epoch):
+            future = Future()
+            future.set_exception(MoonrakerError('Printer connection is not ready'))
+            return future
+        if self.jog_recovery_required:
+            raise ValueError('Restore jog state before sending motion commands')
+        return self.subscription.notify('printer.gcode.script', {'script': gcode})
+
     def sendGCode(self, gcode, cleanup=None):
         if cleanup is None and self.jog_recovery_required:
             # Heater/fan shutdown and temperature control do not depend on modes.

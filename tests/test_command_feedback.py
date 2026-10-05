@@ -44,6 +44,17 @@ class FeedbackTests(unittest.TestCase):
             self.assertEqual(result.update(PrinterState.from_snapshot(snapshot())), 'error')
         self.assertTrue(future.cancelled())
 
+    def test_state_observed_command_has_no_fixed_completion_timeout(self):
+        future = Future()
+        future.set_result(None)
+        confirmed = Mock(return_value=False)
+        result = CommandFeedback(future, 'Home', 1, confirmed)
+        state = PrinterState.from_snapshot(snapshot())
+        with patch.object(command_feedback.time, 'monotonic', return_value=result.started + 3600):
+            self.assertEqual(result.update(state), 'waiting')
+        confirmed.return_value = True
+        self.assertEqual(result.update(state), 'accepted')
+
     def display(self):
         result = display(snapshot())
         result.checkkey = result.TemperatureID

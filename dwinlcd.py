@@ -871,7 +871,7 @@ class DWIN_LCD:
                 self.pd.current_position.homing()
                 self.pd.HMI_flag.home_flag = True
                 self.Popup_Window_Home()
-                self._action("Home", lambda: self.pd.sendGCode("G28"), self.pd.ishomed)
+                self._action("Home", lambda: self.pd.sendGCodeObserved("G28"), self.pd.ishomed)
             elif self.select_prepare.now == self.PREPARE_CASE_ZOFF:  # Z-offset
                 self._open_zoffset(-4, self.PREPARE_CASE_ZOFF + self.MROWS - self.index_prepare)
 
