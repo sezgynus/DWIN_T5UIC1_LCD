@@ -1259,7 +1259,7 @@ class DWIN_LCD:
                     self.pd.HMI_ValueStruct.Move_E_scale
                 )
             elif self.select_axis.now == live_index:
-                self._live_jog = not self._live_jog
+                self._live_jog = not getattr(self, '_live_jog', False)
                 self.Draw_Move_Menu()
         self.lcd.UpdateLCD()
 
@@ -1275,7 +1275,7 @@ class DWIN_LCD:
                 3, 1, 216, self.MBASE(1),
                 self.pd.HMI_ValueStruct.Move_X_scale
             )
-            if not self._live_jog:
+            if not getattr(self, '_live_jog', False):
                 self._action("Jog X", lambda: self.pd.moveAbsolute('X', self.pd.HMI_ValueStruct.Move_X_scale / self.MINUNITMULT, 5000))
             self.lcd.UpdateLCD()
             return
@@ -1290,7 +1290,7 @@ class DWIN_LCD:
         if self.pd.HMI_ValueStruct.Move_X_scale > (self.pd.X_MAX_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_X_scale = (self.pd.X_MAX_POS) * self.MINUNITMULT
 
-        if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+        if getattr(self, '_live_jog', False) and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             applied = (self.pd.HMI_ValueStruct.Move_X_scale - previous_scale) / self.MINUNITMULT
             if applied:
                 self._queue_live_jog('X', applied, 5000)
@@ -2021,7 +2021,7 @@ class DWIN_LCD:
         self.Draw_Menu_Line(live_row, self.ICON_Axis, 'Live jog')
         self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, 224, self.MBASE(live_row),
-                             '[X]' if self._live_jog else '[ ]')
+                             '[X]' if getattr(self, '_live_jog', False) else '[ ]')
 
         self.Draw_Back_First(self.select_axis.now == 0)
         if (self.select_axis.now):
