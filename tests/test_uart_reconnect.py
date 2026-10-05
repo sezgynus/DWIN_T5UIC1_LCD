@@ -1,0 +1,82 @@
+import unittest
+from unittest.mock import Mock, patch
+
+from test_capabilities import snapshot, display
+from test_regressions import ui
+from ui_events import InputEvent
+
+
+class UARTReconnectTests(unittest.TestCase):
+    def display(self):
+        result = display(snapshot())
+        result._closed = False
+        result._settings = ('/dev/fake',)
+        result._uart_epoch = 0
+        result._uart_online = False
+        result._next_uart_retry = 0
+        result.HMI_Init = Mock()
+        result.HMI_StartFrame = Mock()
+        result._show_message = Mock()
+        result._encoder_event = result.ENCODER_DIFF_NO
+        return result
+
+    def test_missing_panel_retries_on_tick_and_redraws_without_commands(self):
+        result = self.display()
+        result.lcd = None
+        port = Mock()
+        with patch.object(ui, 'T5UIC1_LCD', side_effect=[TimeoutError('no panel'), port]) as factory:
+            with patch.object(ui.time, 'monotonic', return_value=0):
+                self.assertFalse(result._ensure_uart())
+            with patch.object(ui.time, 'monotonic', return_value=4):
+                result._ui_tick()
+                self.assertEqual(factory.call_count, 1)
+            with patch.object(ui.time, 'monotonic', return_value=5):
+                result._ui_tick()
+        self.assertTrue(result._uart_online)
+        self.assertIs(result.lcd, port)
+        result.HMI_Init.assert_called_once()
+        result.HMI_StartFrame.assert_called_once_with(False)
+        result.pd.sendGCode.assert_not_called()
+
+    def test_serial_write_failure_closes_and_schedules_reconnect(self):
+        result = self.display()
+        result._uart_online = True
+        old = result.lcd
+        old._closed = True
+        result.EachMomentUpdate = Mock(side_effect=OSError('write failed'))
+        with patch.object(ui.time, 'monotonic', return_value=10):
+            result._ui_tick()
+        old.close.assert_called_once()
+        self.assertFalse(result._uart_online)
+        self.assertIsNone(result.lcd)
+        self.assertEqual(result._next_uart_retry, 15)
+
+    def test_old_uart_epoch_and_offline_input_are_discarded(self):
+        result = self.display()
+        result._dispatch_input = Mock()
+        result._uart_online = True
+        result._uart_epoch = 2
+        result._process_input(InputEvent('press', 1, 1, 1))
+        result._dispatch_input.assert_not_called()
+        result._process_input(InputEvent('press', 1, 1, 2))
+        result._dispatch_input.assert_called_once()
+        result._dispatch_input.reset_mock()
+        result._uart_online = False
+        result._process_input(InputEvent('press', 1, 1, 2))
+        result._dispatch_input.assert_not_called()
+
+    def test_closed_display_does_not_reopen_port(self):
+        result = self.display()
+        result._closed = True
+        with patch.object(ui, 'T5UIC1_LCD') as factory:
+            self.assertFalse(result._ensure_uart())
+        factory.assert_not_called()
+
+    def test_unrelated_render_error_is_not_treated_as_uart_failure(self):
+        result = self.display()
+        result._uart_online = True
+        result.lcd._closed = False
+        result.EachMomentUpdate = Mock(side_effect=OSError('unrelated'))
+        with self.assertRaises(OSError):
+            result._ui_tick()
+        self.assertTrue(result._uart_online)

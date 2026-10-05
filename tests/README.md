@@ -74,3 +74,7 @@ ACK, bounded noise storage/retries, timeout and short-write cleanup, UART Read,
 backlight validation and independent buffers. The existing UI ownership test
 now exercises the single-write frame path. Firmware compatibility and display
 rendering still require a physical panel.
+
+UART recovery tests cover missing-panel retry timing, reconnect redraw without
+printer commands, short-write disconnect handling, old-input rejection, closed
+display rejection and unrelated error propagation.

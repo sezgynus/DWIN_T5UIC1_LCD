@@ -218,7 +218,7 @@ class DisplayIntegrationTests(unittest.TestCase):
         base = ui.T5UIC1_LCD
 
         class FakeLCD(base):
-            def __init__(self, port):
+            def __init__(self, port, **kwargs):
                 self.DWIN_SendBuf = self.FHONE
                 self.MYSERIAL1 = Mock()
                 self.MYSERIAL1.write.side_effect = lambda data: (writes.append((get_ident(), bytes(data))), len(data))[1]

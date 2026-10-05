@@ -292,6 +292,9 @@ class DWIN_LCD:
     def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key,
                  moonraker_url='http://127.0.0.1:7125', request_timeout=5.0, settings_path=None):
         self._closed = False
+        self._uart_epoch = 0
+        self._uart_online = False
+        self._next_uart_retry = 0
         self.encoder = self.button = self.lcd = self.pd = None
         self._settings = (USARTx, encoder_pins, button_pin, octoPrint_API_Key,
                           moonraker_url, request_timeout, settings_path)
@@ -300,7 +303,7 @@ class DWIN_LCD:
         self._last_press = float('-inf')
         self._encoder_event = self.ENCODER_DIFF_NO
         self._loop = UIEventLoop(self._initialize, self._process_input,
-                                 self.EachMomentUpdate, self._close_resources)
+                                 self._ui_tick, self._close_resources)
         self._loop.start()
 
     def _initialize(self):
@@ -312,23 +315,62 @@ class DWIN_LCD:
         self.button = Button(button_pin, pull_up=True, bounce_time=0.05)
         self.next_rts_update_ms = 0
         self.last_cardpercentValue = 101
-        self.lcd = T5UIC1_LCD(USARTx)
         self.checkkey = self.MainMenu
         self.pd = PrinterData(api_key, url, timeout, settings_path=settings_path)
-        self.HMI_ShowBoot()
         self.pd.init_Webservices()
         self._configure_menus()
-        self.HMI_Init()
-        self.HMI_StartFrame(False)
         self._offline = bool(self.pd.connection_error)
-        if self._offline:
-            self._show_message('Moonraker unavailable')
+        self._ensure_uart()
         # Enable producers only after all UI/backend resources are initialized.
         with self._input_lock:
             self._producer_value = self.encoder.getValue()
             self.encoder.callback = self.encoder_has_data
         self.button.when_pressed = self._button_pressed
         self.button.when_released = None
+
+    def _uart_failed(self):
+        self._uart_online = False
+        self._uart_epoch += 1
+        self._next_uart_retry = time.monotonic() + 5
+        if self.lcd is not None:
+            self.lcd.close()
+        self.lcd = None
+        logging.warning('LCD UART unavailable; retrying in 5 seconds')
+
+    def _ensure_uart(self):
+        if self._uart_online:
+            return True
+        if self._closed or time.monotonic() < self._next_uart_retry:
+            return False
+        try:
+            self.lcd = T5UIC1_LCD(self._settings[0], handshake_timeout=1.0,
+                                 handshake_attempts=1)
+            self._configure_menus()
+            self.HMI_Init()
+            self.HMI_StartFrame(False)
+            if self.pd.connection_error:
+                self._show_message('Moonraker unavailable')
+            self._uart_online = True
+            self._uart_epoch += 1
+            logging.info('LCD UART connected; current screen restored')
+            return True
+        except (OSError, TimeoutError):
+            self._uart_failed()
+            return False
+
+    def _ui_tick(self):
+        if not self._uart_online:
+            # Keep status current while the panel is disconnected.
+            self.pd.update_variable()
+            self._ensure_uart()
+            return
+        try:
+            self.EachMomentUpdate()
+        except OSError:
+            if self.lcd is not None and getattr(self.lcd, '_closed', False):
+                self._uart_failed()
+            else:
+                raise
 
     def _configure_menus(self):
         caps = self.pd.capabilities
@@ -469,12 +511,12 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def _enqueue_input(self, kind, value):
-        if self.pd is None or self._closed:
+        if self.pd is None or self._closed or not getattr(self, '_uart_online', True):
             return
         snapshot = self.pd.subscription.snapshot()
         if snapshot['state'] != 'ready':
             return
-        if not self._loop.post(InputEvent(kind, value, snapshot['epoch'])):
+        if not self._loop.post(InputEvent(kind, value, snapshot['epoch'], getattr(self, '_uart_epoch', 0))):
             logging.warning('LCD input queue full or closed; input discarded')
 
     def encoder_has_data(self, value):
@@ -494,6 +536,9 @@ class DWIN_LCD:
                 self._enqueue_input('press', 1)
 
     def _process_input(self, event):
+        if (not getattr(self, '_uart_online', True)
+                or event.ui_epoch != getattr(self, '_uart_epoch', 0)):
+            return
         snapshot = self.pd.subscription.snapshot()
         if (snapshot['state'] != 'ready' or snapshot['epoch'] != event.epoch
                 or self.pd.connection_error or self._closed):
@@ -512,6 +557,11 @@ class DWIN_LCD:
                     break
                 self._encoder_event = direction
                 self._dispatch_input()
+        except OSError:
+            if self.lcd is not None and getattr(self.lcd, '_closed', False):
+                self._uart_failed()
+            else:
+                raise
         finally:
             self._encoder_event = self.ENCODER_DIFF_NO
 

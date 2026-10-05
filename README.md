@@ -173,8 +173,13 @@ Frames are sent in one serial write with a write timeout. Short writes/errors
 close the port and are not automatically retried. `Read` uses UART; backlight
 accepts byte values and retains the previous intended minimum of 0x1F.
 These tests verify the existing packet contract, not every panel firmware's
-instruction set. Automatic UART reconnection and live panel validation remain
-outstanding.
+instruction set. The UI tolerates a missing panel at startup and keeps updating printer status.
+It retries UART on the UI owner after at least five seconds (on the next tick),
+using one bounded handshake attempt. On reconnect it reloads language assets and
+redraws the current print/main/error screen; local editors are exited. Inputs
+captured before the UART connection change are discarded. Reconnection only
+restores display state and never replays printer commands. Physical panel
+validation remains outstanding.
 
 ### Library requirements 
 

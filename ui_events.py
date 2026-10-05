@@ -12,6 +12,7 @@ class InputEvent:
     kind: str
     value: int
     epoch: int
+    ui_epoch: int = 0
 
 
 class UIEventLoop:
