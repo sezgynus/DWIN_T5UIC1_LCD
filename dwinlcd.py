@@ -2227,18 +2227,26 @@ class DWIN_LCD:
             status = mmu['gate_status'][gate]
             color = self._rgb565(mmu['gate_color_rgb'][gate]) if status > 0 else 0x8410
             cx = x + slot // 2
-            flange = 0x2104
-            flange_w = max(5, slot // 9)
-            body_left = x + flange_w
-            body_right = x + slot - flange_w - 1
+            flange = 0x9B46
+            flange_edge = 0xD58A
+            # Keep lane spacing unchanged, but narrow the reel itself so its
+            # height-to-width ratio resembles a physical filament spool.
+            reel_w = max(28, int(slot * 0.78))
+            reel_x = x + (slot - reel_w) // 2
+            flange_w = max(5, reel_w // 9)
+            body_left = reel_x + flange_w
+            body_right = reel_x + reel_w - flange_w - 1
             y0, y1 = top + 13, top + 52
 
-            # Large flat side-profile spool: dark flanges, colored filament
-            # winding, no perspective and no software-rasterized shapes.
-            self.lcd.Draw_Rectangle(1, flange, x + 1, top + 7,
-                                    x + flange_w, top + 58)
-            self.lcd.Draw_Rectangle(1, flange, x + slot - flange_w - 1, top + 7,
-                                    x + slot - 2, top + 58)
+            # Warm cardboard/wood flanges stand out against the black UI.
+            self.lcd.Draw_Rectangle(1, flange, reel_x + 1, top + 7,
+                                    reel_x + flange_w, top + 58)
+            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + 1, top + 7,
+                                    reel_x + flange_w, top + 58)
+            self.lcd.Draw_Rectangle(1, flange, reel_x + reel_w - flange_w - 1, top + 7,
+                                    reel_x + reel_w - 2, top + 58)
+            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + reel_w - flange_w - 1, top + 7,
+                                    reel_x + reel_w - 2, top + 58)
             self.lcd.Draw_Rectangle(1, color, body_left, y0, body_right, y1)
 
             winding = self.lcd.Color_White if sum(mmu['gate_color_rgb'][gate]) < 0.7 else flange
