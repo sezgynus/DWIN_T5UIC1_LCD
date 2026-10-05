@@ -329,7 +329,6 @@ class DWIN_LCD:
             self._producer_value = self.encoder.getValue()
             self.encoder.callback = self.encoder_has_data
         self.button.when_pressed = self._button_pressed
-        self.button.when_released = None
 
     def _uart_failed(self):
         self._uart_online = False
