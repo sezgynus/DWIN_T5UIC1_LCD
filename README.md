@@ -1,31 +1,17 @@
 # DWIN_T5UIC1_LCD
 
-## Python class for the Ender 3 V2 LCD runing klipper3d with Moonraker 
+Python UI for the Ender 3 V2 DWIN T5UIC1 panel, using
+[Klipper](https://www.klipper3d.org/) and
+[Moonraker](https://github.com/Arksine/moonraker).
 
-https://www.klipper3d.org
+### UART preparation
 
-https://octoprint.org/
-
-https://github.com/arksine/moonraker
-
-
-## Setup:
-
-### [Disable Linux serial console](https://www.raspberrypi.org/documentation/configuration/uart.md)
-  By default, the primary UART is assigned to the Linux console. If you wish to use the primary UART for other purposes, you must reconfigure Raspberry Pi OS. This can be done by using raspi-config:
-
-  * Start raspi-config: `sudo raspi-config.`
-  * Select option 3 - Interface Options.
-  * Select option P6 - Serial Port.
-  * At the prompt Would you like a login shell to be accessible over serial? answer 'No'
-  * At the prompt Would you like the serial port hardware to be enabled? answer 'Yes'
-  * Exit raspi-config and reboot the Pi for changes to take effect.
-  
-  For full instructions on how to use Device Tree overlays see [this page](https://www.raspberrypi.org/documentation/configuration/device-tree.md). 
-  
-  In brief, add a line to the `/boot/config.txt` file to apply a Device Tree overlay.
-    
-    dtoverlay=disable-bt
+In `sudo raspi-config`, disable the serial login console and enable serial
+hardware, then reboot. Select the UART routed to the display's GPIO14/15 pins
+for your Pi model; do not assume ttyAMA0 or serial0 always uses those pins.
+See the [official Raspberry Pi UART documentation](https://www.raspberrypi.com/documentation/computers/configuration.html#configuring-uarts).
+Bluetooth overlays and boot configuration paths are model/OS dependent; this
+project does not require one universal overlay.
 
 ### Moonraker connection (refactor branch)
 
@@ -69,7 +55,6 @@ python3 -m venv .venv
 .venv/bin/python run.py --moonraker-url http://127.0.0.1:7125
 ```
 
-The legacy systemd unit still needs to be updated to use this interpreter.
 UI initialization, menu handlers, periodic rendering and cleanup now run on
 one owner thread. GPIO callbacks enqueue immutable rotation/press events; they
 never write to the display. Presses use edge events and capture-time debounce;
@@ -135,7 +120,6 @@ installed heater targets and the available part fan's percentage before sending
 one script. The script sets the bed, active hotend and preset fan speed; absent
 devices are skipped. Validation prevents partial submission, but the script is
 not a transaction if Klipper rejects a command while executing it.
-Existing installation instructions below are still being modernized.
 
 Jog targets use `gcode_move.position` (command space before transforms), not
 G-code coordinates shifted by G92 or runtime offsets. Each jog saves Klipper's
@@ -181,24 +165,29 @@ captured before the UART connection change are discarded. Reconnection only
 restores display state and never replays printer commands. Physical panel
 validation remains outstanding.
 
-### Library requirements 
+### Install on Raspberry Pi OS
 
-  Thanks to [wolfstlkr](https://www.reddit.com/r/ender3v2/comments/mdtjvk/octoprint_klipper_v2_lcd/gspae7y)
+Use Python 3.11 or newer. The systemd unit below uses `/opt/dwin-lcd`.
 
-  `sudo apt-get install python3-pip python3-gpiozero python3-serial git`
+```sh
+sudo apt update
+sudo apt install git python3-venv python3-dev build-essential
+sudo git clone --branch refactor/modern-klipper-moonraker https://github.com/sezgynus/DWIN_T5UIC1_LCD.git /opt/dwin-lcd
+sudo python3 -m venv /opt/dwin-lcd/.venv
+sudo /opt/dwin-lcd/.venv/bin/python -m pip install -r /opt/dwin-lcd/requirements.txt
+```
 
-  Install the refactor dependencies with the virtual-environment commands above.
-
-  `git clone https://github.com/bustedlogic/DWIN_T5UIC1_LCD.git`
-
+The manifest includes GPIOZero, lgpio, pyserial and websocket-client. HTTP uses
+the Python standard library. Installation needs access to the Python package
+index; actual GPIO/UART operation requires a supported Pi and device permissions.
 
 ### Wire the display 
   * Display <-> Raspberry Pi GPIO BCM
   * Rx  =   GPIO14  (Tx)
   * Tx  =   GPIO15  (Rx)
   * Ent =   GPIO13
-  * A   =   GPIO19
-  * B   =   GPIO26
+  * Encoder A/B = GPIO21 / GPIO19 by default (`--encoder-pins 21 19`)
+  * Older GPIO26/19 wiring: use `--encoder-pins 26 19`; reverse the pair if needed
   * Vcc =   2   (5v)
   * Gnd =   6   (GND)
 
@@ -215,103 +204,70 @@ I tried to take some images to help out with this: You don't have to use the col
 
 <img src ="images/wire4.png?raw=true" width="400" height="300">
 
-### Run The Code
+### Run manually
 
-Enter the downloaded DWIN_T5UIC1_LCD folder.
-Make new file run.py and copy/paste in the following (pick one)
+Use the existing `run.py`; no source edit or embedded API key is needed:
 
-For an Ender3v2
-```python
-#!/usr/bin/env python3
-from dwinlcd import DWIN_LCD
-
-encoder_Pins = (26, 19)
-button_Pin = 13
-LCD_COM_Port = '/dev/ttyAMA0'
-API_Key = 'XXXXXX'
-
-DWINLCD = DWIN_LCD(
-	LCD_COM_Port,
-	encoder_Pins,
-	button_Pin,
-	API_Key
-)
-try:
-    DWINLCD.wait()
-finally:
-    DWINLCD.lcdExit()
+```sh
+cd /opt/dwin-lcd
+.venv/bin/python run.py --serial-port /dev/ttyAMA0 --encoder-pins 21 19 --button-pin 13
 ```
 
-If your control wheel is reversed (Voxelab Aquila) use this instead.
-```python
-#!/usr/bin/env python3
-from dwinlcd import DWIN_LCD
+Verify the port and BCM pin numbers for your wiring. The invoking user needs
+access to the UART and gpiochip devices. Default presets are stored under that
+user's XDG configuration directory. `--help` works without importing GPIO code.
 
-encoder_Pins = (19, 26)
-button_Pin = 13
-LCD_COM_Port = '/dev/ttyAMA0'
-API_Key = 'XXXXXX'
+### Run at boot
 
-DWINLCD = DWIN_LCD(
-	LCD_COM_Port,
-	encoder_Pins,
-	button_Pin,
-	API_Key
-)
-try:
-    DWINLCD.wait()
-finally:
-    DWINLCD.lcdExit()
+The supplied service uses a dedicated account and the install path above:
+
+```sh
+id -u dwinlcd >/dev/null 2>&1 || sudo useradd --system --user-group --home-dir /var/lib/dwin-lcd --no-create-home --shell /usr/sbin/nologin dwinlcd
+getent group dialout gpio
+sudo install -m 0600 /opt/dwin-lcd/dwin-lcd.env.example /etc/default/dwin-lcd
+sudoedit /etc/default/dwin-lcd
+sudo install -m 0644 /opt/dwin-lcd/simpleLCD.service /etc/systemd/system/simpleLCD.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now simpleLCD.service
+sudo journalctl -u simpleLCD.service -f
 ```
 
-Run with `python3 ./run.py`
+The `dialout` and `gpio` groups must exist and grant access to your actual UART
+and gpiochip devices. Adapt `SupplementaryGroups` to the installed OS if needed.
+`StateDirectory=dwin-lcd` creates `/var/lib/dwin-lcd` owned by the service user.
+The root-owned environment file can hold an optional API key; do not commit it.
+CLI arguments override environment defaults:
 
-# Run at boot:
+| Environment variable | CLI option | Default |
+|---|---|---|
+| MOONRAKER_URL | --moonraker-url | http://127.0.0.1:7125 |
+| MOONRAKER_API_KEY | Environment only | Empty |
+| DWIN_REQUEST_TIMEOUT | --request-timeout | 5 seconds |
+| DWIN_SERIAL_PORT | --serial-port | /dev/ttyAMA0 |
+| DWIN_ENCODER_PINS | --encoder-pins A B | 21 19 (BCM) |
+| DWIN_BUTTON_PIN | --button-pin | 13 (BCM) |
+| DWIN_SETTINGS_FILE | --settings-file | User XDG path; service uses /var/lib/dwin-lcd/presets.json |
 
-	Note: Delay of 30s after boot to allow webservices to settal.
-	
-	path of `run.py` is expected to be `/home/pi/DWIN_T5UIC1_LCD/run.py`
+Restart after environment-file edits. The unit starts without a fixed sleep or
+hard dependency on a local Moonraker service; application reconnect handles
+late startup. `Restart=on-failure` handles crashes with a five-second delay and
+rate limit. An intentional stop stays stopped. SIGTERM uses application cleanup;
+systemd enforces a 15-second stop limit. Logs go to journald.
 
-   `sudo chmod +x run.py`
-   
-   `sudo chmod +x simpleLCD.service`
-   
-   `sudo mv simpleLCD.service /lib/systemd/system/simpleLCD.service`
-   
-   `sudo chmod 644 /lib/systemd/system/simpleLCD.service`
-   
-   `sudo systemctl daemon-reload`
-   
-   `sudo systemctl enable simpleLCD.service`
-   
-   `sudo reboot`
-   
-   
+```sh
+sudo systemctl restart simpleLCD.service
+sudo systemctl stop simpleLCD.service
+sudo systemctl status simpleLCD.service
+```
 
-# Status:
+### Validation and remaining work
 
-## Working:
+```sh
+cd /opt/dwin-lcd
+.venv/bin/python -m unittest discover -s tests -v
+```
 
- Print Menu:
- 
-    * List / Print jobs from OctoPrint / Moonraker
-    * Auto swiching from to Print Menu on job start / end.
-    * Display Print time, Progress, Temps, and Job name.
-    * Pause / Resume / Cancle Job
-    * Tune Menu: Print speed & Temps
-
- Perpare Menu:
- 
-    * Move / Jog toolhead
-    * Disable stepper
-    * Auto Home
-    * Runtime Z offset (SET_GCODE_OFFSET)
-    * Preheat
-    * cooldown
- 
- Info Menu
- 
-    * Shows printer info.
-
-## Notworking:
-    * Probe calibration wizard and rotation-distance calibration remain unimplemented.
+The isolated tests do not prove physical motion or panel compatibility. Probe
+calibration wizard, full panel instruction-set verification and final hardware
+validation remain outstanding. The supplied systemd service must still be
+validated with start/stop/restart and device permissions on the target Pi.

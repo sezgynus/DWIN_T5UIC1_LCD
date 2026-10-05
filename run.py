@@ -1,19 +1,41 @@
 #!/usr/bin/env python3
 import argparse
 import logging
+import math
 import os
 import signal
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--moonraker-url', default=os.environ.get('MOONRAKER_URL', 'http://127.0.0.1:7125'))
-    parser.add_argument('--request-timeout', type=float, default=5.0)
-    parser.add_argument('--serial-port', default='/dev/ttyAMA0')
-    parser.add_argument('--encoder-pins', type=int, nargs=2, default=(21, 19))
-    parser.add_argument('--button-pin', type=int, default=13)
-    parser.add_argument('--settings-file', default=None, help='Local preset JSON path')
-    args = parser.parse_args()
+    parser.add_argument('--request-timeout', type=float, default=os.environ.get('DWIN_REQUEST_TIMEOUT', '5'))
+    parser.add_argument('--serial-port', default=os.environ.get('DWIN_SERIAL_PORT', '/dev/ttyAMA0'))
+    parser.add_argument('--encoder-pins', type=int, nargs=2, default=os.environ.get('DWIN_ENCODER_PINS', '21 19').split())
+    parser.add_argument('--button-pin', type=int, default=os.environ.get('DWIN_BUTTON_PIN', '13'))
+    parser.add_argument('--settings-file', default=os.environ.get('DWIN_SETTINGS_FILE'), help='Local preset JSON path')
+    return parser
+
+
+def parse_args(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        args.encoder_pins = tuple(int(pin) for pin in args.encoder_pins)
+        pins = args.encoder_pins + (args.button_pin,)
+        if len(args.encoder_pins) != 2 or len(set(pins)) != 3 or any(pin < 0 or pin > 27 for pin in pins):
+            raise ValueError('Use three distinct BCM pins in the range 0..27')
+        if not math.isfinite(args.request_timeout) or args.request_timeout <= 0:
+            raise ValueError('Request timeout must be finite and positive')
+        if not args.serial_port:
+            raise ValueError('Serial port must not be empty')
+    except (TypeError, ValueError) as error:
+        parser.error(str(error))
+    return args
+
+
+def main():
+    args = parse_args()
     logging.basicConfig(level=logging.INFO)
     from dwinlcd import DWIN_LCD
     display = DWIN_LCD(args.serial_port, tuple(args.encoder_pins), args.button_pin,

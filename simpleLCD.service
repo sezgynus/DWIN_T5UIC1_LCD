@@ -1,12 +1,27 @@
 [Unit]
- Description=My LCD Service
- After=multi-user.target
+Description=DWIN LCD for Klipper and Moonraker
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
- [Service]
- Type=idle
- ExecStartPre=/bin/sleep 30
- ExecStart=/bin/sh -c '/usr/bin/env python3 /home/pi/DWIN_T5UIC1_LCD/run.py  > /tmp/lcd.log 2>&1'
+[Service]
+Type=simple
+User=dwinlcd
+Group=dwinlcd
+SupplementaryGroups=dialout gpio
+WorkingDirectory=/opt/dwin-lcd
+Environment=PYTHONUNBUFFERED=1
+Environment=DWIN_SETTINGS_FILE=/var/lib/dwin-lcd/presets.json
+EnvironmentFile=-/etc/default/dwin-lcd
+ExecStart=/opt/dwin-lcd/.venv/bin/python /opt/dwin-lcd/run.py
+StateDirectory=dwin-lcd
+StateDirectoryMode=0750
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
 
- [Install]
- WantedBy=multi-user.target
-
+[Install]
+WantedBy=multi-user.target

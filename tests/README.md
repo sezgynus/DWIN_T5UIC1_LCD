@@ -78,3 +78,8 @@ rendering still require a physical panel.
 UART recovery tests cover missing-panel retry timing, reconnect redraw without
 printer commands, short-write disconnect handling, old-input rejection, closed
 display rejection and unrelated error propagation.
+
+Configuration coverage checks environment defaults, CLI overrides and invalid
+pin/timeout rejection before GPIO imports. Unit syntax was checked with
+systemd-analyze using the local Python executable substituted for the Pi-only
+venv path; this does not replace target-Pi service lifecycle validation.
