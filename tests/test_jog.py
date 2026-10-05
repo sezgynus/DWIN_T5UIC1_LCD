@@ -178,7 +178,6 @@ class JogTests(unittest.TestCase):
         result._live_jog_future = None
         result._live_jog_pending = None
         result.pd.HMI_ValueStruct.Move_X_scale = 100
-        result.pd.update_variable = Mock(return_value=True)
         data['status']['gcode_move']['position'][0] = 42.5
         result.pd.subscription._publish(data)
         result.EachMomentUpdate()
@@ -194,7 +193,6 @@ class JogTests(unittest.TestCase):
         result._live_jog_future = None
         result._live_jog_pending = None
         result.pd.HMI_ValueStruct.Move_X_scale = 123
-        result.pd.update_variable = Mock(return_value=True)
         data['status']['gcode_move']['position'][0] = 42.5
         result.pd.subscription._publish(data)
         result.EachMomentUpdate()
@@ -209,7 +207,6 @@ class JogTests(unittest.TestCase):
         result._live_jog_future = Future()
         result._live_jog_pending = None
         result.pd.HMI_ValueStruct.Move_X_scale = 100
-        result.pd.update_variable = Mock(return_value=True)
         data['status']['gcode_move']['position'][0] = 42.5
         result.pd.subscription._publish(data)
         result.EachMomentUpdate()
