@@ -663,6 +663,21 @@ class DWIN_LCD:
         return max(1.0, limit * 60.0 * normalized)
 
     def _queue_live_jog(self, axis, distance, speed):
+        # Clamp the *total commanded handwheel target*, not each segment against
+        # the asynchronously reported position.  Subscription position can lag
+        # behind already accepted jogs and otherwise permits cumulative overshoot.
+        if axis != 'E':
+            index = 'XYZ'.index(axis)
+            minimum = self.pd.capabilities.axis_minimum[index]
+            maximum = self.pd.capabilities.axis_maximum[index]
+            commanded = self.pd.HMI_ValueStruct
+            attr = 'Move_{}_scale'.format(axis)
+            target = float(getattr(commanded, attr)) / self.MINUNITMULT
+            target = max(minimum, min(target, maximum))
+            current_ui = target - distance
+            distance = target - current_ui
+            if abs(distance) < 1e-9:
+                return
         pending = self._live_jog_pending
         if pending is None:
             self._live_jog_pending = [axis, distance, speed]
@@ -694,17 +709,6 @@ class DWIN_LCD:
             return
         axis, distance, speed = pending
         self._live_jog_pending = None
-        if axis != 'E':
-            # Re-clamp against the latest authoritative position immediately
-            # before dispatch.  The UI target may be ahead while an earlier jog
-            # is still completing, especially near a travel limit.
-            index = 'XYZ'.index(axis)
-            current = float(self.pd.state.status['gcode_move']['position'][index])
-            minimum = self.pd.capabilities.axis_minimum[index]
-            maximum = self.pd.capabilities.axis_maximum[index]
-            distance = max(minimum - current, min(distance, maximum - current))
-            if abs(distance) < 1e-9:
-                return
         try:
             future = self.pd.moveRelative(axis, distance, speed)
         except ValueError:
