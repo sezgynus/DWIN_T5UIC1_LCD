@@ -153,11 +153,17 @@ class CapabilityTests(unittest.TestCase):
         data['status']['mmu_machine'] = {
             'unit_0': {'name': 'mmu', 'display_name': 'OpenEYE MMU'}
         }
+        data['objects'].append('unit0_mmu_exit_leds')
+        data['status']['unit0_mmu_exit_leds'] = {
+            'color_data': [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0],
+                           [0.0, 0.0, 1.0, 0.0], [1.0, 0.5, 0.0, 0.0]]
+        }
         result = printer(data)
         self.assertEqual(result.mmu['num_gates'], 4)
         self.assertEqual(result.mmu['gate'], 2)
         self.assertEqual(result.mmu['gate_color_rgb'][2], (0.0, 1.0, 0.2))
         self.assertEqual(result.mmu['name'], 'OpenEYE MMU')
+        self.assertEqual(result.mmu['exit_led_rgb'][2], (0.0, 0.0, 1.0))
 
     def test_happy_hare_mmu_name_uses_selected_unit_metadata(self):
         data = snapshot()
@@ -208,6 +214,8 @@ class CapabilityTests(unittest.TestCase):
             'gate_color_rgb': ((0.0, 0.4, 1.0), (1.0, 0.1, 0.0),
                                (0.0, 1.0, 0.2), (1.0, 0.8, 0.0)),
             'remaining_percent': (3, 40, 70, 58),
+            'exit_led_rgb': ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+                             (0.0, 0.0, 1.0), (1.0, 0.5, 0.0)),
             'filament': 'Loaded',
         }
         result.lcd.DWIN_WIDTH = 272
@@ -218,7 +226,7 @@ class CapabilityTests(unittest.TestCase):
         result.lcd.font6x12 = 0
         result.Draw_MMU_Status()
         rectangles = result.lcd.Draw_Rectangle.call_args_list
-        self.assertTrue(any(call.args[0] == 1 and call.args[1] == 0x07E0
+        self.assertTrue(any(call.args[0] == 1 and call.args[1] == result._rgb565((0.0, 0.0, 1.0))
                             for call in rectangles))
         fills = [call.args[1] for call in rectangles if call.args[0] == 1]
         self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
