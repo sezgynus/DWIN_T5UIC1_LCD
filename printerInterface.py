@@ -2,6 +2,7 @@ import copy
 import logging
 import math
 import uuid
+from collections.abc import Mapping
 from concurrent.futures import Future
 from threading import Lock
 from motion_settings import PARAMETERS, validate as validate_motion
@@ -352,7 +353,7 @@ class PrinterData:
                 unit_index = int(raw_mmu.get('unit',
                                              raw_mmu.get('unit_selected', 0)))
                 unit_info = machine.get('unit_%d' % unit_index, {})
-                if isinstance(unit_info, dict):
+                if isinstance(unit_info, Mapping):
                     unit_name = str(unit_info.get('display_name') or
                                     unit_info.get('name') or 'MMU')
                 mmu = {'num_gates': num_gates, 'gate': gate,
