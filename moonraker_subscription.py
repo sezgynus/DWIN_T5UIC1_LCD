@@ -17,7 +17,7 @@ from moonraker_client import MoonrakerError
 
 
 OBJECTS = ('webhooks', 'toolhead', 'gcode_move', 'print_stats', 'virtual_sdcard',
-           'pause_resume', 'extruder', 'heater_bed', 'fan', 'manual_probe', 'configfile')
+           'pause_resume', 'extruder', 'heater_bed', 'fan', 'motion_report', 'manual_probe', 'configfile')
 
 
 def connect(url, timeout, headers):
