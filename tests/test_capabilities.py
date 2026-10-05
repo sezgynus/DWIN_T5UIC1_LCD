@@ -132,10 +132,15 @@ class CapabilityTests(unittest.TestCase):
                                [0.0, 1.0, 0.2], [1.0, 0.8, 0.0]],
             'filament': 'Loaded',
         }
+        data['objects'].append('mmu_machine')
+        data['status']['mmu_machine'] = {
+            'unit_0': {'name': 'mmu', 'display_name': 'OpenEYE MMU'}
+        }
         result = printer(data)
         self.assertEqual(result.mmu['num_gates'], 4)
         self.assertEqual(result.mmu['gate'], 2)
         self.assertEqual(result.mmu['gate_color_rgb'][2], (0.0, 1.0, 0.2))
+        self.assertEqual(result.mmu['name'], 'OpenEYE MMU')
 
     def test_home_uses_mmu_visual_when_available(self):
         data = snapshot()
@@ -178,12 +183,12 @@ class CapabilityTests(unittest.TestCase):
         result.lcd.font6x12 = 0
         result.Draw_MMU_Status()
         rectangles = result.lcd.Draw_Rectangle.call_args_list
-        self.assertTrue(any(call.args[0] == 0 and call.args[1] == 0x33bb
+        self.assertTrue(any(call.args[0] == 1 and call.args[1] == 0x33bb
                             for call in rectangles))
         fills = [call.args[1] for call in rectangles if call.args[0] == 1]
         self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
         self.assertIn(0x8410, fills)
-        # Spools use panel-native rectangle primitives; no software circle rasterization.
+        self.assertGreater(result.lcd.Draw_Line.call_count, 0)
         result.lcd.CircleFill.assert_not_called()
         result.lcd.Draw_Circle.assert_not_called()
 
