@@ -220,7 +220,7 @@ class PrinterData:
     def getREST(self, path):
         return self.client.get(path)
 
-    def postREST(self, path, json, cleanup=None):
+    def postREST(self, path, json, cleanup=None, report_error=True):
         snapshot = self.subscription.snapshot()
         if (self.connection_error or not self.state.ready or snapshot['state'] != 'ready'
                 or snapshot['epoch'] != self.state.epoch):
@@ -236,7 +236,7 @@ class PrinterData:
             current = self.subscription.snapshot()
             return current['state'] == 'ready' and current['epoch'] == epoch
 
-        return self.client.post(path, json, guard=guard, cleanup=cleanup) if cleanup is not None else self.client.post(path, json, guard=guard)
+        return self.client.post(path, json, guard=guard, cleanup=cleanup, report_error=report_error) if cleanup is not None else self.client.post(path, json, guard=guard, report_error=report_error)
 
     def init_Webservices(self):
         # Bootstrap and reconnection run on the subscription thread.
@@ -460,7 +460,8 @@ class PrinterData:
         with self._jog_lock:
             self._jog_restore = restore
         try:
-            future = self.sendGCode(script, cleanup=restore)
+            future = self.postREST('/printer/gcode/script', json={'script': script},
+                                   cleanup={'script': restore}, report_error=False)
         except Exception:
             # Submission failed before sending anything.
             with self._jog_lock:
