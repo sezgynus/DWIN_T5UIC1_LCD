@@ -228,6 +228,10 @@ class CapabilityTests(unittest.TestCase):
         rectangles = result.lcd.Draw_Rectangle.call_args_list
         self.assertTrue(any(call.args[0] == 1 and call.args[1] == result._rgb565((0.0, 0.0, 1.0))
                             for call in rectangles))
+        for led_rgb in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
+                        (0.0, 0.0, 1.0), (1.0, 0.5, 0.0)):
+            self.assertTrue(any(call.args[0] == 1 and call.args[1] == result._rgb565(led_rgb)
+                                for call in rectangles))
         fills = [call.args[1] for call in rectangles if call.args[0] == 1]
         self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
         self.assertIn(0x8410, fills)
