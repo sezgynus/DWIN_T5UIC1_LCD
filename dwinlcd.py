@@ -2267,9 +2267,14 @@ class DWIN_LCD:
             label = str(gate + 1)
             label_w = max(24, min(38, slot - 8))
             lx0, lx1 = cx - label_w // 2, cx + label_w // 2
+            exit_leds = mmu.get('exit_led_rgb', ())
+            led_color = (self._rgb565(exit_leds[gate])
+                         if gate < len(exit_leds) else None)
             active_green = 0x07E0
-            label_bg = active_green if gate == active else self.lcd.Color_Bg_Black
-            border = active_green if gate == active else self.lcd.Line_Color
+            indicator = led_color if led_color not in (None, 0) else (
+                active_green if gate == active else self.lcd.Line_Color)
+            label_bg = indicator if gate == active else self.lcd.Color_Bg_Black
+            border = indicator
             self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
             self.lcd.Draw_Rectangle(0, border, lx0, top + 64, lx1, top + 78)
             self.lcd.Draw_String(False, True, self.lcd.font6x12,
