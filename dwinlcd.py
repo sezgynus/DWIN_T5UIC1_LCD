@@ -2271,9 +2271,11 @@ class DWIN_LCD:
             led_color = (self._rgb565(exit_leds[gate])
                          if gate < len(exit_leds) else None)
             active_green = 0x07E0
-            indicator = led_color if led_color not in (None, 0) else (
+            indicator = led_color if led_color is not None else (
                 active_green if gate == active else self.lcd.Line_Color)
-            label_bg = indicator if gate == active else self.lcd.Color_Bg_Black
+            # Every lane mirrors its live Happy Hare exit LED continuously.
+            # Black/off LEDs therefore render as black rather than falling back.
+            label_bg = indicator
             border = indicator
             self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
             self.lcd.Draw_Rectangle(0, border, lx0, top + 64, lx1, top + 78)
