@@ -140,6 +140,28 @@ class JogTests(unittest.TestCase):
         result._flush_live_jog()
         self.assertEqual(result.pd.moveRelative.call_args_list[1].args, ('X', 5.0, 5000))
 
+    def test_live_jog_clamps_pending_distance_to_latest_axis_position(self):
+        data = snapshot()
+        data['status']['gcode_move']['position'][0] = 249.5
+        result = display(data)
+        result._live_jog_future = None
+        result._live_jog_pending = None
+        result.pd.moveRelative = Mock()
+        result._queue_live_jog('X', 5.0, 9000)
+        result.pd.moveRelative.assert_called_once_with('X', 0.5, 9000)
+
+    def test_live_jog_at_axis_limit_drops_outward_move_without_warning_path(self):
+        data = snapshot()
+        data['status']['gcode_move']['position'][0] = data['status']['toolhead']['axis_maximum'][0]
+        result = display(data)
+        result._live_jog_future = None
+        result._live_jog_pending = None
+        result.pd.moveRelative = Mock()
+        result._queue_live_jog('X', 5.0, 9000)
+        result.pd.moveRelative.assert_not_called()
+        result._queue_live_jog('X', -1.0, 3000)
+        result.pd.moveRelative.assert_called_once_with('X', -1.0, 3000)
+
     def test_live_jog_toggle_is_last_move_menu_item(self):
         result = display(snapshot())
         result._live_jog = False
