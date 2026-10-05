@@ -1,6 +1,7 @@
 import time
 import math
 import serial
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
 class T5UIC1_LCD:
@@ -319,42 +320,42 @@ class T5UIC1_LCD:
 	#   x/y: Upper-left coordinate
 	#   value: Integer value
 	def _draw_numeric(self, bShow, zeroFill, zeroMode, size, color, bColor,
-	                  iNum, fNum, x, y, value, width, signed=False):
-		# Values are already scaled by 10**fNum; no IEEE float is transmitted.
-		if not isinstance(value, int) and not math.isfinite(float(value)):
-			raise ValueError('Numeric value must be finite')
-		value = int(value)
-		signed = bool(signed or value < 0)
-		if not (0 <= int(size) <= 9 and 1 <= int(iNum) <= 20
-		        and 0 <= int(fNum) <= 20 and int(iNum) + int(fNum) < 20):
+	                  iNum, fNum, x, y, value, signed=False):
+		# Public decimal calls retain the existing scaled-value contract.
+		# ProUI formats numbers as text and sends command 0x11, not 0x14.
+		if not (0 <= int(size) <= 9 and 1 <= int(iNum) <= 19
+		        and 0 <= int(fNum) <= 18 and int(iNum) + int(fNum) < 20):
 			raise ValueError('Invalid numeric font or digit count')
 		if any(not 0 <= int(item) <= 0xFFFF for item in (color, bColor, x, y)):
 			raise ValueError('Numeric color or coordinate outside word range')
-		# Encode before mutating the frame, including overflow checks.
-		payload = value.to_bytes(width, 'big', signed=signed)
-		mode = (bool(bShow) * 0x80 | signed * 0x40 | bool(zeroFill) * 0x20
-		        | bool(zeroMode) * 0x10 | int(size))
-		self.DWIN_SendBuf = (self.FHONE + bytes((0x14, mode))
-		                     + int(color).to_bytes(2, 'big') + int(bColor).to_bytes(2, 'big')
-		                     + bytes((int(iNum), int(fNum))) + int(x).to_bytes(2, 'big')
-		                     + int(y).to_bytes(2, 'big') + payload)
-		self.Send()
+		try:
+			number = Decimal(str(value))
+			if not number.is_finite():
+				raise ValueError('Numeric value must be finite')
+			# Round scaled fractions before decimal placement, including negatives.
+			number = number.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+			if abs(number) >= Decimal(10) ** (int(iNum) + int(fNum)):
+				raise ValueError('Numeric value exceeds display field')
+			text = format(number.scaleb(-int(fNum)), f'.{int(fNum)}f')
+		except InvalidOperation as error:
+			raise ValueError('Invalid numeric value') from error
+		width = int(iNum) + (int(fNum) + 1 if fNum else 0) + int(signed or number < 0)
+		text = text.rjust(width)
+		self.Draw_String(False, bShow, size, color, bColor, x, y, text)
 
 	def Draw_IntValue(self, bShow, zeroFill, zeroMode, size, color, bColor, iNum, x, y, value):
 		self._draw_numeric(bShow, zeroFill, zeroMode, size, color, bColor,
-		                   iNum, 0, x, y, value, 8)
+		                   iNum, 0, x, y, value)
 
 	def Draw_FloatValue(self, bShow, zeroFill, zeroMode, size, color, bColor, iNum, fNum, x, y, value):
+		# Reserve a sign column even for positive values so sign changes erase it.
+		font_width = (6, 8, 10, 12, 14, 16, 20, 24, 28, 32)[int(size)] if 0 <= int(size) <= 9 else 0
 		self._draw_numeric(bShow, zeroFill, zeroMode, size, color, bColor,
-		                   iNum, fNum, x, y, value, 4)
+		                   iNum, fNum, max(0, x - font_width), y, value, signed=True)
 
 	def Draw_Signed_Float(self, size, bColor, iNum, fNum, x, y, value):
-		if value < 0:
-			self.Draw_String(False, True, size, self.Color_White, bColor, x - 6, y, "-")
-			self.Draw_FloatValue(True, True, 0, size, self.Color_White, bColor, iNum, fNum, x, y, -value)
-		else:
-			self.Draw_String(False, True, size, self.Color_White, bColor, x - 6, y, " ")
-			self.Draw_FloatValue(True, True, 0, size, self.Color_White, bColor, iNum, fNum, x, y, value)
+		self.Draw_FloatValue(True, True, 0, size, self.Color_White, bColor,
+		                     iNum, fNum, x, y, value)
 
 	# /*---------------------------------------- Picture related functions ----------------------------------------*/
 

@@ -93,7 +93,6 @@ Command feedback tests distinguish HTTP acceptance from expected printer state,
 check errors/cancellation/epochs/timeouts, duplicate suppression, acknowledgement
 without retry, validation failures and future-returning backend actions.
 
-Packet golden tests use the manufacturer instruction table for color-bearing
-points and the numeric example; they also cover 64-bit integers, signed scaled
-32-bit values, overflow/digit errors and frame isolation. The installed panel's
-kernel and negative-number rendering still require hardware validation.
+Packet tests follow the pinned mriscoc DWIN/ProUI reference: color-bearing points,
+padded numeric text, scaled rounding, complete sign fields and invalid-input
+isolation. No physical panel is exercised.
