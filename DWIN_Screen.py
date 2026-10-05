@@ -1,6 +1,7 @@
 import time
 import math
 import serial
+import unicodedata
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
@@ -301,18 +302,28 @@ class T5UIC1_LCD:
 	#   bColor: Background color
 	#   x/y: Upper-left coordinate of the string
 	#   *string: The string
+	@staticmethod
+	def _panel_text(text):
+		# The selected stock font has no verified UTF-8/Turkish glyph contract.
+		text = str(text).translate(str.maketrans({'ı': 'i', 'İ': 'I', 'ş': 's', 'Ş': 'S',
+		                                         'ğ': 'g', 'Ğ': 'G'}))
+		text = unicodedata.normalize('NFKD', text)
+		return ''.join(char if ' ' <= char <= '~' else '?'
+		               for char in text if not unicodedata.combining(char))
+
 	def Draw_String(self, widthAdjust, bShow, size, color, bColor, x, y, string):
-		self.Byte(0x11)
-		# Bit 7: widthAdjust
-		# Bit 6: bShow
-		# Bit 5-4: Unused (0)
-		# Bit 3-0: size
-		self.Byte((widthAdjust * 0x80) | (bShow * 0x40) | size)
-		self.Word(color)
-		self.Word(bColor)
-		self.Word(x)
-		self.Word(y)
-		self.String(string)
+		values = tuple(int(item) for item in (size, color, bColor, x, y))
+		font, foreground, background, x, y = values
+		if not 0 <= font <= 9 or any(not 0 <= item <= 0xFFFF for item in values[1:]):
+			raise ValueError('Invalid text font, color or coordinate')
+		font_width = (6, 8, 10, 12, 14, 16, 20, 24, 28, 32)[font]
+		limit = min(90, max(0, (self.DWIN_WIDTH - x) // font_width))
+		text = self._panel_text(string)[:limit].encode('ascii')
+		if not text or y >= self.DWIN_HEIGHT:
+			return
+		self.DWIN_SendBuf = (self.FHONE + bytes((0x11, bool(widthAdjust) << 7 | bool(bShow) << 6 | font))
+		                     + foreground.to_bytes(2, 'big') + background.to_bytes(2, 'big')
+		                     + x.to_bytes(2, 'big') + y.to_bytes(2, 'big') + text)
 		self.Send()
 
 	#  Draw a positive integer

@@ -348,3 +348,10 @@ UI initializes its own cache and redraws its current screen on reconnect.
 UpdateLCD sends 0x3D only when a packet has been sent since the previous
 successful update. Multiple draw calls can share one update; redundant UI calls
 produce no UART traffic. Short-write handling remains fail-closed.
+
+Text drawing uses printable ASCII for the selected stock fonts. Turkish letters
+are transliterated (e.g. ölçüm → olcum), combining accents are removed, and other
+unsupported/control characters become ?. Text is bounded by the remaining screen
+width for the selected font and a 90-byte payload cap. This is an explicit glyph
+policy, not a claim that all panel firmware rejects Unicode. QR data retains its
+separate UTF-8 encoding and is not processed as visible text.

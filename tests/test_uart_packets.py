@@ -106,3 +106,18 @@ class PacketTests(unittest.TestCase):
         with self.assertRaises(IOError):
             result.UpdateLCD()
         self.assertTrue(result._needs_update)
+
+    def test_text_transliterates_turkish_and_bounds_visible_field(self):
+        result = self.driver()
+        result.Draw_String(False, True, 1, 0xFFFF, 0, 0, 0, 'İşık ölçümü: ğüşçöı😀\n')
+        self.assertEqual(result.MYSERIAL1.frames[-1][11:-4], b'Isik olcumu: guscoi??')
+        result.Draw_String(False, True, 0, 0, 0, 0, 0, 'x' * 10000)
+        self.assertEqual(len(result.MYSERIAL1.frames[-1][11:-4]), 45)
+        result.Draw_String(False, True, 1, 0, 0, 256, 0, 'abcd')
+        self.assertEqual(result.MYSERIAL1.frames[-1][11:-4], b'ab')
+        count = len(result.MYSERIAL1.frames)
+        result.Draw_String(False, True, 1, 0, 0, 272, 0, 'abcd')
+        self.assertEqual(len(result.MYSERIAL1.frames), count)
+        with self.assertRaises(ValueError):
+            result.Draw_String(False, True, 10, 0, 0, 0, 0, 'bad')
+        self.assertEqual(result.DWIN_SendBuf, result.FHONE)
