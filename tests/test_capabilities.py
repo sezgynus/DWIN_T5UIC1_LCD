@@ -215,7 +215,7 @@ class CapabilityMenuTests(unittest.TestCase):
         result.Draw_Case_Light_Menu = Mock()
         self.assertTrue(result._poll_case_light_query())
         self.assertTrue(result._case_light_on)
-        self.assertEqual(result._case_light_brightness, 255)
+        self.assertEqual(result._case_light_brightness, 100)
         self.assertFalse(result._case_light_query_pending)
 
     def test_case_light_toggle_and_brightness_commands(self):
@@ -223,7 +223,7 @@ class CapabilityMenuTests(unittest.TestCase):
         data['objects'].append('gcode_macro M355')
         result = display(data)
         result._case_light_on = True
-        result._case_light_brightness = 100
+        result._case_light_brightness = 50
         result.Draw_Case_Light_Menu = Mock()
 
         result.select_light.set(1)
@@ -233,11 +233,38 @@ class CapabilityMenuTests(unittest.TestCase):
 
         result.pd.sendGCode.reset_mock()
         result.checkkey = result.CaseLightBrightness
-        result._case_light_brightness_target = 200
+        result._case_light_brightness_target = 50
         result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
         result.HMI_Case_Light_Brightness()
-        result.pd.sendGCode.assert_called_once_with('M355 P200')
-        self.assertEqual(result._case_light_brightness, 200)
+        result.pd.sendGCode.assert_called_once_with('M355 P128')
+        self.assertEqual(result._case_light_brightness, 50)
+
+    def test_case_light_brightness_response_converts_raw_to_percent(self):
+        data = snapshot()
+        data['objects'].append('gcode_macro M355')
+        result = display(data)
+        result.checkkey = result.CaseLight
+        result._case_light_query_pending = True
+        result.pd.pop_gcode_response = Mock(side_effect=[
+            'info Light is OFF, Brightness=128'])
+        result.Draw_Case_Light_Menu = Mock()
+        result._poll_case_light_query()
+        self.assertEqual(result._case_light_brightness, 50)
+
+    def test_case_light_brightness_editor_clamps_percent_range(self):
+        data = snapshot()
+        data['objects'].append('gcode_macro M355')
+        result = display(data)
+        result._case_light_brightness_target = 100
+        result._encoder_move_value = 10
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CW)
+        result.HMI_Case_Light_Brightness()
+        self.assertEqual(result._case_light_brightness_target, 100)
+
+        result._case_light_brightness_target = 0
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CCW)
+        result.HMI_Case_Light_Brightness()
+        self.assertEqual(result._case_light_brightness_target, 0)
 
     def test_fan_edit_uses_percentage_scale(self):
         result = display(snapshot())
