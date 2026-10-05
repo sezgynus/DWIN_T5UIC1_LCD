@@ -1,4 +1,5 @@
 import unittest
+from concurrent.futures import Future
 from unittest.mock import Mock
 
 from test_capabilities import snapshot, printer, display
@@ -88,3 +89,59 @@ class JogTests(unittest.TestCase):
         result.HMI_Move_X()
         self.assertIn('G1 X0.1 F5000', result.pd.sendGCode.call_args.args[0])
         self.assertEqual(result.pd.current_position.x, 0)
+
+    def test_live_jog_applies_accelerated_relative_move_without_confirm_duplicate(self):
+        result = display(snapshot())
+        result._live_jog = True
+        result._live_jog_future = None
+        result._live_jog_pending = None
+        result._encoder_move_value = 50
+        result.pd.HMI_ValueStruct.Move_X_scale = 0
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CW)
+        result.HMI_Move_X()
+        self.assertIn('G1 X5 F5000', result.pd.sendGCode.call_args.args[0])
+        result.pd.sendGCode.reset_mock()
+        result.get_encoder_state.return_value = result.ENCODER_DIFF_ENTER
+        result.HMI_Move_X()
+        result.pd.sendGCode.assert_not_called()
+
+    def test_live_jog_coalesces_input_while_move_is_in_flight(self):
+        result = display(snapshot())
+        result._live_jog_future = None
+        result._live_jog_pending = None
+        result._loop = Mock()
+        first = Future()
+        second = Future()
+        result.pd.moveRelative = Mock(side_effect=[first, second])
+        result._queue_live_jog('X', 1.0, 5000)
+        result._queue_live_jog('X', 2.0, 5000)
+        result._queue_live_jog('X', 3.0, 5000)
+        self.assertEqual(result.pd.moveRelative.call_count, 1)
+        first.set_result(None)
+        result._flush_live_jog()
+        self.assertEqual(result.pd.moveRelative.call_args_list[1].args, ('X', 5.0, 5000))
+
+    def test_live_jog_toggle_is_last_move_menu_item(self):
+        result = display(snapshot())
+        result._live_jog = False
+        result._live_jog_future = None
+        result._live_jog_pending = None
+        result.select_axis.set(5)
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
+        result.Draw_Move_Menu = Mock()
+        result.HMI_AxisMove()
+        self.assertTrue(result._live_jog)
+        result.Draw_Move_Menu.assert_called()
+
+    def test_live_jog_queues_only_distance_remaining_to_axis_limit(self):
+        result = display(snapshot())
+        result._live_jog = True
+        result._live_jog_future = None
+        result._live_jog_pending = None
+        result._encoder_move_value = 50
+        result.pd.HMI_ValueStruct.Move_X_scale = result.pd.X_MAX_POS * result.MINUNITMULT - 10
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CW)
+        result.HMI_Move_X()
+        self.assertIn('G1 X1 F5000', result.pd.sendGCode.call_args.args[0])
+        self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale,
+                         result.pd.X_MAX_POS * result.MINUNITMULT)

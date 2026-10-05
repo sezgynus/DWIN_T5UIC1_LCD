@@ -312,6 +312,9 @@ class DWIN_LCD:
         self._last_encoder_time = None
         self._encoder_event = self.ENCODER_DIFF_NO
         self._encoder_move_value = 1
+        self._live_jog = False
+        self._live_jog_future = None
+        self._live_jog_pending = None
         self._loop = UIEventLoop(self._initialize, self._process_input,
                                  self._ui_tick, self._close_resources)
         self._loop.start()
@@ -642,6 +645,47 @@ class DWIN_LCD:
             return 10
         return 1
 
+    def _queue_live_jog(self, axis, distance, speed):
+        pending = self._live_jog_pending
+        if pending is None:
+            self._live_jog_pending = [axis, distance, speed]
+        elif pending[0] == axis:
+            pending[1] += distance
+            pending[2] = speed
+        else:
+            return
+        if self._live_jog_future is not None:
+            return
+        self._flush_live_jog()
+
+    def _flush_live_jog(self):
+        if self._live_jog_future is not None:
+            done = self._live_jog_future
+            if not done.done():
+                return
+            self._live_jog_future = None
+            if done.cancelled() or done.exception() is not None:
+                self._live_jog_pending = None
+                logging.warning('Live jog failed: %s',
+                                'cancelled' if done.cancelled() else done.exception())
+                return
+        pending = self._live_jog_pending
+        if pending is None or abs(pending[1]) < 1e-9:
+            self._live_jog_pending = None
+            return
+        axis, distance, speed = pending
+        self._live_jog_pending = None
+        try:
+            future = self.pd.moveRelative(axis, distance, speed)
+        except ValueError as error:
+            logging.warning('Live jog rejected: %s', error)
+            return
+        if isinstance(future, Future):
+            self._live_jog_future = future
+            snapshot = self.pd.subscription.snapshot()
+            future.add_done_callback(lambda _done: self._loop.post(InputEvent(
+                'live_jog_flush', 0, snapshot['epoch'], getattr(self, '_uart_epoch', 0))))
+
     def _process_input(self, event):
         if (not getattr(self, '_uart_online', True)
                 or event.ui_epoch != getattr(self, '_uart_epoch', 0)):
@@ -649,6 +693,9 @@ class DWIN_LCD:
         snapshot = self.pd.subscription.snapshot()
         if (snapshot['state'] != 'ready' or snapshot['epoch'] != event.epoch
                 or self._closed):
+            return
+        if event.kind == 'live_jog_flush':
+            self._flush_live_jog()
             return
         if event.kind == 'rotate':
             direction = self.ENCODER_DIFF_CCW if event.value > 0 else self.ENCODER_DIFF_CW
@@ -1158,12 +1205,13 @@ class DWIN_LCD:
                     self.lcd.UpdateLCD()
                 return
         # Avoid flicker by updating only the previous menu
+        live_index = 4 + int(self.pd.HAS_HOTEND)
         if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_axis.inc(1 + 3 + int(self.pd.HAS_HOTEND))):
-                self.Move_Highlight(1, self.select_axis.now)
+            if (self.select_axis.inc(live_index + 1)):
+                self.Draw_Move_Menu()
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_axis.dec()):
-                self.Move_Highlight(-1, self.select_axis.now)
+            if self.select_axis.dec():
+                self.Draw_Move_Menu()
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if self.select_axis.now == 0:  # Back
                 self.checkkey = self.Prepare
@@ -1210,10 +1258,14 @@ class DWIN_LCD:
                     self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4),
                     self.pd.HMI_ValueStruct.Move_E_scale
                 )
+            elif self.select_axis.now == live_index:
+                self._live_jog = not self._live_jog
+                self.Draw_Move_Menu()
         self.lcd.UpdateLCD()
 
     def HMI_Move_X(self):
         encoder_diffState = self.get_encoder_state()
+        previous_scale = self.pd.HMI_ValueStruct.Move_X_scale
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
@@ -1223,7 +1275,8 @@ class DWIN_LCD:
                 3, 1, 216, self.MBASE(1),
                 self.pd.HMI_ValueStruct.Move_X_scale
             )
-            self._action("Jog X", lambda: self.pd.moveAbsolute('X', self.pd.HMI_ValueStruct.Move_X_scale / self.MINUNITMULT, 5000))
+            if not self._live_jog:
+                self._action("Jog X", lambda: self.pd.moveAbsolute('X', self.pd.HMI_ValueStruct.Move_X_scale / self.MINUNITMULT, 5000))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1237,6 +1290,10 @@ class DWIN_LCD:
         if self.pd.HMI_ValueStruct.Move_X_scale > (self.pd.X_MAX_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_X_scale = (self.pd.X_MAX_POS) * self.MINUNITMULT
 
+        if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            applied = (self.pd.HMI_ValueStruct.Move_X_scale - previous_scale) / self.MINUNITMULT
+            if applied:
+                self._queue_live_jog('X', applied, 5000)
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(1), self.pd.HMI_ValueStruct.Move_X_scale)
@@ -1244,6 +1301,7 @@ class DWIN_LCD:
 
     def HMI_Move_Y(self):
         encoder_diffState = self.get_encoder_state()
+        previous_scale = self.pd.HMI_ValueStruct.Move_Y_scale
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
@@ -1254,7 +1312,8 @@ class DWIN_LCD:
                 self.pd.HMI_ValueStruct.Move_Y_scale
             )
 
-            self._action("Jog Y", lambda: self.pd.moveAbsolute('Y', self.pd.HMI_ValueStruct.Move_Y_scale / self.MINUNITMULT, 5000))
+            if not self._live_jog:
+                self._action("Jog Y", lambda: self.pd.moveAbsolute('Y', self.pd.HMI_ValueStruct.Move_Y_scale / self.MINUNITMULT, 5000))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1268,6 +1327,10 @@ class DWIN_LCD:
         if self.pd.HMI_ValueStruct.Move_Y_scale > (self.pd.Y_MAX_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_Y_scale = (self.pd.Y_MAX_POS) * self.MINUNITMULT
 
+        if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            applied = (self.pd.HMI_ValueStruct.Move_Y_scale - previous_scale) / self.MINUNITMULT
+            if applied:
+                self._queue_live_jog('Y', applied, 5000)
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(2), self.pd.HMI_ValueStruct.Move_Y_scale)
@@ -1275,6 +1338,7 @@ class DWIN_LCD:
 
     def HMI_Move_Z(self):
         encoder_diffState = self.get_encoder_state()
+        previous_scale = self.pd.HMI_ValueStruct.Move_Z_scale
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
@@ -1284,7 +1348,8 @@ class DWIN_LCD:
                 3, 1, 216, self.MBASE(3),
                 self.pd.HMI_ValueStruct.Move_Z_scale
             )
-            self._action("Jog Z", lambda: self.pd.moveAbsolute('Z', self.pd.HMI_ValueStruct.Move_Z_scale / self.MINUNITMULT, 600))
+            if not self._live_jog:
+                self._action("Jog Z", lambda: self.pd.moveAbsolute('Z', self.pd.HMI_ValueStruct.Move_Z_scale / self.MINUNITMULT, 600))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1298,6 +1363,10 @@ class DWIN_LCD:
         if self.pd.HMI_ValueStruct.Move_Z_scale > (self.pd.Z_MAX_POS) * self.MINUNITMULT:
             self.pd.HMI_ValueStruct.Move_Z_scale = (self.pd.Z_MAX_POS) * self.MINUNITMULT
 
+        if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            applied = (self.pd.HMI_ValueStruct.Move_Z_scale - previous_scale) / self.MINUNITMULT
+            if applied:
+                self._queue_live_jog('Z', applied, 600)
         self.lcd.Draw_FloatValue(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(3), self.pd.HMI_ValueStruct.Move_Z_scale)
@@ -1305,6 +1374,7 @@ class DWIN_LCD:
 
     def HMI_Move_E(self):
         encoder_diffState = self.get_encoder_state()
+        previous_scale = self.pd.HMI_ValueStruct.Move_E_scale
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
 
@@ -1314,7 +1384,8 @@ class DWIN_LCD:
                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1, 216,
                 self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale
             )
-            self._action("Jog E", lambda: self.pd.moveAbsolute('E', self.pd.HMI_ValueStruct.Move_E_scale / self.MINUNITMULT, 300))
+            if not self._live_jog:
+                self._action("Jog E", lambda: self.pd.moveAbsolute('E', self.pd.HMI_ValueStruct.Move_E_scale / self.MINUNITMULT, 300))
             self.lcd.UpdateLCD()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1326,6 +1397,10 @@ class DWIN_LCD:
             self.pd.HMI_ValueStruct.Move_E_scale = self.pd.last_E_scale + (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT
         elif ((self.pd.last_E_scale - self.pd.HMI_ValueStruct.Move_E_scale) > (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT):
             self.pd.HMI_ValueStruct.Move_E_scale = self.pd.last_E_scale - (self.pd.EXTRUDE_MAXLENGTH) * self.MINUNITMULT
+        if self._live_jog and encoder_diffState in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            applied = (self.pd.HMI_ValueStruct.Move_E_scale - previous_scale) / self.MINUNITMULT
+            if applied:
+                self._queue_live_jog('E', applied, 300)
         self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
         self.lcd.UpdateLCD()
 
@@ -1942,6 +2017,12 @@ class DWIN_LCD:
         if self.pd.HAS_HOTEND:
             self.lcd.Frame_AreaCopy(1, 123, 192, 176, 202, self.LBLX, self.MBASE(4))  # "Extruder"
 
+        live_row = 4 + int(self.pd.HAS_HOTEND)
+        self.Draw_Menu_Line(live_row, self.ICON_Axis, 'Live jog')
+        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+                             self.lcd.Color_Bg_Black, 224, self.MBASE(live_row),
+                             '[X]' if self._live_jog else '[ ]')
+
         self.Draw_Back_First(self.select_axis.now == 0)
         if (self.select_axis.now):
             self.Draw_Menu_Cursor(self.select_axis.now)
@@ -1961,6 +2042,8 @@ class DWIN_LCD:
         # Draw separators and icons
         for i in range(3 + int(self.pd.HAS_HOTEND)):
             self.Draw_Menu_Line(i + 1, self.ICON_MoveX + i)
+        if self.select_axis.now == live_row:
+            self.Draw_Menu_Cursor(live_row)
 
     # --------------------------------------------------------------#
     # --------------------------------------------------------------#
