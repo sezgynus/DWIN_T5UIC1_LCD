@@ -232,9 +232,21 @@ class CapabilityTests(unittest.TestCase):
                         (0.0, 0.0, 1.0), (1.0, 0.5, 0.0)):
             self.assertTrue(any(call.args[0] == 1 and call.args[1] == result._rgb565(led_rgb)
                                 for call in rectangles))
+        fills = [call.args[1] for call in rectangles if call.args[0] == 1]
+        self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
+        self.assertIn(0x8410, fills)
+        self.assertIn(0x9B46, fills)
+        self.assertTrue(any(call.args[0] == 0 and call.args[1] == 0xD58A
+                            for call in rectangles))
+        wood_fills = [call.args for call in rectangles
+                      if call.args[0] == 1 and call.args[1] == 0x9B46]
+        self.assertTrue(all(args[5] - args[3] == 51 for args in wood_fills))
+        self.assertGreater(result.lcd.Draw_Line.call_count, 0)
+        result.lcd.CircleFill.assert_not_called()
+        result.lcd.Draw_Circle.assert_not_called()
 
     def test_mmu_lane_led_hue_is_normalized_for_lcd_visibility(self):
-        result = self.make_dwinlcd()
+        result = display(snapshot())
         result.pd.mmu = {
             'num_gates': 1, 'gate': 0, 'gate_status': (1,),
             'gate_color_rgb': ((1.0, 0.0, 0.0),),
@@ -247,19 +259,6 @@ class CapabilityTests(unittest.TestCase):
                  if call.args[0] == 1]
         self.assertIn(result._rgb565((1.0, 0.0, 0.0)), fills)
         self.assertNotIn(result._rgb565((0.1, 0.0, 0.0)), fills)
-        fills = [call.args[1] for call in rectangles if call.args[0] == 1]
-        self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
-        self.assertIn(0x8410, fills)
-        self.assertIn(0x9B46, fills)
-        self.assertTrue(any(call.args[0] == 0 and call.args[1] == 0xD58A
-                            for call in rectangles))
-        # Reel height stays fixed while its body is narrower than the lane slot.
-        wood_fills = [call.args for call in rectangles
-                      if call.args[0] == 1 and call.args[1] == 0x9B46]
-        self.assertTrue(all(args[5] - args[3] == 51 for args in wood_fills))
-        self.assertGreater(result.lcd.Draw_Line.call_count, 0)
-        result.lcd.CircleFill.assert_not_called()
-        result.lcd.Draw_Circle.assert_not_called()
 
     def test_mmu_visual_is_not_redrawn_for_unrelated_status_updates(self):
         result = display(snapshot())
