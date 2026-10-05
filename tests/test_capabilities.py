@@ -174,25 +174,49 @@ class CapabilityMenuTests(unittest.TestCase):
         result.pd.probe_calibrate.assert_not_called()
         self.assertEqual(result.checkkey, result.Homeoffset)
 
-    def test_case_light_is_in_control_menu_and_toggles_m355(self):
+    def test_case_light_opens_submenu_and_queries_initial_state(self):
         result = display(snapshot())
         keys = [entry[0] for entry in result._menus['control']]
         self.assertIn('LIGHT', keys)
         self.assertLess(keys.index('MOVE'), keys.index('LIGHT'))
         self.assertLess(keys.index('LIGHT'), keys.index('INFO'))
-
+        result.pd.query_case_light = Mock()
+        result.Draw_Case_Light_Menu = Mock()
         result.select_control.set(result.CONTROL_CASE_LIGHT)
         result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
-        result.Draw_Control_Menu = Mock()
-
         result.HMI_Control()
-        result.pd.sendGCode.assert_called_once_with('M355 S1')
+        self.assertEqual(result.checkkey, result.CaseLight)
+        result.pd.query_case_light.assert_called_once_with()
+
+    def test_case_light_query_parses_on_and_brightness(self):
+        result = display(snapshot())
+        result.checkkey = result.CaseLight
+        result._case_light_query_pending = True
+        result.pd.pop_gcode_response = Mock(side_effect=['info Light is ON, Brightness=255'])
+        result.Draw_Case_Light_Menu = Mock()
+        self.assertTrue(result._poll_case_light_query())
         self.assertTrue(result._case_light_on)
+        self.assertEqual(result._case_light_brightness, 255)
+        self.assertFalse(result._case_light_query_pending)
+
+    def test_case_light_toggle_and_brightness_commands(self):
+        result = display(snapshot())
+        result._case_light_on = True
+        result._case_light_brightness = 100
+        result.Draw_Case_Light_Menu = Mock()
+
+        result.select_light.set(1)
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
+        result.HMI_Case_Light()
+        result.pd.sendGCode.assert_called_once_with('M355 S0')
 
         result.pd.sendGCode.reset_mock()
-        result.HMI_Control()
-        result.pd.sendGCode.assert_called_once_with('M355 S0')
-        self.assertFalse(result._case_light_on)
+        result.checkkey = result.CaseLightBrightness
+        result._case_light_brightness_target = 200
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
+        result.HMI_Case_Light_Brightness()
+        result.pd.sendGCode.assert_called_once_with('M355 P200')
+        self.assertEqual(result._case_light_brightness, 200)
 
     def test_fan_edit_uses_percentage_scale(self):
         result = display(snapshot())
