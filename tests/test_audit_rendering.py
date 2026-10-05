@@ -43,3 +43,15 @@ class AuditRenderingTests(unittest.TestCase):
         result._dispatch_input = lambda: result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 216, 50, 205)
         result._process_input(InputEvent('press', 1, 1))
         self.assertEqual([frame[1] for frame in result.lcd.MYSERIAL1.frames], [0x11, 0x3D])
+
+    def test_info_long_version_and_unicode_fields_have_visible_coordinates(self):
+        result = self.screen()
+        result.pd.SHORT_BUILD_VERSION = 'v' * 100
+        result.pd.MACHINE_SIZE = 'Ölçüm' * 20
+        result.pd.CORP_WEBSITE_E = 'https://' + 'x' * 100
+        result.Draw_Info_Menu()
+        frames = [frame for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11]
+        self.assertEqual(len(frames), 3)
+        for frame in frames:
+            self.assertEqual(int.from_bytes(frame[7:9], 'big'), 0)
+            self.assertEqual(len(frame[11:-4]), 34)

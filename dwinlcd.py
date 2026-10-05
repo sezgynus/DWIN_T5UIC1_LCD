@@ -1837,28 +1837,22 @@ class DWIN_LCD:
     def Draw_Control_Menu(self):
         self._draw_capability_menu('control', self.select_control)
 
+    def _draw_info_text(self, value, y):
+        text = T5UIC1_LCD._panel_text(value)[:self.lcd.DWIN_WIDTH // self.MENU_CHR_W]
+        x = max(0, (self.lcd.DWIN_WIDTH - len(text) * self.MENU_CHR_W) // 2)
+        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                             self.lcd.Color_Bg_Black, x, y, text)
+
     def Draw_Info_Menu(self):
         self.Clear_Main_Window()
 
-        self.lcd.Draw_String(
-            False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-            (self.lcd.DWIN_WIDTH - len(self.pd.MACHINE_SIZE) * self.MENU_CHR_W) / 2, 122,
-            self.pd.MACHINE_SIZE
-        )
-        self.lcd.Draw_String(
-            False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-            (self.lcd.DWIN_WIDTH - len(self.pd.SHORT_BUILD_VERSION) * self.MENU_CHR_W) / 2, 195,
-            self.pd.SHORT_BUILD_VERSION
-        )
+        self._draw_info_text(self.pd.MACHINE_SIZE, 122)
+        self._draw_info_text(self.pd.SHORT_BUILD_VERSION, 195)
         self.lcd.Frame_TitleCopy(1, 190, 16, 215, 26)  # "Info"
         self.lcd.Frame_AreaCopy(1, 120, 150, 146, 161, 124, 102)
         self.lcd.Frame_AreaCopy(1, 146, 151, 254, 161, 82, 175)
         self.lcd.Frame_AreaCopy(1, 0, 165, 94, 175, 89, 248)
-        self.lcd.Draw_String(
-            False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-            (self.lcd.DWIN_WIDTH - len(self.pd.CORP_WEBSITE_E) * self.MENU_CHR_W) / 2, 268,
-            self.pd.CORP_WEBSITE_E
-        )
+        self._draw_info_text(self.pd.CORP_WEBSITE_E, 268)
         self.Draw_Back_First()
         for i in range(3):
             self.lcd.ICON_Show(self.ICON, self.ICON_PrintSize + i, 26, 99 + i * 73)
