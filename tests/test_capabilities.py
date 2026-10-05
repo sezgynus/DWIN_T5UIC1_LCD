@@ -16,12 +16,14 @@ def snapshot(hotend=True, bed=True, fan=True, probe=False, multiple=False):
                        'absolute_extrude': True, 'position': [0, 0, 0, 0]},
         'print_stats': {'state': 'standby'},
         'virtual_sdcard': {'is_active': False, 'progress': 0},
+        'motion_report': {'live_position': [12.3, 45.6, 7.8, 0],
+                          'live_velocity': 83.5, 'live_extruder_velocity': 4.0},
     }
     settings = {'printer': {'kinematics': 'cartesian'}}
     objects = list(status) + ['configfile']
     if hotend:
         settings['extruder'] = {'min_temp': 5, 'max_temp': 305, 'min_extrude_temp': 155,
-                                'max_extrude_only_distance': 35}
+                                'max_extrude_only_distance': 35, 'filament_diameter': 1.75}
         status['extruder'] = {'temperature': 200, 'target': 205, 'can_extrude': True}
         status['toolhead']['extruder'] = 'extruder'
         objects.append('extruder')
@@ -98,6 +100,29 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(result.thermalManager['temp_hotend'][0]['target'], 195)
         result.setExtTemp(210)
         result.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder1 TARGET=210')
+
+    def test_live_dashboard_telemetry_uses_motion_report(self):
+        data = snapshot()
+        data['status']['gcode_move']['speed_factor'] = 1.25
+        data['status']['gcode_move']['extrude_factor'] = 0.95
+        result = printer(data)
+        self.assertEqual(result.feedrate_percentage, 125)
+        self.assertEqual(result.flow_percentage, 95)
+        self.assertEqual(result.live_position, (12.3, 45.6, 7.8))
+        self.assertEqual(result.live_velocity, 83.5)
+        self.assertEqual(result.live_extruder_velocity, 4.0)
+        self.assertAlmostEqual(result.volumetric_flow,
+                               4.0 * 3.141592653589793 * (1.75 / 2.0) ** 2)
+        self.assertEqual(result.dashboard_fan_pwm, 128)
+
+    def test_dashboard_falls_back_when_motion_report_is_missing(self):
+        data = snapshot()
+        del data['status']['motion_report']
+        data['objects'].remove('motion_report')
+        result = printer(data)
+        self.assertEqual(result.live_position, (0.0, 0.0, 0.0))
+        self.assertEqual(result.live_velocity, 0.0)
+        self.assertEqual(result.volumetric_flow, 0.0)
 
     def test_zero_target_allowed_and_configured_limits_enforced(self):
         result = printer(snapshot())
