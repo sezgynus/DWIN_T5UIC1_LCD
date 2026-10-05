@@ -2268,8 +2268,16 @@ class DWIN_LCD:
             label_w = max(24, min(38, slot - 8))
             lx0, lx1 = cx - label_w // 2, cx + label_w // 2
             exit_leds = mmu.get('exit_led_rgb', ())
-            led_color = (self._rgb565(exit_leds[gate])
-                         if gate < len(exit_leds) else None)
+            led_color = None
+            if gate < len(exit_leds):
+                rgb = exit_leds[gate]
+                peak = max(rgb)
+                # Mirror the LED hue, not its physical brightness.  Happy Hare
+                # may deliberately drive a color at low intensity (e.g. red
+                # at 0.1), which is too dark on the LCD if copied literally.
+                normalized_rgb = (tuple(channel / peak for channel in rgb)
+                                  if peak > 0 else rgb)
+                led_color = self._rgb565(normalized_rgb)
             active_green = 0x07E0
             indicator = led_color if led_color is not None else (
                 active_green if gate == active else self.lcd.Line_Color)
