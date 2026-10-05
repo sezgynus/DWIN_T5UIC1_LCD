@@ -113,6 +113,20 @@ class T5UIC1_LCD:
 		self._needs_update = True
 		time.sleep(0.001)
 
+	@staticmethod
+	def _bytes(*values):
+		return bytes(int(value) for value in values)
+
+	@staticmethod
+	def _words(*values):
+		return b''.join(int(value).to_bytes(2, 'big') for value in values)
+
+	def _packet(self, command, payload=b''):
+		# Build every field before replacing the shared scratch buffer.
+		frame = self.FHONE + self._bytes(command) + bytes(payload)
+		self.DWIN_SendBuf = frame
+		self.Send()
+
 	def Read(self, lend=1):
 		if not isinstance(lend, int) or lend < 0:
 			raise ValueError('Read size must be nonnegative')
@@ -132,8 +146,7 @@ class T5UIC1_LCD:
 	def Handshake(self, timeout=1.0):
 		if not math.isfinite(timeout) or timeout <= 0:
 			raise ValueError('Handshake timeout must be positive')
-		self.Byte(0x00)
-		self.Send()
+		self._packet(0x00)
 		deadline = time.monotonic() + timeout
 		while time.monotonic() < deadline:
 			waiting = self.MYSERIAL1.in_waiting
@@ -149,26 +162,21 @@ class T5UIC1_LCD:
 	def Backlight_SetLuminance(self, luminance):
 		if not isinstance(luminance, int) or not 0 <= luminance <= 255:
 			raise ValueError('Backlight luminance must be a byte')
-		self.Byte(0x30)
-		self.Byte(luminance)
-		self.Send()
+		self._packet(0x30, self._bytes(luminance))
 
 	# Set screen display direction
 	#  dir: 0=0°, 1=90°, 2=180°, 3=270°
 	def Frame_SetDir(self, dir):
-		self.Byte(0x34)
-		self.Byte(0x5A)
-		self.Byte(0xA5)
-		self.Byte(dir)
-		self.Send()
+		if not isinstance(dir, int) or not 0 <= dir <= 3:
+			raise ValueError('Display direction must be 0..3')
+		self._packet(0x34, self._bytes(0x5A, 0xA5, dir))
 
 	# Update display
 	def UpdateLCD(self):
 		if getattr(self, '_closed', False):
 			raise RuntimeError('LCD is closed')
 		if getattr(self, '_needs_update', True):
-			self.Byte(0x3D)
-			self.Send()
+			self._packet(0x3D)
 			self._needs_update = False
 
 	# /*---------------------------------------- Drawing functions ----------------------------------------*/
@@ -176,9 +184,7 @@ class T5UIC1_LCD:
 	# Clear screen
 	#  color: Clear screen color
 	def Frame_Clear(self, color):
-		self.Byte(0x01)
-		self.Word(color)
-		self.Send()
+		self._packet(0x01, self._words(color))
 
 	# Draw a point
 	#  width: point width   0x01-0x0F
@@ -202,13 +208,7 @@ class T5UIC1_LCD:
 	#   xStart/yStart: Start point
 	#   xEnd/yEnd: End point
 	def Draw_Line(self, color, xStart, yStart, xEnd, yEnd):
-		self.Byte(0x03)
-		self.Word(color)
-		self.Word(xStart)
-		self.Word(yStart)
-		self.Word(xEnd)
-		self.Word(yEnd)
-		self.Send()
+		self._packet(0x03, self._words(color, xStart, yStart, xEnd, yEnd))
 
 	#  Draw a rectangle
 	#   mode: 0=frame, 1=fill, 2=XOR fill
@@ -216,14 +216,9 @@ class T5UIC1_LCD:
 	#   xStart/yStart: upper left point
 	#   xEnd/yEnd: lower right point
 	def Draw_Rectangle(self, mode, color, xStart, yStart, xEnd, yEnd):
-		self.Byte(0x05)
-		self.Byte(mode)
-		self.Word(color)
-		self.Word(xStart)
-		self.Word(yStart)
-		self.Word(xEnd)
-		self.Word(yEnd)
-		self.Send()
+		if mode not in (0, 1, 2):
+			raise ValueError('Rectangle mode must be 0..2')
+		self._packet(0x05, self._bytes(mode) + self._words(color, xStart, yStart, xEnd, yEnd))
 
 	#  Move a screen area
 	#   mode: 0, circle shift; 1, translation
@@ -233,15 +228,10 @@ class T5UIC1_LCD:
 	#   xStart/yStart: upper left point
 	#   xEnd/yEnd: bottom right point
 	def Frame_AreaMove(self, mode, dir, dis, color, xStart, yStart, xEnd, yEnd):
-		self.Byte(0x09)
-		self.Byte((mode << 7) | dir)
-		self.Word(dis)
-		self.Word(color)
-		self.Word(xStart)
-		self.Word(yStart)
-		self.Word(xEnd)
-		self.Word(yEnd)
-		self.Send()
+		if mode not in (0, 1) or dir not in (0, 1, 2, 3):
+			raise ValueError('Invalid area movement mode or direction')
+		self._packet(0x09, self._bytes(mode << 7 | dir)
+		             + self._words(dis, color, xStart, yStart, xEnd, yEnd))
 
 	# ____________________________Draw a circle________________________________\\
 	# Color: circle color
@@ -381,9 +371,7 @@ class T5UIC1_LCD:
 	# Draw JPG and cached in #0 virtual display area
 	# id: Picture ID
 	def JPG_ShowAndCache(self, id):
-		self.Word(0x2200)
-		self.Byte(id)
-		self.Send()  # AA 23 00 00 00 00 08 00 01 02 03 CC 33 C3 3C
+		self._packet(0x22, self._bytes(0, id))
 
 	@staticmethod
 	def _image_flags(index, background, restore, enhanced):
@@ -397,25 +385,16 @@ class T5UIC1_LCD:
 	#   x/y: Upper-left point
 	def ICON_Show(self, libID, picID, x, y, background=False, restore=False, enhanced=True):
 		flags = self._image_flags(libID, background, restore, enhanced)
-		if x > self.DWIN_WIDTH - 1:
-			x = self.DWIN_WIDTH - 1
-		if y > self.DWIN_HEIGHT - 1:
-			y = self.DWIN_HEIGHT - 1
-		self.Byte(0x23)
-		self.Word(x)
-		self.Word(y)
-		self.Byte(flags)
-		self.Byte(picID)
-		self.Send()
+		# Validate before clipping, then build atomically.
+		self._words(x, y)
+		x, y = min(int(x), self.DWIN_WIDTH - 1), min(int(y), self.DWIN_HEIGHT - 1)
+		self._packet(0x23, self._words(x, y) + self._bytes(flags, picID))
 
 	# Unzip the JPG picture to a virtual display area
 	#  n: Cache index
 	#  id: Picture ID
 	def JPG_CacheToN(self, n, id):
-		self.Byte(0x25)
-		self.Byte(n)
-		self.Byte(id)
-		self.Send()
+		self._packet(0x25, self._bytes(n, id))
 
 	def JPG_CacheTo1(self, id):
 		self.JPG_CacheToN(1, id)
@@ -428,15 +407,7 @@ class T5UIC1_LCD:
 	def Frame_AreaCopy(self, cacheID, xStart, yStart, xEnd, yEnd, x, y,
 	                   background=False, restore=False, enhanced=True):
 		flags = self._image_flags(cacheID, background, restore, enhanced)
-		self.Byte(0x27)
-		self.Byte(flags)
-		self.Word(xStart)
-		self.Word(yStart)
-		self.Word(xEnd)
-		self.Word(yEnd)
-		self.Word(x)
-		self.Word(y)
-		self.Send()
+		self._packet(0x27, self._bytes(flags) + self._words(xStart, yStart, xEnd, yEnd, x, y))
 
 	def Frame_TitleCopy(self, id, x1, y1, x2, y2):
 		self.Frame_AreaCopy(id, x1, y1, x2, y2, 14, 8)
@@ -450,49 +421,33 @@ class T5UIC1_LCD:
 	#   x/y: Upper-left point
 	#   interval: Display time interval, unit 10mS
 	def ICON_Animation(self, animID, animate, libID, picIDs, picIDe, x, y, interval):
-		if x > self.DWIN_WIDTH - 1:
-			x = self.DWIN_WIDTH - 1
-		if y > self.DWIN_HEIGHT - 1:
-			y = self.DWIN_HEIGHT - 1
-		self.Byte(0x28)
-		self.Word(x)
-		self.Word(y)
-		# Bit 7: animation on or off
-		# Bit 6: start from begin or end
-		# Bit 5-4: unused (0)
-		# Bit 3-0: animID
-		self.Byte((animate * 0x80) | 0x40 | animID)
-		self.Byte(libID)
-		self.Byte(picIDs)
-		self.Byte(picIDe)
-		self.Byte(interval)
-		self.Send()
+		if not isinstance(animID, int) or not 0 <= animID <= 15:
+			raise ValueError('Animation ID must be 0..15')
+		self._words(x, y)
+		x, y = min(int(x), self.DWIN_WIDTH - 1), min(int(y), self.DWIN_HEIGHT - 1)
+		self._packet(0x28, self._words(x, y)
+		             + self._bytes(bool(animate) << 7 | 0x40 | animID, libID, picIDs, picIDe, interval))
 
 	#  Animation Control
 	#   state: 16 bits, each bit is the state of an animation id
 	def ICON_AnimationControl(self, state):
 		if not isinstance(state, int) or not 0 <= state <= 0xFFFF:
 			raise ValueError('Animation state must be a 16-bit mask')
-		self.Byte(0x29)
-		self.Word(state)
-		self.Send()
+		self._packet(0x29, self._words(state))
 
 	# ____________________________Display QR code ________________________________\\
 	# QR_Pixel: The pixel size occupied by each point of the QR code: 0x01-0x0F (1-16)
 	# (Nx, Ny): The coordinates of the upper left corner displayed by the QR code
 	# str: multi-bit data
 	# /**************The size of the QR code is (46*QR_Pixel)*(46*QR_Pixle) dot matrix************/
-	def QR_Code(self, QR_Pixel, Xs, Ys, data):	    # Display QR code
-		self.Byte(0x21)  # Display QR code instruction
-		self.Word(Xs)  # Two-dimensional code Xs coordinate high eight
-		self.Word(Ys)  # The Ys coordinate of the QR code is eight high
+	def QR_Code(self, QR_Pixel, Xs, Ys, data):
+		if not isinstance(QR_Pixel, int) or not 1 <= QR_Pixel <= 15:
+			raise ValueError('QR pixel size must be 1..15')
+		encoded = data.encode('utf-8')
+		if not encoded or len(encoded) > 94:
+			raise ValueError('QR data must contain 1..94 UTF-8 bytes')
+		self._packet(0x21, self._words(Xs, Ys) + self._bytes(min(QR_Pixel, 6)) + encoded)
 
-		if(QR_Pixel <= 6):  # Set the upper limit of pixels according to the actual screen size
-			self.Byte(QR_Pixel)  # Two-dimensional code pixel size
-		else:
-			self.Byte(0x06)  # The pixel size of the QR code exceeds the default of 1
-		self.String(data)
-		self.Send()
 	# /*---------------------------------------- Memory functions ----------------------------------------*/
 	#  The LCD has an additional 32KB SRAM and 16KB Flash
 

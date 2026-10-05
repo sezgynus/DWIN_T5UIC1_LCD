@@ -149,3 +149,39 @@ class PacketTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             result.Draw_Signed_Float(1, 0, 2, 2, 100, 20, 9999.5)
         self.assertEqual(len(result.MYSERIAL1.frames), 4)
+
+    def test_invalid_packet_fields_never_poison_following_command(self):
+        operations = (
+            lambda d: d.Draw_Line(65536, 0, 0, 1, 1),
+            lambda d: d.Draw_Rectangle(3, 0, 0, 0, 1, 1),
+            lambda d: d.Draw_Rectangle(1, 0, 0, 0, -1, 1),
+            lambda d: d.Frame_AreaMove(1, 4, 1, 0, 0, 0, 1, 1),
+            lambda d: d.Frame_SetDir(4),
+            lambda d: d.Frame_Clear(65536),
+            lambda d: d.ICON_Show(9, 256, 0, 0),
+            lambda d: d.ICON_Show(9, 1, -1, 0),
+            lambda d: d.JPG_ShowAndCache(256),
+            lambda d: d.JPG_CacheToN(1, 256),
+            lambda d: d.Frame_AreaCopy(1, 0, 0, 1, 1, 65536, 0),
+            lambda d: d.ICON_Animation(16, True, 9, 1, 2, 0, 0, 1),
+            lambda d: d.ICON_Animation(1, True, 9, 1, 2, 0, 0, 256),
+            lambda d: d.QR_Code(0, 0, 0, 'abc'),
+            lambda d: d.QR_Code(1, 0, 0, 'x' * 95),
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                result = self.driver()
+                with self.assertRaises((ValueError, OverflowError)):
+                    operation(result)
+                self.assertEqual(result.DWIN_SendBuf, result.FHONE)
+                self.assertFalse(result.MYSERIAL1.frames)
+                result.Frame_Clear(0)
+                self.assertEqual(result.MYSERIAL1.frames[-1], bytes.fromhex('AA 01 00 00 CC 33 C3 3C'))
+
+    def test_qr_utf8_limit_counts_bytes_and_preserves_valid_payload(self):
+        result = self.driver()
+        result.QR_Code(1, 0, 0, 'ü' * 47)
+        self.assertEqual(result.MYSERIAL1.frames[-1][7:-4], ('ü' * 47).encode())
+        with self.assertRaises(ValueError):
+            result.QR_Code(1, 0, 0, 'ü' * 48)
+        self.assertEqual(len(result.MYSERIAL1.frames), 1)

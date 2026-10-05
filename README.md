@@ -379,3 +379,8 @@ successful response. Disconnect/reconnect alone does not clear it. The saved
 slot is unique to the client instance and reused after successful restoration,
 so Klipper's saved-state dictionary does not grow with every jog. This guard
 covers this LCD client's commands; other clients can still submit commands.
+
+All high-level UART commands build and validate their complete payload before
+replacing the scratch buffer. Invalid fields leave the next packet intact.
+QR data is separately encoded as UTF-8 and must contain 1–94 bytes; oversized
+payloads are rejected without truncating a URL or splitting a character.
