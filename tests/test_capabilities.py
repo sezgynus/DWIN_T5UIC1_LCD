@@ -116,6 +116,10 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn((66, 416), coordinates)
         self.assertLess(66 + 3 * result.STAT_CHR_W, 116)
 
+    def test_printer_data_initializes_mmu_before_first_status_update(self):
+        result = printer(snapshot(), update=False)
+        self.assertIsNone(result.mmu)
+
     def test_happy_hare_mmu_state_is_normalized(self):
         data = snapshot()
         data['objects'].append('mmu')
