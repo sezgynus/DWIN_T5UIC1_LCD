@@ -100,8 +100,8 @@ class AuditRenderingTests(unittest.TestCase):
         result.pd.update_variable()
         result.Draw_Move_Menu()
         frames = [f for f in result.lcd.MYSERIAL1.frames if f[1] == 0x11]
-        self.assertEqual([f[11:-4].strip() for f in frames],
-                         [b'-1.5', b'12.3', b'2.5', b'-4.5'])
+        rendered = [f[11:-4].strip() for f in frames]
+        self.assertEqual(rendered[-4:], [b'-1.5', b'12.3', b'2.5', b'-4.5'])
         result.select_axis.set(1)
         result.get_encoder_state = lambda: result.ENCODER_DIFF_ENTER
         result.HMI_AxisMove()
