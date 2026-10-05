@@ -204,13 +204,23 @@ class InputRoutingTests(unittest.TestCase):
 
     def test_rotation_rate_matches_marlin_multiplier_thresholds(self):
         display = self.display()
-        with patch.object(ui.time, 'monotonic', side_effect=[1.0, 1.02, 1.03, 1.035]):
+        with patch.object(ui.time, 'monotonic',
+                          side_effect=[1.0, 1.2, 1.28, 1.32, 1.345]):
             display.encoder_has_data(1)   # first step: 1x
-            display.encoder_has_data(2)   # 50 steps/s: 5x
-            display.encoder_has_data(3)   # 100 steps/s: 10x
-            display.encoder_has_data(4)   # 200 steps/s: 100x
+            display.encoder_has_data(2)   # 5 steps/s: 1x
+            display.encoder_has_data(3)   # 12.5 steps/s: 5x
+            display.encoder_has_data(4)   # 25 steps/s: 10x
+            display.encoder_has_data(5)   # 40 steps/s: 250x
         events = [call.args[0] for call in display._loop.post.call_args_list]
-        self.assertEqual([event.accelerated_value for event in events], [1, 5, 10, 250])
+        self.assertEqual([event.accelerated_value for event in events], [1, 1, 5, 10, 250])
+
+    def test_rotation_rate_uses_intermediate_50x_band(self):
+        display = self.display()
+        with patch.object(ui.time, 'monotonic', side_effect=[1.0, 1.033]):
+            display.encoder_has_data(1)
+            display.encoder_has_data(2)   # about 30.3 steps/s: 50x
+        events = [call.args[0] for call in display._loop.post.call_args_list]
+        self.assertEqual(events[-1].accelerated_value, 50)
 
     def test_rotation_never_samples_held_button(self):
         display = self.display()

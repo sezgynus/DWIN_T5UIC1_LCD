@@ -135,9 +135,10 @@ class DWIN_LCD:
     ENCODER_DIFF_CCW = 2  # counterclockwise rotation
     ENCODER_DIFF_ENTER = 3   # click
     ENCODER_WAIT_ENTER = 300
-    ENCODER_5X_STEPS_PER_SEC = 30
-    ENCODER_10X_STEPS_PER_SEC = 80
-    ENCODER_100X_STEPS_PER_SEC = 130
+    ENCODER_5X_STEPS_PER_SEC = 10
+    ENCODER_10X_STEPS_PER_SEC = 20
+    ENCODER_50X_STEPS_PER_SEC = 30
+    ENCODER_FAST_STEPS_PER_SEC = 40
     ENCODER_FAST_MULTIPLIER = 250
     _encoder_move_value = 1
 
@@ -592,8 +593,10 @@ class DWIN_LCD:
                 elapsed = now - last_encoder_time
                 if elapsed > 0:
                     rate = abs(delta) / elapsed
-                    if rate >= self.ENCODER_100X_STEPS_PER_SEC:
+                    if rate >= self.ENCODER_FAST_STEPS_PER_SEC:
                         multiplier = self.ENCODER_FAST_MULTIPLIER
+                    elif rate >= self.ENCODER_50X_STEPS_PER_SEC:
+                        multiplier = 50
                     elif rate >= self.ENCODER_10X_STEPS_PER_SEC:
                         multiplier = 10
                     elif rate >= self.ENCODER_5X_STEPS_PER_SEC:
