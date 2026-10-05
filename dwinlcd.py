@@ -138,6 +138,7 @@ class DWIN_LCD:
     ENCODER_5X_STEPS_PER_SEC = 30
     ENCODER_10X_STEPS_PER_SEC = 80
     ENCODER_100X_STEPS_PER_SEC = 130
+    ENCODER_FAST_MULTIPLIER = 250
     _encoder_move_value = 1
 
 
@@ -592,7 +593,7 @@ class DWIN_LCD:
                 if elapsed > 0:
                     rate = abs(delta) / elapsed
                     if rate >= self.ENCODER_100X_STEPS_PER_SEC:
-                        multiplier = 100
+                        multiplier = self.ENCODER_FAST_MULTIPLIER
                     elif rate >= self.ENCODER_10X_STEPS_PER_SEC:
                         multiplier = 10
                     elif rate >= self.ENCODER_5X_STEPS_PER_SEC:
@@ -626,11 +627,19 @@ class DWIN_LCD:
             return False
         return True
 
-    def _accelerated_editor(self):
-        return getattr(self, 'checkkey', None) in (
-            self.PrintSpeed, self.Move_X, self.Move_Y, self.Move_Z, self.Extruder,
-            self.ETemp, self.BedTemp, self.FanSpeed, self.MotionValue, self.Homeoffset,
-        )
+    def _encoder_acceleration_cap(self):
+        screen = getattr(self, 'checkkey', None)
+        if screen in (self.Move_X, self.Move_Y, self.Move_Z, self.Extruder):
+            return 250
+        if screen == self.MotionValue:
+            return 100
+        if screen in (self.ETemp, self.BedTemp):
+            return 10
+        if screen in (self.PrintSpeed, self.FanSpeed):
+            return 5
+        if screen == self.Homeoffset:
+            return 10
+        return 1
 
     def _process_input(self, event):
         if (not getattr(self, '_uart_online', True)
@@ -649,10 +658,13 @@ class DWIN_LCD:
             return
         if not self._sync_input_state(event):
             return
-        accelerated = event.kind == 'rotate' and self._accelerated_editor()
-        if accelerated:
+        acceleration_cap = self._encoder_acceleration_cap() if event.kind == 'rotate' else 1
+        if acceleration_cap > 1:
             count = 1
-            self._encoder_move_value = abs(event.accelerated_value or event.value)
+            raw_count = max(1, abs(event.value))
+            accelerated_count = abs(event.accelerated_value or event.value)
+            effective_multiplier = max(1, accelerated_count // raw_count)
+            self._encoder_move_value = raw_count * min(acceleration_cap, effective_multiplier)
         else:
             self._encoder_move_value = 1
         lcd = getattr(self, 'lcd', None)

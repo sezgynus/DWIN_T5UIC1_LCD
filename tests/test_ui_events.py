@@ -170,6 +170,23 @@ class InputRoutingTests(unittest.TestCase):
         display._process_input(InputEvent('rotate', -4, 1, 0, -100))
         self.assertEqual(seen, [(display.ENCODER_DIFF_CW, 100)])
 
+    def test_numeric_editor_caps_acceleration_by_field(self):
+        display = self.display()
+        for screen, expected in (
+            (display.Move_X, 250),
+            (display.MotionValue, 100),
+            (display.ETemp, 10),
+            (display.FanSpeed, 5),
+            (display.Homeoffset, 10),
+            (display.MainMenu, 1),
+        ):
+            with self.subTest(screen=screen):
+                display.checkkey = screen
+                seen = []
+                display._dispatch_input.side_effect = lambda: seen.append(display._encoder_move_value)
+                display._process_input(InputEvent('rotate', -1, 1, 0, -250))
+                self.assertEqual(seen[-1], expected)
+
     def test_old_epoch_and_offline_events_are_discarded(self):
         display = self.display()
         display._process_input(InputEvent('press', 1, 0))
@@ -193,7 +210,7 @@ class InputRoutingTests(unittest.TestCase):
             display.encoder_has_data(3)   # 100 steps/s: 10x
             display.encoder_has_data(4)   # 200 steps/s: 100x
         events = [call.args[0] for call in display._loop.post.call_args_list]
-        self.assertEqual([event.accelerated_value for event in events], [1, 5, 10, 100])
+        self.assertEqual([event.accelerated_value for event in events], [1, 5, 10, 250])
 
     def test_rotation_never_samples_held_button(self):
         display = self.display()
