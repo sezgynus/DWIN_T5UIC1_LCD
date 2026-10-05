@@ -63,3 +63,12 @@ class PacketTests(unittest.TestCase):
         self.assertEqual(result.MYSERIAL1.frames[-1][2], 0xE1)
         with self.assertRaises(ValueError):
             result.ICON_Show(32, 0, 0, 0)
+
+    def test_animation_control_uses_29_and_word_mask(self):
+        result = self.driver()
+        result.ICON_AnimationControl(0x8001)
+        self.assertEqual(result.MYSERIAL1.frames[-1], bytes.fromhex('AA 29 80 01 CC 33 C3 3C'))
+        for value in (-1, 65536):
+            with self.assertRaises(ValueError):
+                result.ICON_AnimationControl(value)
+        self.assertEqual(len(result.MYSERIAL1.frames), 1)

@@ -452,7 +452,9 @@ class T5UIC1_LCD:
 	#  Animation Control
 	#   state: 16 bits, each bit is the state of an animation id
 	def ICON_AnimationControl(self, state):
-		self.Byte(0x28)
+		if not isinstance(state, int) or not 0 <= state <= 0xFFFF:
+			raise ValueError('Animation state must be a 16-bit mask')
+		self.Byte(0x29)
 		self.Word(state)
 		self.Send()
 
