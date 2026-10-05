@@ -109,6 +109,7 @@ class T5UIC1_LCD:
 		except Exception:
 			self.close()
 			raise
+		self._needs_update = True
 		time.sleep(0.001)
 
 	def Read(self, lend=1):
@@ -162,8 +163,12 @@ class T5UIC1_LCD:
 
 	# Update display
 	def UpdateLCD(self):
-		self.Byte(0x3D)
-		self.Send()
+		if getattr(self, '_closed', False):
+			raise RuntimeError('LCD is closed')
+		if getattr(self, '_needs_update', True):
+			self.Byte(0x3D)
+			self.Send()
+			self._needs_update = False
 
 	# /*---------------------------------------- Drawing functions ----------------------------------------*/
 

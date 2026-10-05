@@ -344,3 +344,7 @@ backlight off, following the reference brightness API.
 LCD initialization waits 750 ms for wakeup, performs a bounded handshake, sets
 direction 1, and updates the display. It does not display JPG 0 implicitly; the
 UI initializes its own cache and redraws its current screen on reconnect.
+
+UpdateLCD sends 0x3D only when a packet has been sent since the previous
+successful update. Multiple draw calls can share one update; redundant UI calls
+produce no UART traffic. Short-write handling remains fail-closed.

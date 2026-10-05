@@ -90,3 +90,19 @@ class PacketTests(unittest.TestCase):
         self.assertEqual(port.frames, [bytes.fromhex(frame) for frame in (
             'AA 00 CC 33 C3 3C', 'AA 34 5A A5 01 CC 33 C3 3C', 'AA 3D CC 33 C3 3C')])
         result.close()
+
+    def test_update_only_flushes_pending_draws_and_failed_flush_stays_dirty(self):
+        result = self.driver()
+        result.UpdateLCD()
+        result.UpdateLCD()
+        self.assertEqual(len(result.MYSERIAL1.frames), 1)
+        result.Frame_Clear(0)
+        result.Draw_Line(0xFFFF, 0, 0, 10, 10)
+        result.UpdateLCD()
+        result.UpdateLCD()
+        self.assertEqual([frame[1] for frame in result.MYSERIAL1.frames], [0x3D, 1, 3, 0x3D])
+        result.Frame_Clear(0)
+        result.MYSERIAL1.short = True
+        with self.assertRaises(IOError):
+            result.UpdateLCD()
+        self.assertTrue(result._needs_update)
