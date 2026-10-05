@@ -147,7 +147,7 @@ class T5UIC1_LCD:
 		if not isinstance(luminance, int) or not 0 <= luminance <= 255:
 			raise ValueError('Backlight luminance must be a byte')
 		self.Byte(0x30)
-		self.Byte(max(luminance, 0x1F))
+		self.Byte(luminance)
 		self.Send()
 
 	# Set screen display direction

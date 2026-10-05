@@ -82,7 +82,7 @@ class UARTTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             result.Backlight_SetLuminance(256)
         result.Backlight_SetLuminance(0)
-        self.assertEqual(port.frames[-1], b'\xAA\x30\x1F\xCC\x33\xC3\x3C')
+        self.assertEqual(port.frames[-1], b'\xAA\x30\x00\xCC\x33\xC3\x3C')
         result.close()
         with self.assertRaises(RuntimeError):
             result.UpdateLCD()

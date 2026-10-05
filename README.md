@@ -337,3 +337,6 @@ ICON_Show and Frame_AreaCopy default to ProUI's transparent enhanced filtering
 those bits explicitly; library/cache identifiers occupy the lower five bits.
 Transparent filtering requires a pure black asset background. Use background=True,
 enhanced=False for opaque assets.
+
+Backlight_SetLuminance sends the full 0–255 range unchanged. Zero turns the
+backlight off, following the reference brightness API.

@@ -72,3 +72,9 @@ class PacketTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 result.ICON_AnimationControl(value)
         self.assertEqual(len(result.MYSERIAL1.frames), 1)
+
+    def test_backlight_preserves_full_byte_range(self):
+        result = self.driver()
+        for value in (0, 1, 31, 255):
+            result.Backlight_SetLuminance(value)
+            self.assertEqual(result.MYSERIAL1.frames[-1], bytes((0xAA, 0x30, value, 0xCC, 0x33, 0xC3, 0x3C)))
