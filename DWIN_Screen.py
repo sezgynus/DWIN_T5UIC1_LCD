@@ -176,30 +176,17 @@ class T5UIC1_LCD:
 	#  width: point width   0x01-0x0F
 	#  height: point height 0x01-0x0F
 	#  x,y: upper left point
-	def Draw_Point(self, width, height, x, y):
-		self.Byte(0x02)
-		self.Byte(width)
-		self.Byte(height)
-		self.Word(x)
-		self.Word(y)
-		self.Send()
+	def Draw_Point(self, width, height, x, y, color=0xFFFF):
+		return self.DrawPoint(color, width, height, x, y)
 
-	# ___________________________________Draw points ____________________________________________\\
-	# Command: frame header + command + color of drawing point + pixel size of drawing point (Nx, Ny) + position of drawing point [(X1,Y1)+(X2,Y2)+.........]+ End of frame
-	# Set point; processing time=0.4*Nx*Ny*number of set points uS.
-	# Color: Set point color.
-	# Nx: Actual pixel size in X direction, 0x01-0x0F.
-	# Ny: Actual pixel size in Y direction, 0x01-0x0F.
-	# (Xn, Yn): Set point coordinate sequence.
-	# Example: AA 02 F8 00 04 04 00 08 00 08 CC 33 C3 3C
-	# /**************Drawing point protocol command can draw multiple points at a time (this function only draws pixels in one position) ********** *****/
-	def DrawPoint(self, Color, Nx, Ny, X1, Y1):			  # Draw some
-		self.Byte(0x02)
-		self.Word(Color)
-		self.Byte(int(Nx))
-		self.Byte(int(Ny))
-		self.Word(int(X1))
-		self.Word(int(Y1))
+	def DrawPoint(self, Color, Nx, Ny, X1, Y1):
+		values = (int(Color), int(Nx), int(Ny), int(X1), int(Y1))
+		color, nx, ny, x, y = values
+		if not (0 <= color <= 0xFFFF and 1 <= nx <= 15 and 1 <= ny <= 15
+		        and 0 <= x <= 0xFFFF and 0 <= y <= 0xFFFF):
+			raise ValueError('Invalid point color, size or coordinate')
+		self.DWIN_SendBuf = (self.FHONE + b'\x02' + color.to_bytes(2, 'big')
+		                     + bytes((nx, ny)) + x.to_bytes(2, 'big') + y.to_bytes(2, 'big'))
 		self.Send()
 
 	#  Draw a line
@@ -331,45 +318,35 @@ class T5UIC1_LCD:
 	#   iNum: Number of digits
 	#   x/y: Upper-left coordinate
 	#   value: Integer value
-	def Draw_IntValue(self, bShow, zeroFill, zeroMode, size, color, bColor, iNum, x, y, value):
-		self.Byte(0x14)
-		# Bit 7: bshow
-		# Bit 6: 1 = signed; 0 = unsigned number;
-		# Bit 5: zeroFill
-		# Bit 4: zeroMode
-		# Bit 3-0: size
-		self.Byte((bShow * 0x80) | (zeroFill * 0x20) | (zeroMode * 0x10) | size)
-		self.Word(color)
-		self.Word(bColor)
-		self.Byte(iNum)
-		self.Byte(0)  # fNum
-		self.Word(x)
-		self.Word(y)
-		self.D64(value)
+	def _draw_numeric(self, bShow, zeroFill, zeroMode, size, color, bColor,
+	                  iNum, fNum, x, y, value, width, signed=False):
+		# Values are already scaled by 10**fNum; no IEEE float is transmitted.
+		if not isinstance(value, int) and not math.isfinite(float(value)):
+			raise ValueError('Numeric value must be finite')
+		value = int(value)
+		signed = bool(signed or value < 0)
+		if not (0 <= int(size) <= 9 and 1 <= int(iNum) <= 20
+		        and 0 <= int(fNum) <= 20 and int(iNum) + int(fNum) < 20):
+			raise ValueError('Invalid numeric font or digit count')
+		if any(not 0 <= int(item) <= 0xFFFF for item in (color, bColor, x, y)):
+			raise ValueError('Numeric color or coordinate outside word range')
+		# Encode before mutating the frame, including overflow checks.
+		payload = value.to_bytes(width, 'big', signed=signed)
+		mode = (bool(bShow) * 0x80 | signed * 0x40 | bool(zeroFill) * 0x20
+		        | bool(zeroMode) * 0x10 | int(size))
+		self.DWIN_SendBuf = (self.FHONE + bytes((0x14, mode))
+		                     + int(color).to_bytes(2, 'big') + int(bColor).to_bytes(2, 'big')
+		                     + bytes((int(iNum), int(fNum))) + int(x).to_bytes(2, 'big')
+		                     + int(y).to_bytes(2, 'big') + payload)
 		self.Send()
 
-	#  Draw a floating point number
-	#   bShow: True=display background color; False=don't display background color
-	#   zeroFill: True=zero fill; False=no zero fill
-	#   zeroMode: 1=leading 0 displayed as 0; 0=leading 0 displayed as a space
-	#   size: Font size
-	#   color: Character color
-	#   bColor: Background color
-	#   iNum: Number of whole digits
-	#   fNum: Number of decimal digits
-	#   x/y: Upper-left point
-	#   value: Float value
+	def Draw_IntValue(self, bShow, zeroFill, zeroMode, size, color, bColor, iNum, x, y, value):
+		self._draw_numeric(bShow, zeroFill, zeroMode, size, color, bColor,
+		                   iNum, 0, x, y, value, 8)
+
 	def Draw_FloatValue(self, bShow, zeroFill, zeroMode, size, color, bColor, iNum, fNum, x, y, value):
-		self.Byte(0x14)
-		self.Byte((bShow * 0x80) | (zeroFill * 0x20) | (zeroMode * 0x10) | size)
-		self.Word(color)
-		self.Word(bColor)
-		self.Byte(iNum)
-		self.Byte(fNum)
-		self.Word(x)
-		self.Word(y)
-		self.Long(value)
-		self.Send()
+		self._draw_numeric(bShow, zeroFill, zeroMode, size, color, bColor,
+		                   iNum, fNum, x, y, value, 4)
 
 	def Draw_Signed_Float(self, size, bColor, iNum, fNum, x, y, value):
 		if value < 0:

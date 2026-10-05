@@ -314,3 +314,19 @@ not that motion/temperature has physically reached its goal. Displayed printer
 values remain based on subscription data. Cooldown submits installed heaters
 and part-fan shutdown in one script. Print start and probe calibration retain
 their dedicated result/state flows.
+
+### Packet reference checks
+
+The reference is DWIN's [T5UIC1 Kernel Application Guide, Ver1.2](https://forums.dwin-global.com/wp-content/uploads/2024/09/T5UIC1-Kernel-Application-Guide.pdf),
+using its published instruction table. Command 0x02 includes a two-byte color,
+point dimensions and coordinates. Both Python point APIs now use that layout;
+Draw_Point accepts an optional color (default white).
+
+Command 0x14 supports up to eight data bytes. Integer rendering retains eight
+bytes; scaled decimal rendering retains four. The input is already scaled by
+10**fNum, not an IEEE float. Negative numeric input sets the signed mode bit and
+uses signed integer encoding. Field/range validation occurs before frame mutation.
+The digit sum is conservatively kept below 20, following the guide's table.
+The test suite checks a single-point frame, the guide's decimal example, integer
+width, signed payload and invalid-input isolation. Matching this reference does
+not prove compatibility with every installed panel kernel or asset set.
