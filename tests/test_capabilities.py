@@ -103,6 +103,8 @@ class CapabilityTests(unittest.TestCase):
 
     def test_status_temperature_columns_leave_room_for_targets(self):
         result = display(snapshot())
+        result.lcd.DWIN_WIDTH = 272
+        result.lcd.DWIN_HEIGHT = 480
         result.lcd.reset_mock()
         with patch.object(ui.time, 'monotonic', return_value=0):
             result.Draw_Status_Area(True)
