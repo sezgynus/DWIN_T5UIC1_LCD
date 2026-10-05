@@ -80,3 +80,18 @@ class UARTReconnectTests(unittest.TestCase):
         with self.assertRaises(OSError):
             result._ui_tick()
         self.assertTrue(result._uart_online)
+
+    def test_current_screen_is_flushed_immediately_after_reconnect(self):
+        from test_uart import Driver, Port
+        result = self.display()
+        driver = Driver.__new__(Driver)
+        driver.MYSERIAL1 = Port()
+        driver.DWIN_SendBuf = driver.FHONE
+        driver._closed = False
+        driver._needs_update = False
+        result.HMI_Init = lambda: driver.JPG_CacheTo1(1)
+        result.HMI_StartFrame = lambda update: driver.Frame_Clear(0)
+        with patch.object(ui, 'T5UIC1_LCD', return_value=driver):
+            self.assertTrue(result._ensure_uart())
+        self.assertEqual([frame[1] for frame in driver.MYSERIAL1.frames], [0x25, 1, 0x3D])
+        self.assertFalse(driver._needs_update)

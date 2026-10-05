@@ -351,6 +351,7 @@ class DWIN_LCD:
             self._configure_menus()
             self.HMI_Init()
             self.HMI_StartFrame(False)
+            self.lcd.UpdateLCD()
             if self.pd.connection_error:
                 self._show_message('Moonraker unavailable')
             self._uart_online = True
@@ -604,6 +605,8 @@ class DWIN_LCD:
                     break
                 self._encoder_event = direction
                 self._dispatch_input()
+                if getattr(self, 'lcd', None) is not None:
+                    self.lcd.UpdateLCD()
                 if getattr(self, '_action_feedback', None):
                     self._poll_action()
                     break
@@ -1810,20 +1813,21 @@ class DWIN_LCD:
             Percentrecord = self.pd.getPercent()
         self.lcd.ICON_Show(self.ICON, self.ICON_Bar, 15, 93)
         self.lcd.Draw_Rectangle(1, self.lcd.BarFill_Color, 16 + Percentrecord * 240 / 100, 93, 256, 113)
-        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 2, 117, 133, Percentrecord)
+        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 3, 109, 133, Percentrecord)
         self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 133, 133, "%")
 
+    def _draw_print_time(self, seconds, x):
+        # Format completed minutes, not rounded fractional hours/minutes.
+        minutes = max(0, int(seconds)) // 60
+        text = '{:02d}:{:02d}'.format(minutes // 60, minutes % 60)
+        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+                             self.lcd.Color_Bg_Black, x, 212, text)
+
     def Draw_Print_ProgressElapsed(self):
-        elapsed = self.pd.duration()  # print timer
-        self.lcd.Draw_IntValue(True, True, 1, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 2, 42, 212, elapsed / 3600)
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 58, 212, ":")
-        self.lcd.Draw_IntValue(True, True, 1, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 2, 66, 212, (elapsed % 3600) / 60)
+        self._draw_print_time(self.pd.duration(), 42)
 
     def Draw_Print_ProgressRemain(self):
-        remain_time = self.pd.remain()
-        self.lcd.Draw_IntValue(True, True, 1, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 2, 176, 212, remain_time / 3600)
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 192, 212, ":")
-        self.lcd.Draw_IntValue(True, True, 1, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, 2, 200, 212, (remain_time % 3600) / 60)
+        self._draw_print_time(self.pd.remain(), 176)
 
     def Draw_Print_File_Menu(self):
         self.Clear_Title_Bar()

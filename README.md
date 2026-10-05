@@ -355,3 +355,11 @@ unsupported/control characters become ?. Text is bounded by the remaining screen
 width for the selected font and a 90-byte payload cap. This is an explicit glyph
 policy, not a claim that all panel firmware rejects Unicode. QR data retains its
 separate UTF-8 encoding and is not processed as visible text.
+
+### Source audit status
+
+The first ten LCD reference tasks are recorded in [source-audit.md](docs/source-audit.md).
+The audit identifies remaining command-feedback, runtime-offset, epoch/cache and
+field-boundary defects; passing isolated tests is not a release-readiness claim.
+See [lcd-assets.md](docs/lcd-assets.md) for verified reference assets. No hardware
+or live-printer tests were performed in this source adaptation pass.

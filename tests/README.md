@@ -102,3 +102,8 @@ show/cache, QR and icon animation packets; decimal sign transitions retain a
 complete field and rounding overflow is rejected. The existing real-menu fixture
 runs the updated driver on the UI owner with a fake serial port. These fixtures
 verify source-derived bytes and routing, not screen-side execution or rendering.
+
+Final audit rendering coverage includes 100% progress, completed-minute time
+formatting (including 100-hour prints), negative zero, immediate reconnect flush
+and input-owner flush for early-returning editors. Remaining findings and the
+limits of these isolated fixtures are listed in docs/source-audit.md.

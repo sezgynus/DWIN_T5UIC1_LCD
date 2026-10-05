@@ -351,6 +351,8 @@ class T5UIC1_LCD:
 				raise ValueError('Numeric value must be finite')
 			# Round scaled fractions before decimal placement, including negatives.
 			number = number.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+			if number == 0:
+				number = abs(number)
 			if abs(number) >= Decimal(10) ** (int(iNum) + int(fNum)):
 				raise ValueError('Numeric value exceeds display field')
 			text = format(number.scaleb(-int(fNum)), f'.{int(fNum)}f')
