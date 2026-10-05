@@ -163,6 +163,19 @@ SCV is not Marlin jerk. These values are runtime changes; the menu does not send
 SAVE_CONFIG or promise persistence. Steps/mm and rotation-distance calibration
 are outside this menu; it does not create per-axis Marlin-style limits.
 
+UART startup now sends the first handshake with the AA header and frame tail.
+The incremental ACK reader accepts the existing `AA 00 O K` signature across
+split reads and discards noise without an unbounded buffer. The default is three
+handshake attempts of one second each; failure closes the port and raises an
+error rather than blocking startup forever. The driver constructor accepts
+`handshake_timeout` and `handshake_attempts` overrides.
+Frames are sent in one serial write with a write timeout. Short writes/errors
+close the port and are not automatically retried. `Read` uses UART; backlight
+accepts byte values and retains the previous intended minimum of 0x1F.
+These tests verify the existing packet contract, not every panel firmware's
+instruction set. Automatic UART reconnection and live panel validation remain
+outstanding.
+
 ### Library requirements 
 
   Thanks to [wolfstlkr](https://www.reddit.com/r/ender3v2/comments/mdtjvk/octoprint_klipper_v2_lcd/gspae7y)

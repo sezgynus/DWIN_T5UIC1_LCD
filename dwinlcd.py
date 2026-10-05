@@ -459,7 +459,7 @@ class DWIN_LCD:
                 except Exception:
                     logging.exception('LCD resource cleanup failed')
         if self.lcd is not None:
-            self.lcd.MYSERIAL1.close()
+            self.lcd.close()
 
     def _show_message(self, message):
         self.Clear_Main_Window()

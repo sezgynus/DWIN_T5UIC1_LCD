@@ -68,3 +68,9 @@ partial heating, optional devices, zero fan speed and active extruder selection.
 Motion coverage checks all four Klipper parameters and commands, numeric domains,
 missing/invalid-field omission, local edits until confirmation, cruise-ratio
 boundaries and external status updates.
+
+UART tests cover first-frame header/tail, fragmented ACK with noise, incomplete
+ACK, bounded noise storage/retries, timeout and short-write cleanup, UART Read,
+backlight validation and independent buffers. The existing UI ownership test
+now exercises the single-write frame path. Firmware compatibility and display
+rendering still require a physical panel.

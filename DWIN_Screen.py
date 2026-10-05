@@ -1,15 +1,12 @@
 import time
 import math
 import serial
-import struct
 
 
 class T5UIC1_LCD:
 	address = 0x2A
 	DWIN_BufTail = [0xCC, 0x33, 0xC3, 0x3C]
-	DWIN_SendBuf = []
-	databuf = [None] * 26
-	recnum = 0
+	DWIN_SendBuf = b'\xAA'
 
 	RECEIVED_NO_DATA = 0x00
 	RECEIVED_SHAKE_HAND_ACK = 0x01
@@ -55,17 +52,32 @@ class T5UIC1_LCD:
 	# Dwen serial screen initialization
 	# Passing parameters: serial port number
 	# DWIN screen uses serial port 1 to send
-	def __init__(self, USARTx):
-		self.MYSERIAL1 = serial.Serial(USARTx, 115200, timeout=1)
-		# self.bus = SMBus(1)
-		# self.DWIN_SendBuf = self.FHONE
-		print("\nDWIN handshake ")
-		while not self.Handshake():
-			pass
-		print("DWIN OK.")
-		self.JPG_ShowAndCache(0)
-		self.Frame_SetDir(1)
-		self.UpdateLCD()
+	def __init__(self, USARTx, handshake_timeout=1.0, handshake_attempts=3):
+		if not math.isfinite(handshake_timeout) or handshake_timeout <= 0:
+			raise ValueError('Handshake timeout must be positive')
+		if not isinstance(handshake_attempts, int) or handshake_attempts <= 0:
+			raise ValueError('Handshake attempts must be positive')
+		self.DWIN_SendBuf = self.FHONE
+		self._receive_buffer = bytearray()
+		self._closed = False
+		self.MYSERIAL1 = serial.Serial(USARTx, 115200, timeout=0.05, write_timeout=1)
+		try:
+			for _ in range(handshake_attempts):
+				if self.Handshake(handshake_timeout):
+					break
+			else:
+				raise TimeoutError('DWIN handshake timed out')
+			self.JPG_ShowAndCache(0)
+			self.Frame_SetDir(1)
+			self.UpdateLCD()
+		except BaseException:
+			self.close()
+			raise
+
+	def close(self):
+		if not getattr(self, '_closed', False):
+			self._closed = True
+			self.MYSERIAL1.close()
 
 	def Byte(self, bval):
 		self.DWIN_SendBuf += int(bval).to_bytes(1, byteorder='big')
@@ -84,51 +96,57 @@ class T5UIC1_LCD:
 
 	# Send the data in the buffer and the packet end
 	def Send(self):
-		# for i in self.DWIN_BufTail:
-		# 	self.Byte(i)
-		# self.bus.write_i2c_block_data(self.address, 0, self.DWIN_SendBuf)
-		# self.bus.write_i2c_block_data(self.address, 0, self.DWIN_BufTail)
-
-		self.MYSERIAL1.write(self.DWIN_SendBuf)
-		self.MYSERIAL1.write(self.DWIN_BufTail)
-
+		if getattr(self, '_closed', False):
+			raise RuntimeError('LCD is closed')
+		frame = bytes(self.DWIN_SendBuf) + bytes(self.DWIN_BufTail)
 		self.DWIN_SendBuf = self.FHONE
+		try:
+			written = self.MYSERIAL1.write(frame)
+			if written != len(frame):
+				raise IOError('Incomplete LCD frame write')
+		except Exception:
+			self.close()
+			raise
 		time.sleep(0.001)
 
 	def Read(self, lend=1):
-		bit = self.bus.read_i2c_block_data(self.address, 0, lend)
-		if lend == 1:
-			return bytes(bit)
-		return bit
+		if not isinstance(lend, int) or lend < 0:
+			raise ValueError('Read size must be nonnegative')
+		return self.MYSERIAL1.read(lend)
 
-	# /*-------------------------------------- System variable function --------------------------------------*/
+	def _consume_handshake(self, data):
+		# The existing panel ACK contract is AA 00 O K. Keep partial prefixes.
+		self._receive_buffer.extend(data)
+		ack = b'\xAA\x00OK'
+		position = self._receive_buffer.find(ack)
+		if position >= 0:
+			del self._receive_buffer[:position + len(ack)]
+			return True
+		del self._receive_buffer[:-3]
+		return False
 
-	# Handshake (1: Success, 0: Fail)
-	def Handshake(self):
-		i = 0
+	def Handshake(self, timeout=1.0):
+		if not math.isfinite(timeout) or timeout <= 0:
+			raise ValueError('Handshake timeout must be positive')
 		self.Byte(0x00)
 		self.Send()
-		time.sleep(0.1)
-		# while (self.recnum < 26):
-		while (self.MYSERIAL1.in_waiting and self.recnum < 26):
-			# self.databuf[self.recnum] = struct.unpack('B', self.Read())[0]
-			self.databuf[self.recnum] = struct.unpack('B', self.MYSERIAL1.read())[0]
-
-			# ignore the invalid data
-			if self.databuf[0] != 0xAA:  # prevent the program from running.
-				if(self.recnum > 0):
-					self.recnum = 0
-					self.databuf = [None] * 26
-				continue
-			time.sleep(.010)
-			self.recnum += 1
-		return (self.recnum >= 3 and self.databuf[0] == 0xAA and self.databuf[1] == 0 and chr(self.databuf[2]) == 'O' and chr(self.databuf[3]) == 'K')
+		deadline = time.monotonic() + timeout
+		while time.monotonic() < deadline:
+			waiting = self.MYSERIAL1.in_waiting
+			if waiting:
+				if self._consume_handshake(self.Read(min(waiting, 256))):
+					return True
+			else:
+				time.sleep(min(0.005, max(0, deadline - time.monotonic())))
+		return False
 
 	# Set the backlight luminance
 	#  luminance: (0x00-0xFF)
 	def Backlight_SetLuminance(self, luminance):
+		if not isinstance(luminance, int) or not 0 <= luminance <= 255:
+			raise ValueError('Backlight luminance must be a byte')
 		self.Byte(0x30)
-		self.Byte(_MAX(luminance, 0x1F))
+		self.Byte(max(luminance, 0x1F))
 		self.Send()
 
 	# Set screen display direction

@@ -221,7 +221,7 @@ class DisplayIntegrationTests(unittest.TestCase):
             def __init__(self, port):
                 self.DWIN_SendBuf = self.FHONE
                 self.MYSERIAL1 = Mock()
-                self.MYSERIAL1.write.side_effect = lambda data: writes.append((get_ident(), bytes(data)))
+                self.MYSERIAL1.write.side_effect = lambda data: (writes.append((get_ident(), bytes(data))), len(data))[1]
                 self.MYSERIAL1.close.side_effect = lambda: closed.append(get_ident())
 
         encoder = Mock()
