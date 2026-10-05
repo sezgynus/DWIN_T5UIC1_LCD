@@ -177,7 +177,9 @@ class JogTests(unittest.TestCase):
         result._live_jog_pending = None
         result.pd.HMI_ValueStruct.Move_X_scale = 100
         result.pd.update_variable = Mock(return_value=True)
-        result.pd.state.status['gcode_move']['position'][0] = 42.5
+        position = list(result.pd.state.status['gcode_move']['position'])
+        position[0] = 42.5
+        result.pd.state.status['gcode_move']['position'] = tuple(position)
         result.EachMomentUpdate()
         self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale, 425)
 
@@ -190,7 +192,9 @@ class JogTests(unittest.TestCase):
         result._live_jog_pending = None
         result.pd.HMI_ValueStruct.Move_X_scale = 123
         result.pd.update_variable = Mock(return_value=True)
-        result.pd.state.status['gcode_move']['position'][0] = 42.5
+        position = list(result.pd.state.status['gcode_move']['position'])
+        position[0] = 42.5
+        result.pd.state.status['gcode_move']['position'] = tuple(position)
         result.EachMomentUpdate()
         self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale, 123)
 
@@ -202,7 +206,9 @@ class JogTests(unittest.TestCase):
         result._live_jog_pending = None
         result.pd.HMI_ValueStruct.Move_X_scale = 100
         result.pd.update_variable = Mock(return_value=True)
-        result.pd.state.status['gcode_move']['position'][0] = 42.5
+        position = list(result.pd.state.status['gcode_move']['position'])
+        position[0] = 42.5
+        result.pd.state.status['gcode_move']['position'] = tuple(position)
         result.EachMomentUpdate()
         self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale, 100)
 
