@@ -172,6 +172,7 @@ class JogTests(unittest.TestCase):
         data = snapshot()
         result = display(data)
         result.last_status = result.pd.status
+        result.Draw_Status_Area = Mock()
         result.checkkey = result.Move_X
         result._live_jog = True
         result._live_jog_future = None
@@ -187,6 +188,7 @@ class JogTests(unittest.TestCase):
         data = snapshot()
         result = display(data)
         result.last_status = result.pd.status
+        result.Draw_Status_Area = Mock()
         result.checkkey = result.Move_X
         result._live_jog = False
         result._live_jog_future = None
@@ -202,6 +204,7 @@ class JogTests(unittest.TestCase):
         data = snapshot()
         result = display(data)
         result.last_status = result.pd.status
+        result.Draw_Status_Area = Mock()
         result.checkkey = result.Move_X
         result._live_jog_future = Future()
         result._live_jog_pending = None
