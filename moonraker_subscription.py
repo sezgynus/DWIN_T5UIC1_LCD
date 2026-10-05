@@ -65,6 +65,7 @@ class MoonrakerSubscription:
         self._subscribing = False
         self._buffered = []
         self._outbound = Queue(maxsize=32)
+        self.gcode_responses = Queue(maxsize=64)
         self._last_receive = time.monotonic()
         self._last_ping = time.monotonic()
         self._thread = Thread(target=self._run, name='moonraker-status', daemon=True)
@@ -128,6 +129,16 @@ class MoonrakerSubscription:
         elif method == 'notify_filelist_changed':
             with self._lock:
                 self._file_revision += 1
+        elif method == 'notify_gcode_response':
+            if isinstance(params, list) and len(params) == 1 and isinstance(params[0], str):
+                try:
+                    self.gcode_responses.put_nowait(params[0])
+                except Full:
+                    try:
+                        self.gcode_responses.get_nowait()
+                    except Empty:
+                        pass
+                    self.gcode_responses.put_nowait(params[0])
 
     def notify(self, method, params=None):
         future = Future()
