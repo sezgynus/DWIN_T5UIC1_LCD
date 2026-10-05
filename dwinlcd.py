@@ -864,15 +864,7 @@ class DWIN_LCD:
                 self.Popup_Window_Home()
                 self._action("Home", lambda: self.pd.sendGCode("G28"), self.pd.ishomed)
             elif self.select_prepare.now == self.PREPARE_CASE_ZOFF:  # Z-offset
-                self.checkkey = self.Homeoffset
-
-                self.pd.HMI_ValueStruct.show_mode = -4
-
-                self.lcd.Draw_Signed_Float(
-                    self.lcd.font8x16, self.lcd.Select_Color, 2, 2, 202,
-                    self.MBASE(self.PREPARE_CASE_ZOFF + self.MROWS - self.index_prepare),
-                    self.pd.HMI_ValueStruct.offset_value
-                )
+                self._open_zoffset(-4, self.PREPARE_CASE_ZOFF + self.MROWS - self.index_prepare)
 
             elif self.select_prepare.now == self.PREPARE_CASE_PLA:  # PLA preheat
                 self._action("Preheat PLA", lambda: self.pd.preheat("PLA"))
@@ -1064,12 +1056,7 @@ class DWIN_LCD:
                 key = self._menus['tune'][self.select_tune.now - 1][0]
                 self._open_thermal_editor(key, self.select_tune.now + self.MROWS - self.index_tune)
             elif self.select_tune.now == self.TUNE_CASE_ZOFF:   #z offset
-                self.checkkey = self.Homeoffset
-                self.lcd.Draw_Signed_Float(
-                    self.lcd.font8x16, self.lcd.Select_Color, 2, 2, 202,
-                    self.MBASE(self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune),
-                    self.pd.HMI_ValueStruct.offset_value
-                )
+                self._open_zoffset(0, self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune)
 
         self.lcd.UpdateLCD()
 
@@ -1619,10 +1606,19 @@ class DWIN_LCD:
         if self.checkkey == self.ProbeWizardID:
             self.Draw_Probe_Wizard()
 
+    def _open_zoffset(self, mode, row):
+        self.checkkey = self.Homeoffset
+        self.pd.HMI_ValueStruct.show_mode = mode
+        self._zoffset_target = self.pd.BABY_Z_VAR * 100
+        self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Select_Color,
+                                   2, 2, 202, self.MBASE(row), self._zoffset_target)
+
     def HMI_Zoffset(self):
         encoder_diffState = self.get_encoder_state()
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
+        if not hasattr(self, '_zoffset_target'):
+            self._zoffset_target = self.pd.HMI_ValueStruct.offset_value
         zoff_line = 0
         if self.pd.HMI_ValueStruct.show_mode == -4:
             zoff_line = self.PREPARE_CASE_ZOFF + self.MROWS - self.index_prepare
@@ -1630,34 +1626,34 @@ class DWIN_LCD:
             zoff_line = self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER): #if (applyencoder(encoder_diffstate, offset_value))
-            self._action("Runtime Z offset", lambda: self.pd.setZOffset(self.pd.HMI_ValueStruct.offset_value / 100.0))
+            self._action("Runtime Z offset", lambda: self.pd.setZOffset(self._zoffset_target / 100.0))
 
             self.checkkey = self.Prepare if self.pd.HMI_ValueStruct.show_mode == -4 else self.Tune
             self.lcd.Draw_Signed_Float(
                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 2, 2, 202, self.MBASE(zoff_line),
-                self.pd.HMI_ValueStruct.offset_value
+                self._zoffset_target
             )
 
             self.lcd.UpdateLCD()
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
-            self.pd.HMI_ValueStruct.offset_value += 1
+            self._zoffset_target += 1
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            self.pd.HMI_ValueStruct.offset_value -= 1
+            self._zoffset_target -= 1
 
-        if (self.pd.HMI_ValueStruct.offset_value < (self.pd.Z_PROBE_OFFSET_RANGE_MIN) * 100):
-            self.pd.HMI_ValueStruct.offset_value = self.pd.Z_PROBE_OFFSET_RANGE_MIN * 100
-        elif (self.pd.HMI_ValueStruct.offset_value > (self.pd.Z_PROBE_OFFSET_RANGE_MAX) * 100):
-            self.pd.HMI_ValueStruct.offset_value = self.pd.Z_PROBE_OFFSET_RANGE_MAX * 100
+        if (self._zoffset_target < (self.pd.Z_PROBE_OFFSET_RANGE_MIN) * 100):
+            self._zoffset_target = self.pd.Z_PROBE_OFFSET_RANGE_MIN * 100
+        elif (self._zoffset_target > (self.pd.Z_PROBE_OFFSET_RANGE_MAX) * 100):
+            self._zoffset_target = self.pd.Z_PROBE_OFFSET_RANGE_MAX * 100
 
         self.last_zoffset = self.dwin_zoffset
-        self.dwin_zoffset = self.pd.HMI_ValueStruct.offset_value / 100.0
+        self.dwin_zoffset = self._zoffset_target / 100.0
 
         self.lcd.Draw_Signed_Float(
             self.lcd.font8x16, self.lcd.Select_Color, 2, 2, 202,
             self.MBASE(zoff_line),
-            self.pd.HMI_ValueStruct.offset_value
+            self._zoffset_target
         )
         self.lcd.UpdateLCD()
 

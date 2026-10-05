@@ -140,3 +140,19 @@ class FeedbackTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 result.pd.setZOffset(value)
         result.pd.sendGCode.assert_not_called()
+
+    def test_offset_editor_survives_status_ticks_and_reopens_from_authoritative_value(self):
+        result = self.display()
+        result.pd.BABY_Z_VAR = 1.25
+        result._open_zoffset(-4, 4)
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CW)
+        result.HMI_Zoffset()
+        self.assertEqual(result._zoffset_target, 126)
+        result.pd.update_variable()
+        self.assertEqual(result.pd.HMI_ValueStruct.offset_value, 0)
+        self.assertEqual(result._zoffset_target, 126)
+        result.get_encoder_state.return_value = result.ENCODER_DIFF_ENTER
+        result.HMI_Zoffset()
+        result.pd.sendGCode.assert_called_once_with('SET_GCODE_OFFSET Z=1.26 MOVE=1')
+        result._open_zoffset(0, 4)
+        self.assertEqual(result._zoffset_target, 0)
