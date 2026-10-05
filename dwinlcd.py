@@ -558,8 +558,9 @@ class DWIN_LCD:
         self.lcd.UpdateLCD()
 
     def _enqueue_input(self, kind, value):
+        feedback = getattr(self, '_action_feedback', None)
         if (self.pd is None or self._closed or not getattr(self, '_uart_online', True)
-                or getattr(self, '_action_feedback', None) is not None):
+                or (feedback is not None and not (feedback.phase == 'error' and kind == 'press'))):
             return
         snapshot = self.pd.subscription.snapshot()
         if snapshot['state'] != 'ready':

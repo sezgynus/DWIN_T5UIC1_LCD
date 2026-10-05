@@ -107,3 +107,22 @@ class FeedbackTests(unittest.TestCase):
         result = self.display().pd
         result.cooldown()
         result.sendGCode.assert_called_once_with('TURN_OFF_HEATERS\nM106 S0')
+
+    def test_gpio_error_ack_reaches_owner_but_waiting_and_rotation_do_not(self):
+        result = self.display()
+        result._closed = False
+        result._loop = Mock()
+        result._encoder_event = result.ENCODER_DIFF_NO
+        future = Future()
+        result._action('Jog', Mock(return_value=future))
+        result._enqueue_input('press', 1)
+        result._loop.post.assert_not_called()
+        future.set_exception(ValueError('rejected'))
+        result._poll_action()
+        result._enqueue_input('rotate', 1)
+        result._loop.post.assert_not_called()
+        result._enqueue_input('press', 1)
+        event = result._loop.post.call_args.args[0]
+        result._process_input(event)
+        self.assertIsNone(result._action_feedback)
+        result._restore_action_screen.assert_called_once()
