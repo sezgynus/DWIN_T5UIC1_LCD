@@ -289,11 +289,11 @@ class DWIN_LCD:
     # Passing parameters: serial port number
     # DWIN screen uses serial port 1 to send
     def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key,
-                 moonraker_url='http://127.0.0.1:7125', request_timeout=5.0):
+                 moonraker_url='http://127.0.0.1:7125', request_timeout=5.0, settings_path=None):
         self._closed = False
         self.encoder = self.button = self.lcd = self.pd = None
         self._settings = (USARTx, encoder_pins, button_pin, octoPrint_API_Key,
-                          moonraker_url, request_timeout)
+                          moonraker_url, request_timeout, settings_path)
         self._input_lock = Lock()
         self._producer_value = 0
         self._last_press = float('-inf')
@@ -303,7 +303,7 @@ class DWIN_LCD:
         self._loop.start()
 
     def _initialize(self):
-        USARTx, encoder_pins, button_pin, api_key, url, timeout = self._settings
+        USARTx, encoder_pins, button_pin, api_key, url, timeout, settings_path = self._settings
         Device.pin_factory = LGPIOFactory()
         for name in self.SELECTIONS:
             setattr(self, name, select_t())
@@ -313,7 +313,7 @@ class DWIN_LCD:
         self.last_cardpercentValue = 101
         self.lcd = T5UIC1_LCD(USARTx)
         self.checkkey = self.MainMenu
-        self.pd = PrinterData(api_key, url, timeout)
+        self.pd = PrinterData(api_key, url, timeout, settings_path=settings_path)
         self.HMI_ShowBoot()
         self.pd.init_Webservices()
         self._configure_menus()

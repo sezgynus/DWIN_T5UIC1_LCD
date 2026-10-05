@@ -12,12 +12,14 @@ def main():
     parser.add_argument('--serial-port', default='/dev/ttyAMA0')
     parser.add_argument('--encoder-pins', type=int, nargs=2, default=(21, 19))
     parser.add_argument('--button-pin', type=int, default=13)
+    parser.add_argument('--settings-file', default=None, help='Local preset JSON path')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     from dwinlcd import DWIN_LCD
     display = DWIN_LCD(args.serial_port, tuple(args.encoder_pins), args.button_pin,
              os.environ.get('MOONRAKER_API_KEY', ''),
-             moonraker_url=args.moonraker_url, request_timeout=args.request_timeout)
+             moonraker_url=args.moonraker_url, request_timeout=args.request_timeout,
+             settings_path=args.settings_file)
     signal.signal(signal.SIGTERM, lambda *_: display.lcdExit())
     try:
         display.wait()

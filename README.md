@@ -101,7 +101,16 @@ Temperature and Tune confirmations now submit the corresponding live heater
 target; preset editors only change preset values. Paused and terminal jobs retain
 progress and elapsed print duration. Completion follows `print_stats.state`,
 so a rounded progress value cannot mark a running job complete.
-Preset persistence remains a subsequent refactor step.
+The Save row persists both PLA/ABS profiles (heater targets and fan percentage)
+to `$XDG_CONFIG_HOME/dwin-lcd/presets.json`, or `~/.config/dwin-lcd/presets.json`
+when XDG_CONFIG_HOME is unset. Use `--settings-file /absolute/path/presets.json`
+to override it, including in a systemd unit. The service user must be able to write
+the parent directory. Edits remain in memory until Save is selected.
+The versioned file is validated before loading; missing files use defaults and
+invalid files are logged and preserved. Writes use a flushed temporary file and
+atomic replacement; failed saves return failure to the menu's audio feedback.
+Loading presets never sends heater commands. Applying a profile still validates
+against the connected printer's current heater limits.
 Existing installation instructions below are still being modernized.
 
 ### Library requirements 
@@ -237,5 +246,4 @@ Run with `python3 ./run.py`
     * Shows printer info.
 
 ## Notworking:
-    * Save / Loding Preheat setting, hardcode on start can be changed in menu but will not retane on restart.
     * The Control: Motion Menu

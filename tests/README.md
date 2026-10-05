@@ -41,3 +41,8 @@ indices and scrolling, active extruder selection, effective heater/extrusion and
 axis limits, reconnect replacement, invalid configuration rejection, atomic
 preheat validation, fan percentage conversion and runtime offset routing.
 Bootstrap now queries effective configfile settings before subscribing.
+
+Preset coverage uses temporary directories: save/restart round trips, instance
+isolation, corrupt and unsupported files, invalid numeric values, XDG defaults,
+and failed atomic replacement preserving the old file and cleaning temporary
+files. No user settings are written by these tests.

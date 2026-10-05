@@ -2,6 +2,7 @@ import copy
 import logging
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
+from preset_store import PresetStore
 from printer_state import PrinterState
 from printer_capabilities import PrinterCapabilities
 
@@ -121,7 +122,7 @@ class PrinterData:
     SHORT_BUILD_VERSION = "unknown"
     CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-    def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0):
+    def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0, settings_path=None):
         self.client = MoonrakerClient(URL, API_Key, timeout)
         self.state = PrinterState()
         self.capabilities = PrinterCapabilities()
@@ -140,6 +141,15 @@ class PrinterData:
         self.HMI_flag = HMI_Flag_t()
         self.thermalManager = copy.deepcopy(type(self).thermalManager)
         self.material_preset = copy.deepcopy(type(self).material_preset)
+        self.preset_store = PresetStore(settings_path)
+        self.settings_error = None
+        try:
+            saved = self.preset_store.load()
+            if saved is not None:
+                self.material_preset = [material_preset_t(**item) for item in saved]
+        except (OSError, ValueError, TypeError, UnicodeError) as error:
+            self.settings_error = str(error)
+            logging.warning('Cannot load presets from %s: %s', self.preset_store.path, error)
         self.files = []
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
@@ -385,7 +395,13 @@ class PrinterData:
             self.preHeat(self.material_preset[1].bed_temp, self.material_preset[1].hotend_temp)
 
     def save_settings(self):
-        print('saving settings')
+        try:
+            self.preset_store.save([vars(preset).copy() for preset in self.material_preset])
+        except (OSError, ValueError, TypeError, UnicodeError) as error:
+            self.settings_error = str(error)
+            logging.error('Cannot save presets to %s: %s', self.preset_store.path, error)
+            return False
+        self.settings_error = None
         return True
 
     def setExtTemp(self, target, toolnum=None):
