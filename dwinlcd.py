@@ -2394,6 +2394,31 @@ class DWIN_LCD:
         if getattr(self, '_offline', False):
             self._offline = False
             self.HMI_StartFrame(False)
+        if update and self._live_jog_future is None and self._live_jog_pending is None:
+            position = self.pd.state.status['gcode_move']['position']
+            active_moves = {
+                self.Move_X: ('Move_X_scale', 0, self.MBASE(1), False),
+                self.Move_Y: ('Move_Y_scale', 1, self.MBASE(2), False),
+                self.Move_Z: ('Move_Z_scale', 2, self.MBASE(3), False),
+                self.Extruder: ('Move_E_scale', 3, self.MBASE(4), True),
+            }
+            active = active_moves.get(self.checkkey)
+            if active is not None:
+                attr, index, row, signed = active
+                scale = position[index] * self.MINUNITMULT
+                if getattr(self.pd.HMI_ValueStruct, attr) != scale:
+                    setattr(self.pd.HMI_ValueStruct, attr, scale)
+                    if attr == 'Move_E_scale':
+                        self.pd.last_E_scale = scale
+                    if signed:
+                        self.lcd.Draw_Signed_Float(
+                            self.lcd.font8x16, self.lcd.Select_Color,
+                            3, 1, 216, row, scale)
+                    else:
+                        self.lcd.Draw_FloatValue(
+                            True, True, 0, self.lcd.font8x16,
+                            self.lcd.Color_White, self.lcd.Select_Color,
+                            3, 1, 216, row, scale)
         if self.last_status != self.pd.status:
             self._present_print_state()
         if getattr(self, '_print_error_visible', False):
