@@ -2186,6 +2186,7 @@ class DWIN_LCD:
             self.lcd.ICON_Show(self.ICON, self.ICON_LOGO, 71, 52)
         else:
             self.Draw_MMU_Status()
+        self._drawn_mmu_state = self.pd.mmu
 
         self.ICON_Print()
         self.ICON_Prepare()
@@ -2208,8 +2209,6 @@ class DWIN_LCD:
             return
         count = mmu['num_gates']
         active = mmu['gate']
-        # Keep the indicator inside the former logo area. Four-gate MMUs get
-        # a full spool silhouette; larger units scale the same shape down.
         left, top, width = 67, 43, 138
         gap = 5 if count <= 4 else 2
         slot = max(12, min(30, (width - gap * (count - 1)) // count))
@@ -2225,27 +2224,31 @@ class DWIN_LCD:
             rgb = mmu['gate_color_rgb'][gate]
             color = self._rgb565(rgb) if status > 0 else 0x8410
             cx = x + slot // 2
-            cy = top + 15
-            radius = max(5, min(13, slot // 2 - 1))
-            hub = max(2, radius // 3)
+            outer = max(10, min(24, slot - 4))
+            x0 = cx - outer // 2
+            x1 = cx + outer // 2
+            y0, y1 = top + 3, top + 27
 
-            # Filled reel with dark hub: visually reads as a filament spool
-            # rather than a colored status box.
-            self.lcd.CircleFill(color, cx, cy, radius)
-            self.lcd.Draw_Circle(self.lcd.Color_White, cx, cy, radius)
-            self.lcd.CircleFill(self.lcd.Color_Bg_Black, cx, cy, hub)
-            self.lcd.Draw_Circle(self.lcd.Color_White, cx, cy, hub)
+            # Front-facing reel silhouette. Rectangles are intentional here:
+            # unlike software-rendered circles they map to one panel command each,
+            # avoiding visible progressive redraw on the serial display.
+            self.lcd.Draw_Rectangle(1, self.lcd.Color_White, x0 + 3, y0, x1 - 3, y1)
+            self.lcd.Draw_Rectangle(1, self.lcd.Color_White, x0, y0 + 4, x1, y1 - 4)
+            self.lcd.Draw_Rectangle(1, color, x0 + 3, y0 + 3, x1 - 3, y1 - 3)
+            self.lcd.Draw_Rectangle(1, color, x0 + 2, y0 + 6, x1 - 2, y1 - 6)
+            hub = max(4, outer // 4)
+            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black,
+                                    cx - hub // 2, top + 15 - hub // 2,
+                                    cx + hub // 2, top + 15 + hub // 2)
 
             if gate == active:
-                # Active gate gets a close double halo without hiding its color.
-                self.lcd.Draw_Circle(self.lcd.Select_Color, cx, cy, radius + 3)
-                self.lcd.Draw_Circle(self.lcd.Color_White, cx, cy, radius + 2)
+                self.lcd.Draw_Rectangle(0, self.lcd.Select_Color,
+                                        x0 - 2, y0 - 2, x1 + 2, y1 + 2)
 
             label = str(gate + 1)
-            label_x = cx - 3 * len(label)
             self.lcd.Draw_String(False, True, self.lcd.font6x12,
                                  self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                                 label_x, top + 32, label)
+                                 cx - 3 * len(label), top + 32, label)
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
@@ -2613,9 +2616,16 @@ class DWIN_LCD:
                 self.CompletedHoming()
 
         if update:
-            if self.checkkey == self.MainMenu and self.pd.mmu is not None:
-                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 69, 31, 203, 91)
-                self.Draw_MMU_Status()
+            if self.checkkey == self.MainMenu:
+                mmu_state = self.pd.mmu
+                if mmu_state != getattr(self, '_drawn_mmu_state', None):
+                    self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 65, 31, 207, 91)
+                    if mmu_state is None:
+                        self.lcd.Frame_AreaCopy(1, 0, 2, 39, 12, 14, 9)
+                        self.lcd.ICON_Show(self.ICON, self.ICON_LOGO, 71, 52)
+                    else:
+                        self.Draw_MMU_Status()
+                    self._drawn_mmu_state = mmu_state
             self.Draw_Status_Area(update)
         self.lcd.UpdateLCD()
 
