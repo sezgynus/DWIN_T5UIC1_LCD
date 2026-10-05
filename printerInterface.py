@@ -1,6 +1,7 @@
 import copy
 import logging
 import math
+import time
 import uuid
 from collections.abc import Mapping
 from concurrent.futures import Future
@@ -155,6 +156,9 @@ class PrinterData:
         self.live_position = (0.0, 0.0, 0.0)
         self.dashboard_fan_pwm = 0
         self.mmu = None
+        self._spoolman_percentages = {}
+        self._spoolman_futures = {}
+        self._spoolman_refresh_at = {}
         self.file_name = ''
         self.job_Info = {'virtual_sdcard': {'is_active': False, 'progress': 0},
                          'print_stats': {'state': 'standby', 'print_duration': 0,
@@ -275,6 +279,59 @@ class PrinterData:
                 self._files_loaded = False
         return tuple(item['path'] for item in self.files)
 
+    @staticmethod
+    def _spool_remaining_percent(spool):
+        try:
+            remaining = float(spool['remaining_weight'])
+            initial = float(spool.get('initial_weight') or 0)
+            if initial <= 0:
+                used = float(spool.get('used_weight') or 0)
+                initial = remaining + used
+            if (not math.isfinite(remaining) or not math.isfinite(initial)
+                    or initial <= 0 or remaining < 0):
+                return None
+            return max(0, min(100, int(round(remaining * 100.0 / initial))))
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def _poll_spoolman_percentages(self, spool_ids):
+        now = time.monotonic()
+        changed = False
+        valid_ids = {int(sid) for sid in spool_ids
+                     if isinstance(sid, (int, float)) and int(sid) > 0}
+
+        for sid, future in list(self._spoolman_futures.items()):
+            if not future.done():
+                continue
+            del self._spoolman_futures[sid]
+            self._spoolman_refresh_at[sid] = now + 15.0
+            try:
+                response = future.result()
+                spool = response['result']
+                percent = self._spool_remaining_percent(spool)
+            except (KeyError, TypeError, MoonrakerError):
+                percent = None
+            if percent is not None and self._spoolman_percentages.get(sid) != percent:
+                self._spoolman_percentages[sid] = percent
+                changed = True
+
+        for sid in list(self._spoolman_percentages):
+            if sid not in valid_ids:
+                del self._spoolman_percentages[sid]
+                changed = True
+        for sid in list(self._spoolman_refresh_at):
+            if sid not in valid_ids:
+                del self._spoolman_refresh_at[sid]
+
+        for sid in valid_ids:
+            if sid in self._spoolman_futures or now < self._spoolman_refresh_at.get(sid, 0):
+                continue
+            self._spoolman_futures[sid] = self.client.post(
+                '/server/spoolman/proxy',
+                {'request_method': 'GET', 'path': '/v1/spool/%d' % sid},
+                report_error=False)
+        return changed
+
     def update_variable(self):
         self.check_command_results()
         try:
@@ -329,12 +386,15 @@ class PrinterData:
                     target['target'] = int(data[obj]['target'])
             thermal['fan_speed'][0] = int(data['fan']['speed'] * 100) if caps.fan else 0
             mmu = None
+            spoolman_changed = False
             if 'mmu' in data:
                 raw_mmu = data['mmu']
                 num_gates = int(raw_mmu.get('num_gates', 0))
                 gate = int(raw_mmu.get('gate', -1))
                 colors = raw_mmu.get('gate_color_rgb', [])
                 statuses = raw_mmu.get('gate_status', [])
+                spool_ids = tuple(raw_mmu.get('gate_spool_id', [])[:num_gates])
+                spoolman_changed = self._poll_spoolman_percentages(spool_ids)
                 if num_gates < 1 or len(colors) < num_gates or len(statuses) < num_gates:
                     raise ValueError('Invalid MMU status')
                 normalized_colors = []
@@ -359,14 +419,18 @@ class PrinterData:
                 mmu = {'num_gates': num_gates, 'gate': gate,
                        'gate_status': tuple(int(value) for value in statuses[:num_gates]),
                        'gate_color_rgb': tuple(normalized_colors),
-                       'gate_spool_id': tuple(raw_mmu.get('gate_spool_id', [])[:num_gates]),
+                       'gate_spool_id': spool_ids,
+                       'remaining_percent': tuple(
+                           self._spoolman_percentages.get(int(sid))
+                           if isinstance(sid, (int, float)) and int(sid) > 0 else None
+                           for sid in spool_ids),
                        'name': unit_name,
                        'filament': str(raw_mmu.get('filament', 'Unknown'))}
         except (MoonrakerError, KeyError, TypeError, IndexError, ValueError) as exc:
             self.connection_error = str(exc)
             return False
         self.connection_error = None
-        changed = state != self.state
+        changed = state != self.state or spoolman_changed
         self.state = state
         self.capabilities = caps
         self._apply_capabilities(caps)
