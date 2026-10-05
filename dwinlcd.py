@@ -1877,7 +1877,7 @@ class DWIN_LCD:
                 text = '#' * 9
             self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
                                  self.lcd.Select_Color if editing else self.lcd.Color_Bg_Black,
-                                 200, self.MBASE(row), text.rjust(9))
+                                 168, self.MBASE(row), text.rjust(9))
 
     def Draw_Move_Menu(self):
         self.Clear_Main_Window()

@@ -1,4 +1,5 @@
 import copy
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -46,7 +47,7 @@ def snapshot(hotend=True, bed=True, fan=True, probe=False, multiple=False):
 
 def printer(data):
     with patch.object(backend, 'MoonrakerClient'), patch.object(backend, 'MoonrakerSubscription'):
-        result = backend.PrinterData()
+        result = backend.PrinterData(settings_path=tempfile.mktemp(prefix='dwin-test-', suffix='.json'))
     result.check_command_results = Mock()
     result.subscription.snapshot.return_value = data
     result.sendGCode = Mock()
