@@ -117,7 +117,10 @@ class CapabilityTests(unittest.TestCase):
         self.assertLess(66 + 3 * result.STAT_CHR_W, 116)
 
     def test_printer_data_initializes_mmu_before_first_status_update(self):
-        result = printer(snapshot(), update=False)
+        with patch.object(backend, 'MoonrakerClient'), \
+                patch.object(backend, 'MoonrakerSubscription'):
+            result = backend.PrinterData(
+                settings_path=tempfile.mktemp(prefix='dwin-test-', suffix='.json'))
         self.assertIsNone(result.mmu)
 
     def test_happy_hare_mmu_state_is_normalized(self):
