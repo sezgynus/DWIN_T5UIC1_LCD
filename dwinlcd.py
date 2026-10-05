@@ -2394,7 +2394,9 @@ class DWIN_LCD:
         if getattr(self, '_offline', False):
             self._offline = False
             self.HMI_StartFrame(False)
-        if update and self._live_jog_future is None and self._live_jog_pending is None:
+        if (update
+                and getattr(self, '_live_jog_future', None) is None
+                and getattr(self, '_live_jog_pending', None) is None):
             position = self.pd.state.status['gcode_move']['position']
             active_moves = {
                 self.Move_X: ('Move_X_scale', 0, self.MBASE(1), False),
