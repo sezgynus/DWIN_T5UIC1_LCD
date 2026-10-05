@@ -101,6 +101,19 @@ class CapabilityTests(unittest.TestCase):
         result.setExtTemp(210)
         result.sendGCode.assert_called_once_with('SET_HEATER_TEMPERATURE HEATER=extruder1 TARGET=210')
 
+    def test_status_temperature_columns_leave_room_for_targets(self):
+        result = display(snapshot())
+        result.lcd.reset_mock()
+        with patch.object(ui.time, 'monotonic', return_value=0):
+            result.Draw_Status_Area(True)
+        calls = result.lcd.Draw_IntValue.call_args_list
+        coordinates = [(call.args[8], call.args[9]) for call in calls]
+        self.assertIn((26, 382), coordinates)
+        self.assertIn((82, 382), coordinates)
+        self.assertIn((26, 416), coordinates)
+        self.assertIn((82, 416), coordinates)
+        self.assertLess(82 + 3 * result.STAT_CHR_W, 116)
+
     def test_live_dashboard_telemetry_uses_motion_report(self):
         data = snapshot()
         data['status']['gcode_move']['speed_factor'] = 1.25
