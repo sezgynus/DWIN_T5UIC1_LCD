@@ -693,6 +693,17 @@ class DWIN_LCD:
             return
         axis, distance, speed = pending
         self._live_jog_pending = None
+        if axis != 'E':
+            # Re-clamp against the latest authoritative position immediately
+            # before dispatch.  The UI target may be ahead while an earlier jog
+            # is still completing, especially near a travel limit.
+            index = 'XYZ'.index(axis)
+            current = float(self.pd.state.status['gcode_move']['position'][index])
+            minimum = self.pd.capabilities.axis_minimum[index]
+            maximum = self.pd.capabilities.axis_maximum[index]
+            distance = max(minimum - current, min(distance, maximum - current))
+            if abs(distance) < 1e-9:
+                return
         try:
             future = self.pd.moveRelative(axis, distance, speed)
         except ValueError as error:
