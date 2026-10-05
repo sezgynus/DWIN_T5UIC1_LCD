@@ -2394,7 +2394,10 @@ class DWIN_LCD:
         if getattr(self, '_offline', False):
             self._offline = False
             self.HMI_StartFrame(False)
-        if (update
+        # An active numeric move editor owns its value until confirmation
+        # when live jog is disabled.  Only live-jog editors follow external
+        # position updates while idle.
+        if (update and getattr(self, '_live_jog', False)
                 and getattr(self, '_live_jog_future', None) is None
                 and getattr(self, '_live_jog_pending', None) is None):
             position = self.pd.state.status['gcode_move']['position']
