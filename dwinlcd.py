@@ -1630,7 +1630,7 @@ class DWIN_LCD:
             zoff_line = self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER): #if (applyencoder(encoder_diffstate, offset_value))
-            self._action("Runtime Z offset", lambda: self.pd.setZOffset(self.dwin_zoffset))
+            self._action("Runtime Z offset", lambda: self.pd.setZOffset(self.pd.HMI_ValueStruct.offset_value / 100.0))
 
             self.checkkey = self.Prepare if self.pd.HMI_ValueStruct.show_mode == -4 else self.Tune
             self.lcd.Draw_Signed_Float(

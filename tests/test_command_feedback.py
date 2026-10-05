@@ -126,3 +126,17 @@ class FeedbackTests(unittest.TestCase):
         result._process_input(event)
         self.assertIsNone(result._action_feedback)
         result._restore_action_screen.assert_called_once()
+
+    def test_unchanged_offset_confirmation_uses_current_editor_value(self):
+        result = self.display()
+        result.pd.HMI_ValueStruct.offset_value = 125
+        result.pd.HMI_ValueStruct.show_mode = -4
+        result.dwin_zoffset = 0
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
+        result.HMI_Zoffset()
+        result.pd.sendGCode.assert_called_once_with('SET_GCODE_OFFSET Z=1.25 MOVE=1')
+        result.pd.sendGCode.reset_mock()
+        for value in (float('nan'), float('inf'), 21):
+            with self.assertRaises(ValueError):
+                result.pd.setZOffset(value)
+        result.pd.sendGCode.assert_not_called()

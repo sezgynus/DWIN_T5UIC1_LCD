@@ -531,4 +531,7 @@ class PrinterData:
             return self.sendGCode('\n'.join(commands))
 
     def setZOffset(self, offset):
+        offset = float(offset)
+        if not math.isfinite(offset) or not self.Z_PROBE_OFFSET_RANGE_MIN <= offset <= self.Z_PROBE_OFFSET_RANGE_MAX:
+            raise ValueError('Runtime Z offset is outside the supported range')
         return self.sendGCode('SET_GCODE_OFFSET Z=%s MOVE=1' % offset)
