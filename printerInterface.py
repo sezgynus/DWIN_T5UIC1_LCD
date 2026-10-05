@@ -1,6 +1,7 @@
 import copy
 import logging
 import math
+from motion_settings import PARAMETERS, validate as validate_motion
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
 from preset_store import PresetStore
@@ -374,6 +375,27 @@ class PrinterData:
         if not math.isfinite(fr) or fr <= 0:
             raise ValueError('Feedrate percentage must be positive')
         return self.sendGCode('M220 S{:g}'.format(fr))
+
+    def motion_settings(self):
+        if not self.state.ready:
+            return ()
+        toolhead = self.state.status.get('toolhead', {})
+        available = []
+        for field, argument, label, step in PARAMETERS:
+            if field in toolhead:
+                try:
+                    value = validate_motion(field, toolhead[field])
+                except (TypeError, ValueError):
+                    continue
+                available.append((field, argument, label, step, value))
+        return tuple(available)
+
+    def set_motion_limit(self, field, value):
+        setting = next((item for item in self.motion_settings() if item[0] == field), None)
+        if setting is None:
+            raise ValueError('Motion setting is unavailable')
+        value = validate_motion(field, value)
+        return self.sendGCode('SET_VELOCITY_LIMIT {}={:g}'.format(setting[1], value))
 
     def home(self, homeZ=False): #fixed using gcode
         script = 'G28 X Y'

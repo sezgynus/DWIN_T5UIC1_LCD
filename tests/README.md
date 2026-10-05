@@ -64,3 +64,7 @@ retry and snapshot-only scrolling.
 
 Preheat fan tests check one combined submission, invalid fan values preventing
 partial heating, optional devices, zero fan speed and active extruder selection.
+
+Motion coverage checks all four Klipper parameters and commands, numeric domains,
+missing/invalid-field omission, local edits until confirmation, cruise-ratio
+boundaries and external status updates.

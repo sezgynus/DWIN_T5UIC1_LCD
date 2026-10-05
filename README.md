@@ -153,6 +153,16 @@ and queued commands are cancelled; inspect printer state before continuing after
 a movement error. Bed mesh and other transforms remain under Klipper's checks.
 The save/restore semantics were checked against [Klipper gcode_move.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/gcode_move.py).
 
+The Motion menu edits Klipper runtime `max_velocity`, `max_accel`,
+`square_corner_velocity` and `minimum_cruise_ratio` using `SET_VELOCITY_LIMIT`.
+Values come from subscribed toolhead status; unsupported or invalid fields are
+omitted. Encoder increments are 1 mm/s, 10 mm/s², 0.1 mm/s and 0.01 respectively.
+Edits stay local until Enter; reported values change only when status confirms
+them. Numeric domains follow [Klipper toolhead.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/toolhead.py).
+SCV is not Marlin jerk. These values are runtime changes; the menu does not send
+SAVE_CONFIG or promise persistence. Steps/mm and rotation-distance calibration
+are outside this menu; it does not create per-axis Marlin-style limits.
+
 ### Library requirements 
 
   Thanks to [wolfstlkr](https://www.reddit.com/r/ender3v2/comments/mdtjvk/octoprint_klipper_v2_lcd/gspae7y)
@@ -286,4 +296,4 @@ Run with `python3 ./run.py`
     * Shows printer info.
 
 ## Notworking:
-    * The Control: Motion Menu
+    * Probe calibration wizard and rotation-distance calibration remain unimplemented.

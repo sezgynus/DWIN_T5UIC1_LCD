@@ -123,6 +123,7 @@ class DWIN_LCD:
 
     Print_window = 33
     Popup_Window = 34
+    MotionValue = 35
 
     MINUNITMULT = 10
 
@@ -1419,22 +1420,50 @@ class DWIN_LCD:
 # ---------------------Todo--------------------------------#
 
     def HMI_Motion(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-        if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_motion.inc(1 + self.MOTION_CASE_TOTAL)):
-                self.Move_Highlight(1, self.select_motion.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_motion.dec()):
-                self.Move_Highlight(-1, self.select_motion.now)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
-            if self.select_motion.now == 0:  # back
+        event = self.get_encoder_state()
+        settings = self.pd.motion_settings()
+        if event == self.ENCODER_DIFF_CW:
+            self.select_motion.inc(len(settings) + 1)
+        elif event == self.ENCODER_DIFF_CCW:
+            self.select_motion.dec()
+        elif event == self.ENCODER_DIFF_ENTER:
+            if self.select_motion.now == 0:
                 self.checkkey = self.Control
                 self.select_control.set(self.CONTROL_CASE_MOVE)
-                self.index_control = self.MROWS
                 self.Draw_Control_Menu()
-        self.lcd.UpdateLCD()
+                self.lcd.UpdateLCD()
+                return
+            if self.select_motion.now > len(settings):
+                self.select_motion.reset()
+            else:
+                field, _, _, _, value = settings[self.select_motion.now - 1]
+                self._motion_field, self._motion_target = field, value
+                self.checkkey = self.MotionValue
+        if event != self.ENCODER_DIFF_NO:
+            self.Draw_Motion_Menu()
+            self.lcd.UpdateLCD()
+
+    def HMI_MotionValue(self):
+        event = self.get_encoder_state()
+        setting = next((item for item in self.pd.motion_settings()
+                        if item[0] == self._motion_field), None)
+        if setting is None:
+            self.checkkey = self.Motion
+            self.select_motion.reset()
+        elif event == self.ENCODER_DIFF_ENTER:
+            self.pd.set_motion_limit(self._motion_field, self._motion_target)
+            self.checkkey = self.Motion
+        elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+            step = setting[3]
+            change = step if event == self.ENCODER_DIFF_CW else -step
+            previous = self._motion_target
+            minimum = min(step, previous) if self._motion_field in ('max_velocity', 'max_accel') else 0
+            self._motion_target = round(max(minimum, self._motion_target + change), 6)
+            if self._motion_field == 'minimum_cruise_ratio':
+                self._motion_target = min(max(.99, previous), self._motion_target)
+        if event != self.ENCODER_DIFF_NO:
+            self.Draw_Motion_Menu()
+            self.lcd.UpdateLCD()
 
     def HMI_Zoffset(self):
         encoder_diffState = self.get_encoder_state()
@@ -1477,46 +1506,6 @@ class DWIN_LCD:
             self.pd.HMI_ValueStruct.offset_value
         )
         self.lcd.UpdateLCD()
-
-    def HMI_MaxSpeed(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-
-    def HMI_MaxAcceleration(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-
-    def HMI_MaxJerk(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-
-    def HMI_Step(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-
-    def HMI_MaxFeedspeedXYZE(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-
-    def HMI_MaxAccelerationXYZE(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-
-    def HMI_MaxJerkXYZE(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
-
-    def HMI_StepXYZE(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
-            return
 
     # --------------------------------------------------------------#
     # --------------------------------------------------------------#
@@ -1732,25 +1721,21 @@ class DWIN_LCD:
 
     def Draw_Motion_Menu(self):
         self.Clear_Main_Window()
-        self.lcd.Frame_TitleCopy(1, 144, 16, 189, 26)  # "Motion"
-        self.draw_max_en(self.MBASE(self.MOTION_CASE_RATE))
-        self.draw_speed_en(27, self.MBASE(self.MOTION_CASE_RATE))  # "Max Speed"
-        self.draw_max_accel_en(self.MBASE(self.MOTION_CASE_ACCEL))  # "Max Acceleration"
-        self.draw_steps_per_mm(self.MBASE(self.MOTION_CASE_STEPS))  # "Steps-per-mm"
-
+        self.Draw_Title('Motion (runtime)')
         self.Draw_Back_First(self.select_motion.now == 0)
-        if (self.select_motion.now):
-            self.Draw_Menu_Cursor(self.select_motion.now)
-
-        i = 1
-        self.Draw_Menu_Line(self.ICON_MaxSpeed + (self.MOTION_CASE_RATE) - 1)
-        self.Draw_More_Icon(i)
-        i += 1
-        self.Draw_Menu_Line(self.ICON_MaxSpeed + (self.MOTION_CASE_ACCEL) - 1)
-        self.Draw_More_Icon(i)
-        i += 1
-        self.Draw_Menu_Line(self.ICON_MaxSpeed + (self.MOTION_CASE_STEPS) - 1)
-        self.Draw_More_Icon(i)
+        settings = self.pd.motion_settings()
+        if self.select_motion.now > len(settings):
+            self.select_motion.reset()
+        for row, (field, _, label, _, value) in enumerate(settings, 1):
+            self.Draw_Menu_Line(row, self.ICON_Motion, label)
+            editing = self.checkkey == self.MotionValue and self._motion_field == field
+            if editing:
+                value = self._motion_target
+            if self.select_motion.now == row:
+                self.Draw_Menu_Cursor(row)
+            self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                                 self.lcd.Select_Color if editing else self.lcd.Color_Bg_Black,
+                                 200, self.MBASE(row), '{:g}'.format(value))
 
     def Draw_Move_Menu(self):
         self.Clear_Main_Window()
@@ -2110,6 +2095,8 @@ class DWIN_LCD:
             self.Draw_Print_ProgressRemain()
         elif update and self.checkkey == self.Tune:
             self.Draw_Tune_Menu()
+        elif update and self.checkkey == self.Motion:
+            self.Draw_Motion_Menu()
 
         if self.pd.HMI_flag.home_flag:
             if self.pd.ishomed():
@@ -2153,6 +2140,8 @@ class DWIN_LCD:
             self.HMI_Temperature()
         elif self.checkkey == self.Motion:
             self.HMI_Motion()
+        elif self.checkkey == self.MotionValue:
+            self.HMI_MotionValue()
         elif self.checkkey == self.Info:
             self.HMI_Info()
         elif self.checkkey == self.Tune:
@@ -2161,14 +2150,6 @@ class DWIN_LCD:
             self.HMI_PLAPreheatSetting()
         elif self.checkkey == self.ABSPreheat:
             self.HMI_ABSPreheatSetting()
-        elif self.checkkey == self.MaxSpeed:
-            self.HMI_MaxSpeed()
-        elif self.checkkey == self.MaxAcceleration:
-            self.HMI_MaxAcceleration()
-        elif self.checkkey == self.MaxJerk:
-            self.HMI_MaxJerk()
-        elif self.checkkey == self.Step:
-            self.HMI_Step()
         elif self.checkkey == self.Move_X:
             self.HMI_Move_X()
         elif self.checkkey == self.Move_Y:
@@ -2187,14 +2168,6 @@ class DWIN_LCD:
             self.HMI_FanSpeed()
         elif self.checkkey == self.PrintSpeed:
             self.HMI_PrintSpeed()
-        elif self.checkkey == self.MaxSpeed_value:
-            self.HMI_MaxFeedspeedXYZE()
-        elif self.checkkey == self.MaxAcceleration_value:
-            self.HMI_MaxAccelerationXYZE()
-        elif self.checkkey == self.MaxJerk_value:
-            self.HMI_MaxJerkXYZE()
-        elif self.checkkey == self.Step_value:
-            self.HMI_StepXYZE()
 
     def get_encoder_state(self):
         # Input is an immutable queued event, not a sample of current GPIO levels.
