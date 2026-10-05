@@ -116,6 +116,68 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn((66, 416), coordinates)
         self.assertLess(66 + 3 * result.STAT_CHR_W, 116)
 
+    def test_happy_hare_mmu_state_is_normalized(self):
+        data = snapshot()
+        data['objects'].append('mmu')
+        data['status']['mmu'] = {
+            'num_gates': 4, 'gate': 2, 'gate_status': [1, 1, 1, 0],
+            'gate_color_rgb': [[0.0, 0.4, 1.0], [1.0, 0.1, 0.0],
+                               [0.0, 1.0, 0.2], [1.0, 0.8, 0.0]],
+            'filament': 'Loaded',
+        }
+        result = printer(data)
+        self.assertEqual(result.mmu['num_gates'], 4)
+        self.assertEqual(result.mmu['gate'], 2)
+        self.assertEqual(result.mmu['gate_color_rgb'][2], (0.0, 1.0, 0.2))
+
+    def test_home_uses_mmu_visual_when_available(self):
+        data = snapshot()
+        data['objects'].append('mmu')
+        data['status']['mmu'] = {
+            'num_gates': 4, 'gate': 1, 'gate_status': [1, 1, 1, 1],
+            'gate_color_rgb': [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0],
+                               [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+        }
+        result = display(data)
+        result.Clear_Main_Window = Mock()
+        result.ICON_Print = result.ICON_Prepare = result.ICON_Control = Mock()
+        result.ICON_StartInfo = Mock()
+        result.Draw_MMU_Status = Mock()
+        result.Goto_MainMenu()
+        result.Draw_MMU_Status.assert_called_once()
+        self.assertFalse(any(call.args[1] == result.ICON_LOGO
+                             for call in result.lcd.ICON_Show.call_args_list))
+
+    def test_home_keeps_logo_without_mmu(self):
+        result = display(snapshot())
+        result.Clear_Main_Window = Mock()
+        result.ICON_Print = result.ICON_Prepare = result.ICON_Control = Mock()
+        result.ICON_StartInfo = Mock()
+        result.Goto_MainMenu()
+        self.assertTrue(any(call.args[1] == result.ICON_LOGO
+                            for call in result.lcd.ICON_Show.call_args_list))
+
+    def test_mmu_visual_marks_active_gate_and_uses_gate_colors(self):
+        result = display(snapshot())
+        result.pd.mmu = {
+            'num_gates': 4, 'gate': 2, 'gate_status': (1, 1, 1, 0),
+            'gate_color_rgb': ((0.0, 0.4, 1.0), (1.0, 0.1, 0.0),
+                               (0.0, 1.0, 0.2), (1.0, 0.8, 0.0)),
+            'filament': 'Loaded',
+        }
+        result.lcd.Color_White = 0xffff
+        result.lcd.Color_Bg_Black = 0x0841
+        result.lcd.Select_Color = 0x33bb
+        result.lcd.font6x12 = 0
+        result.Draw_MMU_Status()
+        frames = [call.args for call in result.lcd.Draw_Rectangle.call_args_list
+                  if call.args[0] == 0]
+        self.assertTrue(any(frame[1] == 0x33bb for frame in frames))
+        fills = [call.args[1] for call in result.lcd.Draw_Rectangle.call_args_list
+                 if call.args[0] == 1]
+        self.assertIn(result._rgb565((0.0, 1.0, 0.2)), fills)
+        self.assertIn(0x8410, fills)
+
     def test_live_dashboard_telemetry_uses_motion_report(self):
         data = snapshot()
         data['status']['gcode_move']['speed_factor'] = 1.25
