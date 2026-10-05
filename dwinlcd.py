@@ -864,22 +864,6 @@ class DWIN_LCD:
                 self.checkkey = self.AxisMove
                 self.select_axis.reset()
                 self.Draw_Move_Menu()
-                self.lcd.Draw_FloatValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                    3, 1, 216, self.MBASE(1), self.pd.current_position.x * self.MINUNITMULT
-                )
-                self.lcd.Draw_FloatValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                    3, 1, 216, self.MBASE(2), self.pd.current_position.y * self.MINUNITMULT
-                )
-                self.lcd.Draw_FloatValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                    3, 1, 216, self.MBASE(3), self.pd.current_position.z * self.MINUNITMULT
-                )
-                if self.pd.HAS_HOTEND:
-                    self.pd.HMI_ValueStruct.Move_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
-                    self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1,
-                                               216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
             elif self.select_prepare.now == self.PREPARE_CASE_DISA:  # Disable steppers
                 self._action("Disable steppers", lambda: self.pd.sendGCode("M84"))
             elif self.select_prepare.now == self.PREPARE_CASE_HOME:  # Homing
@@ -1120,26 +1104,7 @@ class DWIN_LCD:
             if (self.pd.HMI_flag.ETempTooLow_flag):
                 if (encoder_diffState == self.ENCODER_DIFF_ENTER):
                     self.pd.HMI_flag.ETempTooLow_flag = False
-                    self.pd.HMI_ValueStruct.Move_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
                     self.Draw_Move_Menu()
-                    self.lcd.Draw_FloatValue(
-                        True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                        3, 1, 216, self.MBASE(1),
-                        self.pd.HMI_ValueStruct.Move_X_scale
-                    )
-                    self.lcd.Draw_FloatValue(
-                        True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                        3, 1, 216, self.MBASE(2),
-                        self.pd.HMI_ValueStruct.Move_Y_scale
-                    )
-                    self.lcd.Draw_FloatValue(
-                        True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                        3, 1, 216, self.MBASE(3),
-                        self.pd.HMI_ValueStruct.Move_Z_scale
-                    )
-                    self.lcd.Draw_Signed_Float(
-                        self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1, 216, self.MBASE(4), 0
-                    )
                     self.lcd.UpdateLCD()
                 return
         # Avoid flicker by updating only the previous menu
@@ -1930,6 +1895,18 @@ class DWIN_LCD:
         self.Draw_Back_First(self.select_axis.now == 0)
         if (self.select_axis.now):
             self.Draw_Menu_Cursor(self.select_axis.now)
+
+        # Match editor/jog command space, including offsets and transforms.
+        position = self.pd.state.status['gcode_move']['position']
+        for index in range(3 + int(self.pd.HAS_HOTEND)):
+            value = position[index] * self.MINUNITMULT
+            if index == 3:
+                self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black,
+                                           3, 1, 216, self.MBASE(4), value)
+            else:
+                self.lcd.Draw_FloatValue(
+                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White,
+                    self.lcd.Color_Bg_Black, 3, 1, 216, self.MBASE(index + 1), value)
 
         # Draw separators and icons
         for i in range(3 + int(self.pd.HAS_HOTEND)):

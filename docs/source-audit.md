@@ -66,14 +66,15 @@ belirsiz durumu temizlemez; yalnız doğrulanmış RESTORE başarısı engeli ka
 
 ## Doğrulama ve sınırlar
 
-- `python3 -m unittest discover -s tests -q`: **185 test**, expected failure yok.
+- `python3 -m unittest discover -s tests -q`: **187 test**, expected failure yok.
 - `python3 -m compileall -q .` ve `git diff --check`.
 - Fake serial/HTTP/GPIO kullanılıyor; kaynak ve hata yolları sınanıyor.
 - Jog engeli bu LCD istemcisini kapsar; diğer Moonraker istemcilerini kilitlemez.
   Kurtarma bilgisi süreç belleğindedir. Klipper yeniden başlatılıp kayıtlı state
   kaybolursa başarısız RESTORE engeli kaldırmaz.
-- Move menüsünün ilk değerleri toolhead.position, editör ve hareket ise command
-  space kullanır; dönüşümler altındaki ilk ekran gösterimi ayrıca incelenmelidir.
+- Move menüsünün ilk çizimi, yeniden çizimi ve editör girişi artık aynı
+  gcode_move.position koordinatlarını kullanır; farklı toolhead konumu ve
+  negatif koordinatlarla regresyon testi eklendi.
 - Kurulu panel asset dosyaları, gerçek UART zamanlaması ve metin/değerlerin panel
   üzerindeki görsel yerleşimi henüz doğrulanmadı. Buzzer.tone no-op olarak kalır;
   kapalı leveling/language yolları ve kullanılmayan Marlin sabitleri bakım borcudur.

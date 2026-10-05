@@ -88,3 +88,28 @@ class AuditRenderingTests(unittest.TestCase):
         for value in (1e300, -1e300, 10**100):
             result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
             self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'###')
+
+    def test_move_menu_and_editor_use_same_command_coordinates(self):
+        data = snapshot()
+        data['status']['toolhead']['position'] = [91, 92, 93, 94]
+        data['status']['gcode_move']['position'] = [-1.5, 12.3, 2.5, -4.5]
+        result = self.screen()
+        result.pd.subscription.snapshot.return_value = data
+        result.pd.update_variable()
+        result.Draw_Move_Menu()
+        frames = [f for f in result.lcd.MYSERIAL1.frames if f[1] == 0x11]
+        self.assertEqual([f[11:-4].strip() for f in frames],
+                         [b'-1.5', b'12.3', b'2.5', b'-4.5'])
+        result.select_axis.set(1)
+        result.get_encoder_state = lambda: result.ENCODER_DIFF_ENTER
+        result.HMI_AxisMove()
+        self.assertEqual(result.pd.HMI_ValueStruct.Move_X_scale, -15)
+        frames = [f for f in result.lcd.MYSERIAL1.frames if f[1] == 0x11]
+        self.assertEqual(frames[-1][11:-4].strip(), b'-1.5')
+        result.pd.sendGCode.assert_not_called()
+
+    def test_move_menu_without_hotend_draws_only_xyz(self):
+        result = display(snapshot(hotend=False))
+        result.Draw_Move_Menu()
+        self.assertEqual(result.lcd.Draw_FloatValue.call_count, 3)
+        result.lcd.Draw_Signed_Float.assert_not_called()
