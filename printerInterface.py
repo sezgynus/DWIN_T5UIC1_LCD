@@ -345,9 +345,18 @@ class PrinterData:
                     # Happy Hare publishes gate_color_rgb as normalized RGB floats.
                     normalized_colors.append(tuple(max(0.0, min(1.0, float(value)))
                                                    for value in color))
+                unit_name = 'MMU'
+                machine = data.get('mmu_machine', {})
+                unit_index = int(raw_mmu.get('unit', 0))
+                unit_info = machine.get('unit_%d' % unit_index, {})
+                if isinstance(unit_info, dict):
+                    unit_name = str(unit_info.get('display_name') or
+                                    unit_info.get('name') or 'MMU')
                 mmu = {'num_gates': num_gates, 'gate': gate,
                        'gate_status': tuple(int(value) for value in statuses[:num_gates]),
                        'gate_color_rgb': tuple(normalized_colors),
+                       'gate_spool_id': tuple(raw_mmu.get('gate_spool_id', [])[:num_gates]),
+                       'name': unit_name,
                        'filament': str(raw_mmu.get('filament', 'Unknown'))}
         except (MoonrakerError, KeyError, TypeError, IndexError, ValueError) as exc:
             self.connection_error = str(exc)
