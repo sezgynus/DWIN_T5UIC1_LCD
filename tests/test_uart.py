@@ -37,7 +37,8 @@ class Port:
 
 class UARTTests(unittest.TestCase):
     def open(self, port, **kwargs):
-        with patch.object(serial_module, 'Serial', return_value=port, create=True):
+        with patch.object(serial_module, 'Serial', return_value=port, create=True), \
+                patch.object(Driver.__init__.__globals__['time'], 'sleep'):
             return Driver('/dev/fake', **kwargs)
 
     def test_first_handshake_frame_and_fragmented_ack_with_noise(self):

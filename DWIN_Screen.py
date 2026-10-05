@@ -63,12 +63,13 @@ class T5UIC1_LCD:
 		self._closed = False
 		self.MYSERIAL1 = serial.Serial(USARTx, 115200, timeout=0.05, write_timeout=1)
 		try:
+			# ProUI waits for the panel to wake before its first handshake.
+			time.sleep(0.750)
 			for _ in range(handshake_attempts):
 				if self.Handshake(handshake_timeout):
 					break
 			else:
 				raise TimeoutError('DWIN handshake timed out')
-			self.JPG_ShowAndCache(0)
 			self.Frame_SetDir(1)
 			self.UpdateLCD()
 		except BaseException:

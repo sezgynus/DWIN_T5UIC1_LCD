@@ -156,7 +156,7 @@ error rather than blocking startup forever. The driver constructor accepts
 `handshake_timeout` and `handshake_attempts` overrides.
 Frames are sent in one serial write with a write timeout. Short writes/errors
 close the port and are not automatically retried. `Read` uses UART; backlight
-accepts byte values and retains the previous intended minimum of 0x1F.
+accepts the complete byte range including zero.
 These tests verify the existing packet contract, not every panel firmware's
 instruction set. The UI tolerates a missing panel at startup and keeps updating printer status.
 It retries UART on the UI owner after at least five seconds (on the next tick),
@@ -340,3 +340,7 @@ enhanced=False for opaque assets.
 
 Backlight_SetLuminance sends the full 0–255 range unchanged. Zero turns the
 backlight off, following the reference brightness API.
+
+LCD initialization waits 750 ms for wakeup, performs a bounded handshake, sets
+direction 1, and updates the display. It does not display JPG 0 implicitly; the
+UI initializes its own cache and redraws its current screen on reconnect.

@@ -78,3 +78,15 @@ class PacketTests(unittest.TestCase):
         for value in (0, 1, 31, 255):
             result.Backlight_SetLuminance(value)
             self.assertEqual(result.MYSERIAL1.frames[-1], bytes((0xAA, 0x30, value, 0xCC, 0x33, 0xC3, 0x3C)))
+
+    def test_startup_wakes_then_handshakes_and_sets_direction_without_jpg(self):
+        from unittest.mock import patch
+        from test_uart import serial_module
+        port = Port([b'\xAA\x00OK'])
+        with patch.object(serial_module, 'Serial', return_value=port, create=True), \
+                patch.object(Driver.__init__.__globals__['time'], 'sleep') as sleep:
+            result = Driver('/dev/fake')
+        self.assertEqual(sleep.call_args_list[0].args, (0.750,))
+        self.assertEqual(port.frames, [bytes.fromhex(frame) for frame in (
+            'AA 00 CC 33 C3 3C', 'AA 34 5A A5 01 CC 33 C3 3C', 'AA 3D CC 33 C3 3C')])
+        result.close()
