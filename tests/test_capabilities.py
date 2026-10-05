@@ -127,7 +127,7 @@ class CapabilityTests(unittest.TestCase):
         data = snapshot()
         data['objects'].append('mmu')
         data['status']['mmu'] = {
-            'num_gates': 4, 'gate': 2, 'gate_status': [1, 1, 1, 0],
+            'num_gates': 4, 'gate': 2, 'unit': 0, 'gate_status': [1, 1, 1, 0],
             'gate_color_rgb': [[0.0, 0.4, 1.0], [1.0, 0.1, 0.0],
                                [0.0, 1.0, 0.2], [1.0, 0.8, 0.0]],
             'filament': 'Loaded',
@@ -140,6 +140,21 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(result.mmu['num_gates'], 4)
         self.assertEqual(result.mmu['gate'], 2)
         self.assertEqual(result.mmu['gate_color_rgb'][2], (0.0, 1.0, 0.2))
+        self.assertEqual(result.mmu['name'], 'OpenEYE MMU')
+
+    def test_happy_hare_mmu_name_uses_selected_unit_metadata(self):
+        data = snapshot()
+        data['objects'] += ['mmu', 'mmu_machine']
+        data['status']['mmu'] = {
+            'num_gates': 4, 'gate': 2, 'unit_selected': 1,
+            'gate_status': [1, 1, 1, 1],
+            'gate_color_rgb': [[0.0, 0.0, 0.0]] * 4,
+        }
+        data['status']['mmu_machine'] = {
+            'unit_0': {'name': 'first', 'display_name': 'First MMU'},
+            'unit_1': {'name': 'second', 'display_name': 'OpenEYE MMU'},
+        }
+        result = printer(data)
         self.assertEqual(result.mmu['name'], 'OpenEYE MMU')
 
     def test_home_uses_mmu_visual_when_available(self):
@@ -177,6 +192,8 @@ class CapabilityTests(unittest.TestCase):
                                (0.0, 1.0, 0.2), (1.0, 0.8, 0.0)),
             'filament': 'Loaded',
         }
+        result.lcd.DWIN_WIDTH = 272
+        result.lcd.DWIN_HEIGHT = 480
         result.lcd.Color_White = 0xffff
         result.lcd.Color_Bg_Black = 0x0841
         result.lcd.Select_Color = 0x33bb
