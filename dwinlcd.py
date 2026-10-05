@@ -1823,8 +1823,10 @@ class DWIN_LCD:
             self.lcd.DWIN_WIDTH, self.lcd.DWIN_HEIGHT - 1)
 
         y1, y2, y3 = 382, 416, 458
-        x1, x2, x3 = 13, 105, 190
-        value1, value2, value3 = 33, 128, 211
+        # Temperature fields need enough width for "actual/target". Keep them
+        # in a wider left column and compact the two telemetry columns.
+        x1, x2, x3 = 6, 116, 202
+        value1, value2, value3 = 26, 137, 223
 
         if self.pd.HAS_HOTEND:
             self.lcd.ICON_Show(self.ICON, self.ICON_HotendTemp, x1, y1 - 1)
@@ -1833,10 +1835,10 @@ class DWIN_LCD:
                 self.pd.thermalManager['temp_hotend'][0]['celsius'])
             self.lcd.Draw_String(False, False, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                value1 + 3 * self.STAT_CHR_W + 2, y1, "/")
+                value1 + 3 * self.STAT_CHR_W, y1, "/")
             self.lcd.Draw_IntValue(True, True, 0, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
-                value1 + 4 * self.STAT_CHR_W + 3, y1,
+                value1 + 4 * self.STAT_CHR_W, y1,
                 self.pd.thermalManager['temp_hotend'][0]['target'])
 
         # Match the established dashboard behavior: alternate speed override
@@ -1863,10 +1865,10 @@ class DWIN_LCD:
                 self.pd.thermalManager['temp_bed']['celsius'])
             self.lcd.Draw_String(False, False, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                value1 + 3 * self.STAT_CHR_W + 2, y2, "/")
+                value1 + 3 * self.STAT_CHR_W, y2, "/")
             self.lcd.Draw_IntValue(True, True, 0, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
-                value1 + 4 * self.STAT_CHR_W + 3, y2,
+                value1 + 4 * self.STAT_CHR_W, y2,
                 self.pd.thermalManager['temp_bed']['target'])
 
         # The extrusion field alternates between M221 flow override and
