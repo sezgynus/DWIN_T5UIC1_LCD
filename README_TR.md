@@ -52,24 +52,77 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - systemd servis örneği
 - Python unit/regression testleri
 
-## Mimari
+## Kurulum
 
-```mermaid
-flowchart LR
-    ENC[Rotary encoder / buton] -->|GPIO eventleri| UI[Python UI owner thread]
-    UI -->|draw komutları| DWIN[DWIN T5UIC1 LCD]
-    DWIN -->|UART| UI
-    UI --> PD[PrinterData / capability modeli]
-    PD --> SUB[Moonraker WebSocket subscription]
-    UI --> CMD[Moonraker komut worker'ı]
-    SUB <--> MR[Moonraker]
-    CMD -->|HTTP / JSON-RPC| MR
-    MR <--> KL[Klipper]
-    MR <--> SM[Spoolman]
-    KL <--> HH[Happy Hare]
+### Gereksinimler
+
+- UART + GPIO erişimi olan Raspberry Pi veya uyumlu Linux SBC
+- Klipper ve Moonraker
+- DWIN T5UIC1 uyumlu ekran/asset seti
+
+### Otomatik kurulum
+
+Master branch'i standart konuma klonlayıp installer'ı çalıştırın:
+
+```bash
+cd ~
+git clone https://github.com/sezgynus/KlipperDWIN.git
+cd ~/KlipperDWIN
+./install.sh
 ```
 
-Rendering ve menü state'inin sahibi display thread'idir. GPIO callback'leri yalnızca immutable input eventlerini kuyruğa ekler. Yazıcı state'i birleştirilmiş ve immutable Moonraker subscription snapshot'ından gelir; komutlar ayrı seri worker üzerinden yürütüldüğü için UI rendering blocking HTTP isteklerine bağlı değildir.
+Installer:
+
+- gerekli sistem ve Python bağımlılıklarını kurar
+- Python virtual environment'ını Git reposunun dışında `~/klipperdwin-env` altında oluşturur
+- `KlipperDWIN.service` systemd servisini oluşturur ve etkinleştirir
+- ilk kurulumda interaktif yapılandırmayı çalıştırır ve kullanıcı ayarlarını `~/.config/KlipperDWIN` altında tutar
+- `KlipperDWIN` servisini Moonraker'ın allowed-services dosyasına ekler
+- `moonraker.conf` yanına `KlipperDWIN.conf` oluşturur ve otomatik include eder
+- Mainsail'in reponun `master` branch'indeki güncellemeleri kontrol edip kurabilmesi için `[update_manager KlipperDWIN]` kaydını oluşturur
+- `requirements.txt` değiştiğinde Python bağımlılıklarını Moonraker'ın güncellemesini sağlar
+
+Moonraker'ın `dev` update channel'ı yapılandırılmış primary branch'teki en yeni commit'i takip eder. Runtime ayarları ve virtualenv repo dışında tutulduğu için Moonraker Git reposunu temiz durumda yönetebilir.
+
+Moonraker standart dışı bir configuration path kullanıyorsa:
+
+```bash
+MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
+```
+
+İlk kurulumda donanıma bağlı ayarlar interaktif olarak sorulur. Varsayılanları kabul etmek için Enter'a basabilirsiniz:
+
+```text
+Moonraker URL [http://127.0.0.1:7125]:
+Serial port [/dev/ttyS0]:
+Encoder A GPIO (BCM) [21]:
+Encoder B GPIO (BCM) [19]:
+Encoder button GPIO (BCM) [20]:
+Moonraker power device [Printer]:
+Power-on button hold time (ms, 0 = immediate) [2000]:
+```
+
+Bu ayarları daha sonra değiştirmek için:
+
+```bash
+cd ~/KlipperDWIN
+./configure.sh
+```
+
+`install.sh` tekrar çalıştırıldığında mevcut kullanıcı ayarları korunur. `configure.sh` mevcut değerleri varsayılan olarak gösterir, `~/.config/KlipperDWIN/KlipperDWIN.env` dosyasını günceller ve kayıttan sonra servisi yeniden başlatabilir.
+
+İnteraktif yapılandırma; Moonraker endpoint'ini, LCD UART'ını, encoder GPIO pinlerini, encoder buton GPIO'sunu, Moonraker power-device adını ve power-on basılı tutma süresini kapsar. `DWIN_POWER_ON_HOLD_MS` milisaniye cinsindendir; varsayılan değer `2000`'dir. `0` seçilirse encoder butonuna basıldığı anda yazıcıyı açma isteği gönderilir.
+
+### Moonraker / Mainsail ile güncelleme
+
+Installer KlipperDWIN'i Moonraker Update Manager'a otomatik olarak kaydeder. Moonraker oluşturulan `KlipperDWIN.conf` dosyasını yükledikten sonra KlipperDWIN, Mainsail'de **Machine → Update Manager** altında diğer yönetilen bileşenlerle birlikte görünür.
+
+Yeni sürümü kontrol etmek için **Refresh**, kurmak için KlipperDWIN satırındaki **Update** kullanılabilir. Moonraker Git checkout'u günceller, gerektiğinde Python requirements'larını yeniler ve yönetilen `KlipperDWIN` servisini yeniden başlatır. Kullanıcı yapılandırması repo dışında `~/.config/KlipperDWIN` altında tutulduğu için normal Update Manager güncellemeleri bu ayarların üzerine yazmaz.
+
+Updater reponun `master` branch'ini takip eder. Version tag'leri Moonraker/Mainsail'de görünen okunabilir sürümün tabanını oluşturur; tag sonrasındaki commit'ler örneğin `v0.2.1-1-gabcdef12` biçiminde gösterilebilir.
+
+> [!NOTE]
+> Yapılandırma değişiklikleri için `./configure.sh` kullanın. Yerel donanım ayarları için repo tarafından takip edilen dosyaları değiştirmeyin; Moonraker yönetilen Git checkout'un temiz kalmasını bekler.
 
 ## Desteklenen donanım
 
@@ -275,161 +328,6 @@ Menüler sabit bir yazıcı şablonundan oluşturulmaz. Uygulama startup/reconne
 
 Böylece aynı UI kodu bağlı yazıcıda çalışamayacak kontrolleri göstermemeye çalışır.
 
-## Moonraker bağlantı modeli
-
-Varsayılan endpoint:
-
-```text
-http://127.0.0.1:7125
-```
-
-Uygulama şunları kullanır:
-
-- komutlar ve bounded request/response işlemleri için HTTP
-- printer object discovery ve canlı subscription için Moonraker WebSocket JSON-RPC
-- eski connection'dan kalan queued komutların reconnect sonrası çalışmasını engelleyen connection epoch'ları
-- otomatik WebSocket reconnect
-- sessiz bağlantı kopmalarını algılayan ping/pong kontrolleri
-- immutable birleştirilmiş printer-state snapshot'ları
-- kör retry yerine command future'ları ve kalıcı hata acknowledgement
-
-Opsiyonel API key authentication `MOONRAKER_API_KEY` üzerinden desteklenir. Boş key gönderilmez.
-
-## Kurulum
-
-### Gereksinimler
-
-- UART + GPIO erişimi olan Raspberry Pi veya uyumlu Linux SBC
-- Klipper ve Moonraker
-- DWIN T5UIC1 uyumlu ekran/asset seti
-
-### Otomatik kurulum
-
-Master branch'i standart konuma klonlayıp installer'ı çalıştırın:
-
-```bash
-cd ~
-git clone https://github.com/sezgynus/KlipperDWIN.git
-cd ~/KlipperDWIN
-./install.sh
-```
-
-Installer:
-
-- gerekli sistem ve Python bağımlılıklarını kurar
-- Python virtual environment'ını Git reposunun dışında `~/klipperdwin-env` altında oluşturur
-- `KlipperDWIN.service` systemd servisini oluşturur ve etkinleştirir
-- ilk kurulumda interaktif yapılandırmayı çalıştırır ve kullanıcı ayarlarını `~/.config/KlipperDWIN` altında tutar
-- `KlipperDWIN` servisini Moonraker'ın allowed-services dosyasına ekler
-- `moonraker.conf` yanına `KlipperDWIN.conf` oluşturur ve otomatik include eder
-- Mainsail'in reponun `master` branch'indeki güncellemeleri kontrol edip kurabilmesi için `[update_manager KlipperDWIN]` kaydını oluşturur
-- `requirements.txt` değiştiğinde Python bağımlılıklarını Moonraker'ın güncellemesini sağlar
-
-Moonraker'ın `dev` update channel'ı yapılandırılmış primary branch'teki en yeni commit'i takip eder. Runtime ayarları ve virtualenv repo dışında tutulduğu için Moonraker Git reposunu temiz durumda yönetebilir.
-
-Moonraker standart dışı bir configuration path kullanıyorsa:
-
-```bash
-MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
-```
-
-İlk kurulumda donanıma bağlı ayarlar interaktif olarak sorulur. Varsayılanları kabul etmek için Enter'a basabilirsiniz:
-
-```text
-Moonraker URL [http://127.0.0.1:7125]:
-Serial port [/dev/ttyS0]:
-Encoder A GPIO (BCM) [21]:
-Encoder B GPIO (BCM) [19]:
-Encoder button GPIO (BCM) [20]:
-Moonraker power device [Printer]:
-Power-on button hold time (ms, 0 = immediate) [2000]:
-```
-
-Bu ayarları daha sonra değiştirmek için:
-
-```bash
-cd ~/KlipperDWIN
-./configure.sh
-```
-
-`install.sh` tekrar çalıştırıldığında mevcut kullanıcı ayarları korunur. `configure.sh` mevcut değerleri varsayılan olarak gösterir, `~/.config/KlipperDWIN/KlipperDWIN.env` dosyasını günceller ve kayıttan sonra servisi yeniden başlatabilir.
-
-İnteraktif yapılandırma; Moonraker endpoint'ini, LCD UART'ını, encoder GPIO pinlerini, encoder buton GPIO'sunu, Moonraker power-device adını ve power-on basılı tutma süresini kapsar. `DWIN_POWER_ON_HOLD_MS` milisaniye cinsindendir; varsayılan değer `2000`'dir. `0` seçilirse encoder butonuna basıldığı anda yazıcıyı açma isteği gönderilir.
-
-### Moonraker / Mainsail ile güncelleme
-
-Installer KlipperDWIN'i Moonraker Update Manager'a otomatik olarak kaydeder. Moonraker oluşturulan `KlipperDWIN.conf` dosyasını yükledikten sonra KlipperDWIN, Mainsail'de **Machine → Update Manager** altında diğer yönetilen bileşenlerle birlikte görünür.
-
-Yeni sürümü kontrol etmek için **Refresh**, kurmak için KlipperDWIN satırındaki **Update** kullanılabilir. Moonraker Git checkout'u günceller, gerektiğinde Python requirements'larını yeniler ve yönetilen `KlipperDWIN` servisini yeniden başlatır. Kullanıcı yapılandırması repo dışında `~/.config/KlipperDWIN` altında tutulduğu için normal Update Manager güncellemeleri bu ayarların üzerine yazmaz.
-
-Updater reponun `master` branch'ini takip eder. Version tag'leri Moonraker/Mainsail'de görünen okunabilir sürümün tabanını oluşturur; tag sonrasındaki commit'ler örneğin `v0.2.1-1-gabcdef12` biçiminde gösterilebilir.
-
-> [!NOTE]
-> Yapılandırma değişiklikleri için `./configure.sh` kullanın. Yerel donanım ayarları için repo tarafından takip edilen dosyaları değiştirmeyin; Moonraker yönetilen Git checkout'un temiz kalmasını bekler.
-
-## UART hazırlığı
-
-Serial login console'u kapatıp serial hardware'i etkinleştirmek için `raspi-config` kullanın, ardından yeniden başlatın.
-
-```bash
-sudo raspi-config
-```
-
-Pi modelinizde fiziksel pinlere atanmış gerçek UART'ı doğrulayın. Bluetooth overlay'leri ve boot configuration path'leri Raspberry Pi nesilleri ve işletim sistemi sürümleri arasında değiştiğinden proje tek bir evrensel overlay dayatmaz.
-
-## Manuel çalıştırma
-
-Repo varsayılanlarıyla örnek:
-
-```bash
-cd ~/KlipperDWIN
-
-~/klipperdwin-env/bin/python run.py \
-  --serial-port /dev/ttyS0 \
-  --encoder-pins 21 19 \
-  --button-pin 20 \
-  --moonraker-url http://127.0.0.1:7125
-```
-
-Kendi kurulumunuzdaki gerçek UART ve GPIO pinlerini kullanın.
-
-Mevcut ayarlar:
-
-| Environment | CLI | Varsayılan |
-|---|---|---|
-| `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
-| `MOONRAKER_API_KEY` | yalnız environment | boş |
-| `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 sn |
-| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyS0` |
-| `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
-| `DWIN_BUTTON_PIN` | `--button-pin` | `20` |
-| `DWIN_SETTINGS_FILE` | `--settings-file` | installer yapılandırmasından sonra `~/.config/KlipperDWIN/presets.json` |
-| `DWIN_POWER_DEVICE` | `--power-device` | `Printer` |
-| `DWIN_POWER_ON_HOLD_MS` | `--power-on-hold-ms` | `2000` ms |
-
-## systemd ile açılışta çalıştırma
-
-Örnek unit ve environment dosyası repo içinde bulunur.
-
-```bash
-id -u dwinlcd >/dev/null 2>&1 || \
-  sudo useradd --system --user-group \
-  --home-dir /var/lib/dwin-lcd --no-create-home \
-  --shell /usr/sbin/nologin dwinlcd
-
-sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
-sudoedit /etc/default/dwin-lcd
-
-sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
-  /etc/systemd/system/simpleLCD.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now simpleLCD.service
-sudo journalctl -u simpleLCD.service -f
-```
-
-Servis ayrı bir kullanıcı kullanır, hata durumunda yeniden başlar, presetleri `/var/lib/dwin-lcd` altında saklar ve journald'a log yazar. Servis kullanıcısının işletim sisteminizde gerçek UART ve gpiochip cihazlarına erişebildiğini doğrulayın.
-
 ## Happy Hare entegrasyonu
 
 Gerekli Klipper object'leri mevcut olduğunda Happy Hare desteği otomatik devreye girer.
@@ -473,7 +371,137 @@ Light is ON, Brightness=128
 
 Moonraker'da bir power device tanımlıysa encoder butonu, Klipper veya LCD UART offline durumdayken bile yazıcıyı açabilir. Cihaz adı varsayılan olarak `Printer`'dır ve `DWIN_POWER_DEVICE` ile değiştirilebilir. Basılı tutma süresi `DWIN_POWER_ON_HOLD_MS` ile belirlenir: varsayılan `2000` değeri 2 saniye basılı tutmayı gerektirir; `0` ise butona basıldığı anda power-on isteği gönderir.
 
+## Mimari
+
+<details>
+<summary><strong>Mimariyi göster</strong></summary>
+
+```mermaid
+flowchart LR
+    ENC[Rotary encoder / buton] -->|GPIO eventleri| UI[Python UI owner thread]
+    UI -->|draw komutları| DWIN[DWIN T5UIC1 LCD]
+    DWIN -->|UART| UI
+    UI --> PD[PrinterData / capability modeli]
+    PD --> SUB[Moonraker WebSocket subscription]
+    UI --> CMD[Moonraker komut worker'ı]
+    SUB <--> MR[Moonraker]
+    CMD -->|HTTP / JSON-RPC| MR
+    MR <--> KL[Klipper]
+    MR <--> SM[Spoolman]
+    KL <--> HH[Happy Hare]
+```
+
+Rendering ve menü state'inin sahibi display thread'idir. GPIO callback'leri yalnızca immutable input eventlerini kuyruğa ekler. Yazıcı state'i birleştirilmiş ve immutable Moonraker subscription snapshot'ından gelir; komutlar ayrı seri worker üzerinden yürütüldüğü için UI rendering blocking HTTP isteklerine bağlı değildir.
+
+</details>
+
+## Moonraker bağlantı modeli
+
+<details>
+<summary><strong>Bağlantı ayrıntılarını göster</strong></summary>
+
+Varsayılan endpoint:
+
+```text
+http://127.0.0.1:7125
+```
+
+Uygulama şunları kullanır:
+
+- komutlar ve bounded request/response işlemleri için HTTP
+- printer object discovery ve canlı subscription için Moonraker WebSocket JSON-RPC
+- eski connection'dan kalan queued komutların reconnect sonrası çalışmasını engelleyen connection epoch'ları
+- otomatik WebSocket reconnect
+- sessiz bağlantı kopmalarını algılayan ping/pong kontrolleri
+- immutable birleştirilmiş printer-state snapshot'ları
+- kör retry yerine command future'ları ve kalıcı hata acknowledgement
+
+Opsiyonel API key authentication `MOONRAKER_API_KEY` üzerinden desteklenir. Boş key gönderilmez.
+
+</details>
+
+## UART hazırlığı
+
+<details>
+<summary><strong>UART kurulumunu göster</strong></summary>
+
+Serial login console'u kapatıp serial hardware'i etkinleştirmek için `raspi-config` kullanın, ardından yeniden başlatın.
+
+```bash
+sudo raspi-config
+```
+
+Pi modelinizde fiziksel pinlere atanmış gerçek UART'ı doğrulayın. Bluetooth overlay'leri ve boot configuration path'leri Raspberry Pi nesilleri ve işletim sistemi sürümleri arasında değiştiğinden proje tek bir evrensel overlay dayatmaz.
+
+</details>
+
+## Manuel çalıştırma
+
+<details>
+<summary><strong>Manuel çalıştırma seçeneklerini göster</strong></summary>
+
+Repo varsayılanlarıyla örnek:
+
+```bash
+cd ~/KlipperDWIN
+
+~/klipperdwin-env/bin/python run.py \
+  --serial-port /dev/ttyS0 \
+  --encoder-pins 21 19 \
+  --button-pin 20 \
+  --moonraker-url http://127.0.0.1:7125
+```
+
+Kendi kurulumunuzdaki gerçek UART ve GPIO pinlerini kullanın.
+
+Mevcut ayarlar:
+
+| Environment | CLI | Varsayılan |
+|---|---|---|
+| `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
+| `MOONRAKER_API_KEY` | yalnız environment | boş |
+| `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 sn |
+| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyS0` |
+| `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
+| `DWIN_BUTTON_PIN` | `--button-pin` | `20` |
+| `DWIN_SETTINGS_FILE` | `--settings-file` | installer yapılandırmasından sonra `~/.config/KlipperDWIN/presets.json` |
+| `DWIN_POWER_DEVICE` | `--power-device` | `Printer` |
+| `DWIN_POWER_ON_HOLD_MS` | `--power-on-hold-ms` | `2000` ms |
+
+</details>
+
+## systemd ile açılışta çalıştırma
+
+<details>
+<summary><strong>systemd kurulumunu göster</strong></summary>
+
+Örnek unit ve environment dosyası repo içinde bulunur.
+
+```bash
+id -u dwinlcd >/dev/null 2>&1 || \
+  sudo useradd --system --user-group \
+  --home-dir /var/lib/dwin-lcd --no-create-home \
+  --shell /usr/sbin/nologin dwinlcd
+
+sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
+sudoedit /etc/default/dwin-lcd
+
+sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
+  /etc/systemd/system/simpleLCD.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now simpleLCD.service
+sudo journalctl -u simpleLCD.service -f
+```
+
+Servis ayrı bir kullanıcı kullanır, hata durumunda yeniden başlar, presetleri `/var/lib/dwin-lcd` altında saklar ve journald'a log yazar. Servis kullanıcısının işletim sisteminizde gerçek UART ve gpiochip cihazlarına erişebildiğini doğrulayın.
+
+</details>
+
 ## Güvenilirlik ve güvenlik davranışı
+
+<details>
+<summary><strong>Güvenilirlik ayrıntılarını göster</strong></summary>
 
 Proje yazıcıyı değiştiren işlemlerde bilinçli olarak optimistic UI state kullanmaz.
 
@@ -492,7 +520,12 @@ Proje yazıcıyı değiştiren işlemlerde bilinçli olarak optimistic UI state 
 
 Timeout durumunda komut yazıcıya ulaşmış ancak cevabı kaybolmuş olabilir. Belirsiz bir işlemi tekrarlamadan önce gerçek yazıcı state'ini kontrol edin.
 
+</details>
+
 ## UART/display katmanı
+
+<details>
+<summary><strong>Düşük seviye ekran ayrıntılarını göster</strong></summary>
 
 DWIN transport katmanı bounded startup handshake, incremental ACK parsing, full-frame writes ve reconnect denemeleri uygular.
 
@@ -511,7 +544,12 @@ bulunur.
 
 Düşük seviye ayrıntılar için [LCD asset notları](docs/lcd-assets.md) ve [source audit](docs/source-audit.md) belgelerine bakın.
 
+</details>
+
 ## Testler
+
+<details>
+<summary><strong>Test talimatlarını göster</strong></summary>
 
 Tüm izole test suite'i:
 
@@ -524,7 +562,12 @@ Testler Moonraker client/subscription katmanını, printer-state normalization'�
 
 Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 
+</details>
+
 ## Mevcut kapsam / bilinen sınırlar
+
+<details>
+<summary><strong>Bilinen sınırları göster</strong></summary>
 
 - Display UI mevcut 272×480 DWIN asset/layout ailesi etrafında tasarlanmıştır.
 - Canlı Happy Hare lane renkleri şu anda açıkça `unit0_mmu_exit_leds` adlı object'i kullanır.
@@ -533,7 +576,12 @@ Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 - Runtime Motion değerleri otomatik olarak printer configuration'a kalıcı yazılmaz.
 - Test edilen DWIN/encoder bağlantısı dışındaki donanım uyumluluğu motion kontrollerine güvenmeden önce doğrulanmalıdır.
 
+</details>
+
 ## Proje geçmişi ve katkılar
+
+<details>
+<summary><strong>Proje geçmişi ve katkıları göster</strong></summary>
 
 Bu repo açık kaynak kökenini ve Git geçmişini korur.
 
@@ -553,7 +601,12 @@ Bu yazılımın kullandığı veya entegre olduğu diğer projeler:
 - [Happy Hare](https://github.com/moggieuk/Happy-Hare)
 - [Spoolman](https://github.com/Donkie/Spoolman)
 
+</details>
+
 ## Katkıda bulunma
+
+<details>
+<summary><strong>Katkı yönergelerini göster</strong></summary>
 
 Issue ve pull request'ler açıktır. UI değişikliklerinde ilgili printer capability/setup bilgisini ekleyin ve mümkün olduğunda aynı değişiklik içinde regression test ekleyin/güncelleyin.
 
@@ -566,6 +619,8 @@ Donanım/UI bug raporlarında şu bilgiler faydalıdır:
 - ilgili opsiyonel component (probe, MMU, Spoolman, M355 vb.)
 - log bölümü
 - görsel problem varsa panel fotoğrafı
+
+</details>
 
 ## Lisans
 

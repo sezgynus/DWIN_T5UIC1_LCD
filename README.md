@@ -52,24 +52,77 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - systemd service example
 - Python unit/regression tests
 
-## Architecture
+## Installation
 
-```mermaid
-flowchart LR
-    ENC[Rotary encoder / button] -->|GPIO events| UI[Python UI owner thread]
-    UI -->|draw commands| DWIN[DWIN T5UIC1 LCD]
-    DWIN -->|UART| UI
-    UI --> PD[PrinterData / capability model]
-    PD --> SUB[Moonraker WebSocket subscription]
-    UI --> CMD[Moonraker command worker]
-    SUB <--> MR[Moonraker]
-    CMD -->|HTTP / JSON-RPC| MR
-    MR <--> KL[Klipper]
-    MR <--> SM[Spoolman]
-    KL <--> HH[Happy Hare]
+### Requirements
+
+- Raspberry Pi or compatible Linux SBC with accessible UART + GPIO
+- Klipper and Moonraker
+- DWIN T5UIC1-compatible display/asset set
+
+### Automated installation
+
+Clone the master branch to the standard location and run the installer:
+
+```bash
+cd ~
+git clone https://github.com/sezgynus/KlipperDWIN.git
+cd ~/KlipperDWIN
+./install.sh
 ```
 
-The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; commands are serialized separately so UI rendering does not depend on blocking HTTP requests.
+The installer:
+
+- installs the required system and Python dependencies
+- creates the Python virtual environment at `~/klipperdwin-env`, outside the Git repository
+- creates and enables the `KlipperDWIN.service` systemd service
+- runs an interactive first-time configuration and stores the result under `~/.config/KlipperDWIN`
+- adds `KlipperDWIN` to Moonraker's allowed-services file
+- creates `KlipperDWIN.conf` next to `moonraker.conf` and includes it automatically
+- registers `[update_manager KlipperDWIN]` so Mainsail can check and install updates from the repository's `master` branch
+- configures Moonraker to update Python requirements when `requirements.txt` changes
+
+Moonraker's `dev` update channel follows the latest commit on the configured primary branch. The repository itself is kept free of runtime configuration and virtualenv files so Moonraker can manage it as a clean Git repository.
+
+If Moonraker uses a non-standard configuration path, run:
+
+```bash
+MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
+```
+
+The first installation prompts for the hardware-facing settings. Press Enter to accept the defaults:
+
+```text
+Moonraker URL [http://127.0.0.1:7125]:
+Serial port [/dev/ttyS0]:
+Encoder A GPIO (BCM) [21]:
+Encoder B GPIO (BCM) [19]:
+Encoder button GPIO (BCM) [20]:
+Moonraker power device [Printer]:
+Power-on button hold time (ms, 0 = immediate) [2000]:
+```
+
+To change these settings later, run:
+
+```bash
+cd ~/KlipperDWIN
+./configure.sh
+```
+
+Existing configuration is preserved when `install.sh` is run again. `configure.sh` shows the current values as defaults, writes `~/.config/KlipperDWIN/KlipperDWIN.env`, and can restart the service after saving.
+
+The interactive configuration covers the Moonraker endpoint, LCD UART, encoder GPIO pins, encoder button GPIO, Moonraker power-device name, and the power-on hold time. `DWIN_POWER_ON_HOLD_MS` is expressed in milliseconds; the default is `2000`, while `0` requests printer power immediately when the encoder button is pressed.
+
+### Updating with Moonraker / Mainsail
+
+The installer registers KlipperDWIN with Moonraker Update Manager automatically. After Moonraker reloads the generated `KlipperDWIN.conf`, KlipperDWIN appears in Mainsail's **Machine → Update Manager** together with the other managed components.
+
+Use **Refresh** to check for a newer revision and **Update** on the KlipperDWIN entry to install it. Moonraker updates the Git checkout, refreshes Python requirements when needed, and restarts the managed `KlipperDWIN` service. User configuration is kept outside the repository in `~/.config/KlipperDWIN`, so normal Update Manager updates do not overwrite it.
+
+The updater follows the repository's `master` branch. Version tags provide the readable version base shown by Moonraker/Mainsail; commits after a tag may be displayed in a form such as `v0.2.1-1-gabcdef12`.
+
+> [!NOTE]
+> Use `./configure.sh` for configuration changes. Do not edit tracked repository files for local hardware settings, because Moonraker expects the managed Git checkout to remain clean.
 
 ## Supported hardware
 
@@ -275,161 +328,6 @@ Examples include:
 
 This allows the same UI code to avoid showing controls that cannot work on the connected printer.
 
-## Moonraker connection model
-
-Default endpoint:
-
-```text
-http://127.0.0.1:7125
-```
-
-The application uses:
-
-- HTTP for commands and bounded request/response operations
-- Moonraker WebSocket JSON-RPC for printer object discovery and live subscriptions
-- connection epochs so queued commands from an old connection cannot run after reconnect
-- automatic WebSocket reconnect
-- ping/pong checks for silent disconnect detection
-- immutable merged printer-state snapshots
-- command futures and retained error acknowledgement instead of blind retries
-
-Optional API-key authentication is supported through `MOONRAKER_API_KEY`. Empty keys are not sent.
-
-## Installation
-
-### Requirements
-
-- Raspberry Pi or compatible Linux SBC with accessible UART + GPIO
-- Klipper and Moonraker
-- DWIN T5UIC1-compatible display/asset set
-
-### Automated installation
-
-Clone the master branch to the standard location and run the installer:
-
-```bash
-cd ~
-git clone https://github.com/sezgynus/KlipperDWIN.git
-cd ~/KlipperDWIN
-./install.sh
-```
-
-The installer:
-
-- installs the required system and Python dependencies
-- creates the Python virtual environment at `~/klipperdwin-env`, outside the Git repository
-- creates and enables the `KlipperDWIN.service` systemd service
-- runs an interactive first-time configuration and stores the result under `~/.config/KlipperDWIN`
-- adds `KlipperDWIN` to Moonraker's allowed-services file
-- creates `KlipperDWIN.conf` next to `moonraker.conf` and includes it automatically
-- registers `[update_manager KlipperDWIN]` so Mainsail can check and install updates from the repository's `master` branch
-- configures Moonraker to update Python requirements when `requirements.txt` changes
-
-Moonraker's `dev` update channel follows the latest commit on the configured primary branch. The repository itself is kept free of runtime configuration and virtualenv files so Moonraker can manage it as a clean Git repository.
-
-If Moonraker uses a non-standard configuration path, run:
-
-```bash
-MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
-```
-
-The first installation prompts for the hardware-facing settings. Press Enter to accept the defaults:
-
-```text
-Moonraker URL [http://127.0.0.1:7125]:
-Serial port [/dev/ttyS0]:
-Encoder A GPIO (BCM) [21]:
-Encoder B GPIO (BCM) [19]:
-Encoder button GPIO (BCM) [20]:
-Moonraker power device [Printer]:
-Power-on button hold time (ms, 0 = immediate) [2000]:
-```
-
-To change these settings later, run:
-
-```bash
-cd ~/KlipperDWIN
-./configure.sh
-```
-
-Existing configuration is preserved when `install.sh` is run again. `configure.sh` shows the current values as defaults, writes `~/.config/KlipperDWIN/KlipperDWIN.env`, and can restart the service after saving.
-
-The interactive configuration covers the Moonraker endpoint, LCD UART, encoder GPIO pins, encoder button GPIO, Moonraker power-device name, and the power-on hold time. `DWIN_POWER_ON_HOLD_MS` is expressed in milliseconds; the default is `2000`, while `0` requests printer power immediately when the encoder button is pressed.
-
-### Updating with Moonraker / Mainsail
-
-The installer registers KlipperDWIN with Moonraker Update Manager automatically. After Moonraker reloads the generated `KlipperDWIN.conf`, KlipperDWIN appears in Mainsail's **Machine → Update Manager** together with the other managed components.
-
-Use **Refresh** to check for a newer revision and **Update** on the KlipperDWIN entry to install it. Moonraker updates the Git checkout, refreshes Python requirements when needed, and restarts the managed `KlipperDWIN` service. User configuration is kept outside the repository in `~/.config/KlipperDWIN`, so normal Update Manager updates do not overwrite it.
-
-The updater follows the repository's `master` branch. Version tags provide the readable version base shown by Moonraker/Mainsail; commits after a tag may be displayed in a form such as `v0.2.1-1-gabcdef12`.
-
-> [!NOTE]
-> Use `./configure.sh` for configuration changes. Do not edit tracked repository files for local hardware settings, because Moonraker expects the managed Git checkout to remain clean.
-
-## UART preparation
-
-Use `raspi-config` to disable the serial login console and enable serial hardware, then reboot.
-
-```bash
-sudo raspi-config
-```
-
-Verify the UART assigned to the physical pins for your Pi model. Bluetooth overlays and boot configuration paths differ across Raspberry Pi generations and OS releases, so this project does not prescribe one universal overlay.
-
-## Run manually
-
-Example matching the repository defaults:
-
-```bash
-cd ~/KlipperDWIN
-
-~/klipperdwin-env/bin/python run.py \
-  --serial-port /dev/ttyS0 \
-  --encoder-pins 21 19 \
-  --button-pin 20 \
-  --moonraker-url http://127.0.0.1:7125
-```
-
-Use the actual UART and GPIO pins for your installation.
-
-Available configuration:
-
-| Environment | CLI | Default |
-|---|---|---|
-| `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
-| `MOONRAKER_API_KEY` | environment only | empty |
-| `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 s |
-| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyS0` |
-| `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
-| `DWIN_BUTTON_PIN` | `--button-pin` | `20` |
-| `DWIN_SETTINGS_FILE` | `--settings-file` | `~/.config/KlipperDWIN/presets.json` after installer configuration |
-| `DWIN_POWER_DEVICE` | `--power-device` | `Printer` |
-| `DWIN_POWER_ON_HOLD_MS` | `--power-on-hold-ms` | `2000` ms |
-
-## Run at boot with systemd
-
-A sample unit and environment file are included.
-
-```bash
-id -u dwinlcd >/dev/null 2>&1 || \
-  sudo useradd --system --user-group \
-  --home-dir /var/lib/dwin-lcd --no-create-home \
-  --shell /usr/sbin/nologin dwinlcd
-
-sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
-sudoedit /etc/default/dwin-lcd
-
-sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
-  /etc/systemd/system/simpleLCD.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now simpleLCD.service
-sudo journalctl -u simpleLCD.service -f
-```
-
-The service uses a dedicated account, restarts on failure, stores presets in `/var/lib/dwin-lcd`, and logs to journald. Confirm that the service user has access to the actual UART and gpiochip devices on your OS.
-
 ## Happy Hare integration
 
 Happy Hare support is automatic when the required Klipper objects are present.
@@ -473,7 +371,137 @@ Adapt your macro to that contract if you want bidirectional case-light status.
 
 When Moonraker has a configured power device, the encoder button can turn it on even while Klipper or the LCD UART is offline. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. The hold duration is controlled by `DWIN_POWER_ON_HOLD_MS`: the default `2000` requires a 2-second hold, and `0` requests power-on immediately on the press edge.
 
+## Architecture
+
+<details>
+<summary><strong>Show architecture</strong></summary>
+
+```mermaid
+flowchart LR
+    ENC[Rotary encoder / button] -->|GPIO events| UI[Python UI owner thread]
+    UI -->|draw commands| DWIN[DWIN T5UIC1 LCD]
+    DWIN -->|UART| UI
+    UI --> PD[PrinterData / capability model]
+    PD --> SUB[Moonraker WebSocket subscription]
+    UI --> CMD[Moonraker command worker]
+    SUB <--> MR[Moonraker]
+    CMD -->|HTTP / JSON-RPC| MR
+    MR <--> KL[Klipper]
+    MR <--> SM[Spoolman]
+    KL <--> HH[Happy Hare]
+```
+
+The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; commands are serialized separately so UI rendering does not depend on blocking HTTP requests.
+
+</details>
+
+## Moonraker connection model
+
+<details>
+<summary><strong>Show connection details</strong></summary>
+
+Default endpoint:
+
+```text
+http://127.0.0.1:7125
+```
+
+The application uses:
+
+- HTTP for commands and bounded request/response operations
+- Moonraker WebSocket JSON-RPC for printer object discovery and live subscriptions
+- connection epochs so queued commands from an old connection cannot run after reconnect
+- automatic WebSocket reconnect
+- ping/pong checks for silent disconnect detection
+- immutable merged printer-state snapshots
+- command futures and retained error acknowledgement instead of blind retries
+
+Optional API-key authentication is supported through `MOONRAKER_API_KEY`. Empty keys are not sent.
+
+</details>
+
+## UART preparation
+
+<details>
+<summary><strong>Show UART setup</strong></summary>
+
+Use `raspi-config` to disable the serial login console and enable serial hardware, then reboot.
+
+```bash
+sudo raspi-config
+```
+
+Verify the UART assigned to the physical pins for your Pi model. Bluetooth overlays and boot configuration paths differ across Raspberry Pi generations and OS releases, so this project does not prescribe one universal overlay.
+
+</details>
+
+## Run manually
+
+<details>
+<summary><strong>Show manual run options</strong></summary>
+
+Example matching the repository defaults:
+
+```bash
+cd ~/KlipperDWIN
+
+~/klipperdwin-env/bin/python run.py \
+  --serial-port /dev/ttyS0 \
+  --encoder-pins 21 19 \
+  --button-pin 20 \
+  --moonraker-url http://127.0.0.1:7125
+```
+
+Use the actual UART and GPIO pins for your installation.
+
+Available configuration:
+
+| Environment | CLI | Default |
+|---|---|---|
+| `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
+| `MOONRAKER_API_KEY` | environment only | empty |
+| `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 s |
+| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyS0` |
+| `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
+| `DWIN_BUTTON_PIN` | `--button-pin` | `20` |
+| `DWIN_SETTINGS_FILE` | `--settings-file` | `~/.config/KlipperDWIN/presets.json` after installer configuration |
+| `DWIN_POWER_DEVICE` | `--power-device` | `Printer` |
+| `DWIN_POWER_ON_HOLD_MS` | `--power-on-hold-ms` | `2000` ms |
+
+</details>
+
+## Run at boot with systemd
+
+<details>
+<summary><strong>Show systemd setup</strong></summary>
+
+A sample unit and environment file are included.
+
+```bash
+id -u dwinlcd >/dev/null 2>&1 || \
+  sudo useradd --system --user-group \
+  --home-dir /var/lib/dwin-lcd --no-create-home \
+  --shell /usr/sbin/nologin dwinlcd
+
+sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
+sudoedit /etc/default/dwin-lcd
+
+sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
+  /etc/systemd/system/simpleLCD.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now simpleLCD.service
+sudo journalctl -u simpleLCD.service -f
+```
+
+The service uses a dedicated account, restarts on failure, stores presets in `/var/lib/dwin-lcd`, and logs to journald. Confirm that the service user has access to the actual UART and gpiochip devices on your OS.
+
+</details>
+
 ## Reliability and safety behavior
+
+<details>
+<summary><strong>Show reliability details</strong></summary>
 
 The project intentionally avoids optimistic UI state for printer-changing actions.
 
@@ -492,7 +520,12 @@ The project intentionally avoids optimistic UI state for printer-changing action
 
 A timeout can still mean that a command reached the printer while its response was lost. Always inspect actual printer state before repeating an uncertain action.
 
+</details>
+
 ## UART/display layer
+
+<details>
+<summary><strong>Show low-level display details</strong></summary>
 
 The DWIN transport implements bounded startup handshakes, incremental ACK parsing, full-frame writes and reconnect attempts.
 
@@ -509,7 +542,12 @@ Rendering includes:
 
 See [LCD asset notes](docs/lcd-assets.md) and [source audit](docs/source-audit.md) for low-level details.
 
+</details>
+
 ## Tests
+
+<details>
+<summary><strong>Show test instructions</strong></summary>
 
 Run the full isolated test suite with:
 
@@ -522,7 +560,12 @@ The tests cover the Moonraker client/subscription layer, printer-state normaliza
 
 Unit tests do not replace physical validation on a printer.
 
+</details>
+
 ## Current scope / known limitations
+
+<details>
+<summary><strong>Show known limitations</strong></summary>
 
 - The display UI is designed around the existing 272×480 DWIN asset/layout family.
 - Real screenshots in this README are still pending.
@@ -532,7 +575,12 @@ Unit tests do not replace physical validation on a printer.
 - Runtime Motion values are not automatically persisted to printer configuration.
 - Hardware compatibility outside the tested DWIN/encoder wiring should be validated before relying on motion controls.
 
+</details>
+
 ## Project history and credits
+
+<details>
+<summary><strong>Show project history and credits</strong></summary>
 
 This repository retains its open-source lineage and Git history.
 
@@ -552,7 +600,12 @@ Additional projects used or integrated by this software include:
 - [Happy Hare](https://github.com/moggieuk/Happy-Hare)
 - [Spoolman](https://github.com/Donkie/Spoolman)
 
+</details>
+
 ## Contributing
+
+<details>
+<summary><strong>Show contribution guidelines</strong></summary>
 
 Issues and pull requests are welcome. For UI changes, include the printer capability/setup involved and, where possible, add or update a regression test in the same change.
 
@@ -565,6 +618,8 @@ For hardware/UI bugs, useful reports include:
 - relevant optional component (probe, MMU, Spoolman, M355, etc.)
 - log excerpt
 - panel photo when the problem is visual
+
+</details>
 
 ## License
 
