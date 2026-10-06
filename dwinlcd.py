@@ -74,6 +74,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     index_file = MROWS
     index_prepare = MROWS
     index_control = MROWS
+    index_temp = MROWS
     index_tune = MROWS
 
     MainMenu = 0
@@ -426,7 +427,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         caps = self.pd.capabilities
         recovery = self.pd.jog_recovery_required
         preset_revision = getattr(self.pd, 'preset_revision', 0)
-        if getattr(self, '_menu_preset_revision', preset_revision) != preset_revision and self.checkkey in (self.PLAPreheat, self.ABSPreheat):
+        if getattr(self, '_menu_preset_revision', preset_revision) != preset_revision and getattr(self, 'checkkey', self.MainMenu) in (self.PLAPreheat, self.ABSPreheat):
             self.checkkey = self.TemperatureID
             self.select_temp.reset()
             self._active_preset = 0
