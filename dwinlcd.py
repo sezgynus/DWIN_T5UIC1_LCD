@@ -2040,10 +2040,11 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         }
         key = text.upper()
         if key.startswith('MCU'):
-            color, icon = 0x07E0, self.ICON_Setup_0
+            color, icon = 0x07E0, None
         else:
             color, icon = palette.get(key, (self.lcd.Color_White, self.ICON_Info))
-        self.lcd.ICON_Show(self.ICON, icon, 16, y - 2)
+        if icon is not None:
+            self.lcd.ICON_Show(self.ICON, icon, 16, y - 2)
         self.lcd.Draw_String(False, False, self.lcd.font10x20, color,
                              self.lcd.Color_Bg_Black, 48, y, key)
         self.lcd.Draw_Rectangle(1, color, 48, y + 21, 255, y + 22)
