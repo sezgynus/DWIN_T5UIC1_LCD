@@ -250,7 +250,7 @@ class MoonrakerSubscription:
             raise MoonrakerError('Configuration object is unavailable')
         available = [name for name in names if name in OBJECTS or name in ('mmu', 'mmu_machine', 'mcu') or
                      name.startswith('mcu ') or name.startswith('temperature_sensor ') or
-                     re.fullmatch(r'unit\\d+_mmu_exit_leds', name) or
+                     re.fullmatch(r'unit\d+_mmu_exit_leds', name) or
                      (name.startswith('extruder') and name[8:].isdigit())]
         config = self._rpc('printer.objects.query', {'objects': {'configfile': ['settings']}})
         try:
