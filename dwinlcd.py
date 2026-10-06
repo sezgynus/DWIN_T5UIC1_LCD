@@ -2065,6 +2065,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             ('row', 'Klipper', self.pd.SHORT_BUILD_VERSION),
             ('row', 'Moonraker', info.get('moonraker', 'Unavailable')),
             ('row', 'Mainsail', info.get('mainsail', 'Unavailable')),
+            ('row', 'Project', 'github.com/sezgynus/KlipperDWIN'),
         ]
         mcus = info.get('mcus') or ()
         if not mcus:
