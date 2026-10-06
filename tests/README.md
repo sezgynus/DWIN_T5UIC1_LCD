@@ -93,11 +93,11 @@ Command feedback tests distinguish HTTP acceptance from expected printer state,
 check errors/cancellation/epochs/timeouts, duplicate suppression, acknowledgement
 without retry, validation failures and future-returning backend actions.
 
-Packet tests follow the pinned mriscoc DWIN/ProUI reference: color-bearing points,
+Packet tests cover the DWIN protocol: color-bearing points,
 padded numeric text, scaled rounding, complete sign fields and invalid-input
 isolation. No physical panel is exercised.
 
-The pinned Marlin fixtures also cover clear/line/rectangle/area movement, JPG
+The packet fixtures also cover clear/line/rectangle/area movement, JPG
 show/cache, QR and icon animation packets; decimal sign transitions retain a
 complete field and numeric overflow draws explicit # markers. The existing real-menu fixture
 runs the updated driver on the UI owner with a fake serial port. These fixtures

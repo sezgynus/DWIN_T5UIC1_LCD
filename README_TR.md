@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sezgynus/KlipperDWIN/tree/v0.7.0"><img alt="v0.7.0" src="https://img.shields.io/badge/version-v0.7.0-0969da"></a>
   <img alt="Klipper" src="https://img.shields.io/badge/Klipper-supported-7d3cff">
   <img alt="Moonraker" src="https://img.shields.io/badge/Moonraker-native-1f6feb">
   <img alt="Happy Hare" src="https://img.shields.io/badge/Happy%20Hare-MMU-2ea043">
@@ -31,6 +32,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 
 - Doğrudan Moonraker HTTP + WebSocket entegrasyonu
 - Mevcut Klipper object ve capability'lerinin otomatik keşfi
+- Enkoderle gezilen, sayfa başına dört ikonlu ana menü
 - Sıcaklık, fan, hız, flow, Z offset ve XYZ için canlı ana ekran dashboard'u
 - Dosya tarayıcı ve doğrulamalı baskı başlatma akışı
 - İlerleme, geçen/kalan süre, pause/resume, stop ve tune içeren baskı ekranı
@@ -171,7 +173,7 @@ Mevcut kablolama fotoğrafları ve şemalar [images](images/) klasöründedir.
 
 ## Arayüz turu
 
-Aşağıdaki her bölüm mevcut ekran davranışını açıklar. Temsili görsel daha sonra gerçek LCD fotoğrafı/görüntüsüyle değiştirilecektir.
+Aşağıdaki ekran görüntüleri arayüzü örnekler; açıklamalar güncel menü düzenini ve davranışını belirtir.
 
 ### 1. Ana ekran
 
@@ -183,9 +185,9 @@ Menü alanının altında kalan kompakt canlı dashboard; mevcutsa hotend/bed du
 
 Happy Hare algılanmadığında normal logo alanı gösterilir. MMU bulunduğunda bu alan aşağıda açıklanan canlı MMU paneline dönüşür.
 
-### 2. Happy Hare MMU görselleştirmesi
+### 2. MMU menüsü / Happy Hare görselleştirmesi
 
-**Home → MMU** şimdilik yalnızca **Back** içeren boş bir menü açar. MMU kontrol işlemleri henüz uygulanmamıştır. Happy Hare canlı paneli Ana ekranda kalır; bildirilen gate sayısına uyarlanır ve Happy Hare state verisini kullanır.
+**Home → MMU**, Happy Hare bağlı olmasa da görünür ve üç filament makaralı ikonla gösterilir. Şimdilik yalnızca **Back** içeren boş bir menü açar; giriş ve çıkış yazıcıya komut göndermez. MMU kontrol işlemleri henüz uygulanmamıştır. Happy Hare canlı paneli Ana ekranda kalır; bildirilen gate sayısına uyarlanır ve Happy Hare state verisini kullanır.
 
 Her gate için şunları gösterebilir:
 
@@ -250,9 +252,9 @@ Sonuç ekranı dört köşe düzenini kullanır: her köşede renkli bir göster
 
 Hesaplama sırasında enkoder girişi kilitlenir. **Continue** alt menüye döner; **Calculate** ile yeniden ölçüm yapılabilir. Sonuçlar komutun tamamlandığı doğrulandıktan sonra sorgulanır; aynı değerleri veren tekrar ölçümleri de günceldir. Hata, bağlantı kaybı veya doğrulanamayan ölçümde önceki sonuç başarı olarak gösterilmez; komutlar otomatik tekrarlanmaz. `SAVE_CONFIG` veya otomatik vida ayarı yapılmaz. Üç, beş veya daha fazla vidalı yapılandırmalar dört köşe görünümüne zorlanmak yerine reddedilir.
 
-### Bed Mesh menüsü / Mesh Viewer
+### 7. Bed Mesh menüsü / Mesh Viewer
 
-`[bed_mesh]` mevcutsa **Home → Leveling**, **Back**, **Bed Mesh Calibrate** (probe mevcutsa) ve **Mesh Viewer** girişlerini içeren **Bed Mesh** menüsünü açar. **Bed Mesh Calibrate** seçimi ölçümü başlatır. Bed Mesh girişleri Prepare veya Control yerine bu menüde toplanır. Eksenlerin homing'i eksikse önce `G28` çalışır, ardından `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0` gönderilir. Oturum, mevcut profil adlarını ezmemek için kullanılmayan bir `lcd_mesh_N` adı seçer. Baskı, duraklatma, manual-probe oturumu, başka bir LCD kalibrasyonu, jog recovery veya ilgisiz bekleyen config değişiklikleri sırasında kalibrasyon başlatılmaz.
+`[bed_mesh]` mevcutsa **Home → Leveling**, **Back**, **Bed Mesh Calibrate** (probe mevcutsa) ve **Mesh Viewer** girişlerini içeren **Bed Mesh** menüsünü açar. **Bed Mesh Calibrate** seçimi ölçümü başlatır. Bed Mesh girişleri Prepare veya Control yerine bu menüde toplanır. Probe yoksa kalibrasyon girişi gizlenir, **Mesh Viewer** erişilebilir kalır. Menünün **Back** seçimi Ana ekrandaki **Leveling** seçimine döner. Eksenlerin homing'i eksikse önce `G28` çalışır, ardından `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0` gönderilir. Oturum, mevcut profil adlarını ezmemek için kullanılmayan bir `lcd_mesh_N` adı seçer. Baskı, duraklatma, manual-probe oturumu, başka bir LCD kalibrasyonu, jog recovery veya ilgisiz bekleyen config değişiklikleri sırasında kalibrasyon başlatılmaz.
 
 Ölçüm ekranında ızgara, probe yanıtlarından alınabilen nokta değerleri ve **Cancel** bulunur. Bu canlı değerler **raw Z** olarak işaretlenir; tekrarlanan probe örnekleri aynı noktada güncellenir. Sonuç ekranı yalnızca komutun tamamlandığı doğrulandıktan ve `bed_mesh` yeniden sorgulandıktan sonra açılır. Klipper'ın `probed_matrix` değerleri, renk ve boyutları yüksekliğe göre değişen dairelerde gösterilir; minimum/maksimum Z ve **Save / Continue** altta yer alır. Küçük Y altta, büyük Y üsttedir. **Continue** Bed Mesh menüsüne döner.
 
@@ -262,7 +264,7 @@ Hesaplama sırasında enkoder girişi kilitlenir. **Continue** alt menüye döne
 
 Klipper'da normal kalibrasyonu anında iptal eden ayrı bir komut bulunmadığından **Cancel → Stop** onayı, Moonraker'ın `printer.emergency_stop` isteğini kullanır. Onay ekranı Klipper'ın shutdown durumuna geçeceğini açıkça belirtir; tekrar çalışmak için `FIRMWARE_RESTART` gerekir. Ölçüm, durdurma veya kayıt komutları otomatik tekrar gönderilmez.
 
-### 7. Move / Live Jog
+### 8. Move / Live Jog
 
 <p align="center"><img src="docs/assets/screens/move.png" width="360" alt="Move ve Live Jog ekranı"></p>
 
@@ -279,13 +281,13 @@ Normal edit modu lokal hedefi değiştirir ve kontrollü bir hareket gönderir. 
 
 Konum kaynağı Klipper'ın command-space `gcode_move.position` değeridir; böylece UI runtime transform ve offsetlerle tutarlı kalır.
 
-### 8. Control menüsü
+### 9. Control menüsü
 
 <p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menüsü"></p>
 
 Control daha çok yapılandırma odaklı menüdür. Mevcut satırlar capability tabanlıdır ve temperature presetleri, motion kontrolleri, probe calibration, case light ve bilgi sayfalarına yönlendirebilir.
 
-### 9. Temperature / presetler
+### 10. Temperature / presetler
 
 <p align="center"><img src="docs/assets/screens/temperature.png" width="360" alt="Temperature ve preset ekranı"></p>
 
@@ -297,7 +299,7 @@ Preset hotend ve bed değerleri LCD üzerinden de düzenlenebilir ve ilgili Main
 
 Mainsail preset database erişilemezse eski lokal preset store fallback olarak kullanılmaya devam eder. `--settings-file` bu fallback store'u belirler; Mainsail presetlerine başarıyla erişildiğinde authoritative kaynak Mainsail olur.
 
-### 10. Motion (runtime)
+### 11. Motion (runtime)
 
 <p align="center"><img src="docs/assets/screens/motion-runtime.png" width="360" alt="Runtime motion menüsü"></p>
 
@@ -310,7 +312,7 @@ Motion ekranı `SET_VELOCITY_LIMIT` üzerinden Klipper runtime velocity limitler
 
 Desteklenmeyen alanlar gösterilmez. Bunlar runtime değişiklikleridir; ekran bunları otomatik olarak printer configuration içine kalıcı yazmaz.
 
-### 11. Case Light
+### 12. Case Light
 
 <p align="center"><img src="docs/assets/screens/case-light.png" width="360" alt="Case Light ekranı"></p>
 
@@ -324,7 +326,7 @@ Sayfada:
 
 bulunur. Brightness içeride macro'nun 0–255 ölçeğine dönüştürülür.
 
-### 12. Info
+### 13. Info
 
 <p align="center">
   <img src="docs/assets/screens/info-overview.png" width="220" alt="Info genel görünüm">
@@ -370,7 +372,7 @@ UI şu verileri kullanır:
 - `mmu_machine` — unit ad/display metadata
 - `unit0_mmu_exit_leds` — gate başına canlı exit LED renkleri
 
-Ana ekrandaki görselleştirmeyi almak için ayrı bir MMU ekranı gerekmez; state mevcut olduğunda panel görünür.
+Happy Hare state verisi mevcutsa canlı panel Ana ekranda otomatik görünür. **MMU** menüsünü açmak gerekmez; bu menü şimdilik yalnızca **Back** içerir.
 
 ## Spoolman entegrasyonu
 
@@ -590,6 +592,8 @@ Screws Tilt regresyonları; WebSocket RPC tamamlanmasını, güncel ve aynı de�
 
 Bed Mesh regresyonları; ölçüm/sonuç takibini, profil seçiminin aktif mesh'i değiştirmemesini, örneklerin tekilleştirilmesini, kayıt/durdurma onaylarını, ilgisiz config değişikliklerinin reddini, ızgara yönünü, metin sınırlarını ve UART reconnect sırasında komutların tekrarlanmamasını kapsar.
 
+Ana menü regresyonları; dört ikonlu sayfalar arasında ileri/geri geçişi, boş alanların atlanmasını, Leveling/MMU/Info girişlerini, aynı Home seçimine dönüşü, logo/MMU paneli ve durum alanının korunmasını ve MMU ikon sınırlarını kapsar. MMU menüsünde yalnızca Back bulunması ve giriş/çıkışın G-code göndermemesi de doğrulanır.
+
 Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 
 </details>
@@ -601,6 +605,7 @@ Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 
 - Display UI mevcut 272×480 DWIN asset/layout ailesi etrafında tasarlanmıştır.
 - Canlı Happy Hare lane renkleri şu anda açıkça `unit0_mmu_exit_leds` adlı object'i kullanır.
+- MMU menüsü şimdilik yalnızca Back içerir; gate/tool seçimi veya filament yükleme/boşaltma kontrolleri yoktur.
 - Multi-unit MMU LED-source seçimi henüz genelleştirilmemiştir.
 - Case-light desteği uyumlu bir `M355` macro'ya bağlıdır.
 - Runtime Motion değerleri otomatik olarak printer configuration'a kalıcı yazılmaz.

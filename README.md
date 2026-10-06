@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sezgynus/KlipperDWIN/tree/v0.7.0"><img alt="v0.7.0" src="https://img.shields.io/badge/version-v0.7.0-0969da"></a>
   <img alt="Klipper" src="https://img.shields.io/badge/Klipper-supported-7d3cff">
   <img alt="Moonraker" src="https://img.shields.io/badge/Moonraker-native-1f6feb">
   <img alt="Happy Hare" src="https://img.shields.io/badge/Happy%20Hare-MMU-2ea043">
@@ -31,6 +32,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 
 - Native Moonraker HTTP + WebSocket integration
 - Automatic discovery of available Klipper objects and capabilities
+- Four-icon Home pages with encoder navigation
 - Main-screen live dashboard for temperatures, fan, speed, flow, Z offset and XYZ
 - File browser and print start flow with confirmation tracking
 - Print screen with progress, elapsed/remaining time, pause/resume, stop and tune
@@ -171,7 +173,7 @@ Existing wiring photos and diagrams are available in the [images](images/) direc
 
 ## UI tour
 
-Each section below describes the current screen behavior using captures from the current UI.
+The screen captures below illustrate the UI; the descriptions specify the current menu layout and behavior.
 
 ### 1. Home screen
 
@@ -183,9 +185,9 @@ A compact live dashboard remains visible below the menu area and reports the cur
 
 When Happy Hare is not detected, the normal logo area is shown. When an MMU is available, that area becomes the live MMU visualization described below.
 
-### 2. Happy Hare MMU visualization
+### 2. MMU menu / Happy Hare visualization
 
-**Home → MMU** currently opens an empty menu containing only **Back**. MMU control operations are not implemented yet. The live Happy Hare panel remains on the Home screen, adapting to the reported gate count and using Happy Hare state.
+**Home → MMU** is visible even without Happy Hare and uses a three-filament-reel icon. It currently opens an empty menu containing only **Back**; entering or leaving it sends no printer commands. MMU control operations are not implemented yet. The live Happy Hare panel remains on the Home screen, adapting to the reported gate count and using Happy Hare state.
 
 For each gate it can show:
 
@@ -250,9 +252,9 @@ The result uses a four-corner layout: each corner has a colored marker with larg
 
 Encoder input is locked during calculation. **Continue** returns to the submenu, where **Calculate** can run another measurement. Results are queried after confirmed command completion, so identical repeated measurements are still fresh. Failed, disconnected or unconfirmed measurements never display the previous result as success; commands are never replayed automatically. No `SAVE_CONFIG` or automatic screw adjustment is performed. Configurations with three, five or more screws are rejected rather than forced into the four-corner view.
 
-### Bed Mesh menu / Mesh Viewer
+### 7. Bed Mesh menu / Mesh Viewer
 
-With `[bed_mesh]` available, **Home → Leveling** opens the **Bed Mesh** menu containing **Back**, **Bed Mesh Calibrate** (when a probe is available) and **Mesh Viewer**. Selecting **Bed Mesh Calibrate** starts a measurement. Bed Mesh entries are grouped here rather than in Prepare or Control. Missing homed axes trigger `G28` first, followed by `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0`. The session chooses an unused `lcd_mesh_N` name to avoid overwriting existing profiles. Calibration is blocked during printing, pause, a manual-probe session, another LCD calibration, jog recovery or unrelated pending config changes.
+With `[bed_mesh]` available, **Home → Leveling** opens the **Bed Mesh** menu containing **Back**, **Bed Mesh Calibrate** (when a probe is available) and **Mesh Viewer**. Selecting **Bed Mesh Calibrate** starts a measurement. Bed Mesh entries are grouped here rather than in Prepare or Control. Without a probe, calibration is hidden while **Mesh Viewer** remains accessible. The menu's **Back** returns to the **Leveling** selection on Home. Missing homed axes trigger `G28` first, followed by `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0`. The session chooses an unused `lcd_mesh_N` name to avoid overwriting existing profiles. Calibration is blocked during printing, pause, a manual-probe session, another LCD calibration, jog recovery or unrelated pending config changes.
 
 The measurement screen shows a grid, point values available from probe responses and **Cancel**. These live values are marked **raw Z**; repeated probe samples update the same point. The result screen opens only after confirmed command completion and a fresh `bed_mesh` query. Klipper's `probed_matrix` values appear in circles whose color and size depend on height, with minimum/maximum Z and **Save / Continue** below. Low Y is at the bottom and high Y at the top. **Continue** returns to the Bed Mesh menu.
 
@@ -262,7 +264,7 @@ The measurement screen shows a grid, point values available from probe responses
 
 Klipper has no separate command to immediately cancel normal calibration, so **Cancel → Stop** confirmation uses Moonraker's `printer.emergency_stop` request. The confirmation explicitly states that Klipper will enter shutdown; `FIRMWARE_RESTART` is required to resume operation. Measurement, stop and save commands are never replayed automatically.
 
-### 7. Move / Live Jog
+### 8. Move / Live Jog
 
 <p align="center"><img src="docs/assets/screens/move.png" width="360" alt="Move and Live Jog screen"></p>
 
@@ -279,13 +281,13 @@ Normal edit mode changes a local target and submits a guarded move. Live Jog can
 
 The position source is Klipper's command-space `gcode_move.position`, so the UI remains consistent with runtime transforms and offsets.
 
-### 8. Control menu
+### 9. Control menu
 
 <p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menu"></p>
 
 Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, probe calibration, case light and information pages.
 
-### 9. Temperature / presets
+### 10. Temperature / presets
 
 <p align="center"><img src="docs/assets/screens/temperature.png" width="360" alt="Temperature and presets screen"></p>
 
@@ -297,7 +299,7 @@ Preset hotend and bed values can also be edited on the LCD and saved back to the
 
 If the Mainsail preset database is unavailable, the legacy local preset store remains available as a fallback. `--settings-file` controls that fallback store; once Mainsail presets are successfully available, Mainsail is authoritative.
 
-### 10. Motion (runtime)
+### 11. Motion (runtime)
 
 <p align="center"><img src="docs/assets/screens/motion-runtime.png" width="360" alt="Runtime motion menu"></p>
 
@@ -310,7 +312,7 @@ The Motion screen edits Klipper's runtime velocity limits through `SET_VELOCITY_
 
 Unsupported fields are omitted. These are runtime changes; the screen does not automatically persist them into printer configuration.
 
-### 11. Case Light
+### 12. Case Light
 
 <p align="center"><img src="docs/assets/screens/case-light.png" width="360" alt="Case Light screen"></p>
 
@@ -324,7 +326,7 @@ The page provides:
 
 Brightness is converted to the macro's 0–255 scale internally.
 
-### 12. Info
+### 13. Info
 
 <p align="center">
   <img src="docs/assets/screens/info-overview.png" width="220" alt="Info overview">
@@ -370,7 +372,7 @@ The UI currently consumes:
 - `mmu_machine` — unit name/display metadata
 - `unit0_mmu_exit_leds` — live per-gate exit LED colors
 
-No MMU-specific screen is required to obtain the home-screen visualization; it appears when the state is available.
+The live panel appears automatically on the Home screen when Happy Hare state is available. Opening the **MMU** menu is unnecessary; that menu currently contains only **Back**.
 
 ## Spoolman integration
 
@@ -588,6 +590,8 @@ Screws Tilt regressions cover WebSocket RPC completion, fresh and identical repe
 
 Bed Mesh regressions cover measurement/result tracking, profile selection without changing the active mesh, sample deduplication, save/stop confirmations, rejection of unrelated config changes, grid orientation, text bounds and UART reconnect without command replay.
 
+Home navigation regressions cover forward/reverse four-icon paging, skipped empty slots, Leveling/MMU/Info routing, return to the same Home selection, preservation of the logo/MMU panel and dashboard, and MMU icon bounds. They also verify that the MMU menu contains only Back and sends no G-code on entry/exit.
+
 Unit tests do not replace physical validation on a printer.
 
 </details>
@@ -599,6 +603,7 @@ Unit tests do not replace physical validation on a printer.
 
 - The display UI is designed around the existing 272×480 DWIN asset/layout family.
 - Live Happy Hare lane colors currently use the explicitly named `unit0_mmu_exit_leds` object.
+- The MMU menu currently contains only Back; gate/tool selection and filament load/unload controls are not available.
 - Multi-unit MMU LED-source selection is not generalized yet.
 - Case-light support depends on a compatible `M355` macro.
 - Runtime Motion values are not automatically persisted to printer configuration.
