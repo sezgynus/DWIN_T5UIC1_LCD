@@ -42,14 +42,14 @@ class ScrewsTiltMixin:
         elif session.phase != 'complete':
             self._screws_text(session.message[:32], 140, font=self.lcd.font6x12, width=6)
         elif session.leveled:
-            self._screws_text('Corners leveled', 140)
-            self._screws_text('Tolerance achieved!', 160)
+            self._screws_text('Corners leveled', 140, color=0x07E0)
+            self._screws_text('Tolerance achieved!', 160, color=0x07E0)
         else:
             value = session.results[session.recommendation]
             name = next(c[3] for c in session.corners if c[0] == session.recommendation)
             self._screws_text('Adjust ' + name, 140)
             self._screws_text(value['sign'] + ' ' + value['adjust'], 166,
-                              color=0x07E0, font=self.lcd.font10x20, width=10)
+                              font=self.lcd.font10x20, width=10)
         if not session.pending:
             self.lcd.Draw_Rectangle(1, 0x03B5, 86, 305, 186, 343)
             self._screws_text('Continue', 316)

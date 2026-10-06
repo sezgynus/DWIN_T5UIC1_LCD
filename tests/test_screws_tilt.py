@@ -163,6 +163,24 @@ class ViewTests(unittest.TestCase):
         view.HMI_Screws_Tilt()
         self.assertEqual(view.checkkey, view.Prepare)
 
+    def test_only_success_instructions_are_green(self):
+        view = self.make()
+        session = view.pd.screws_tilt
+        session.start()
+        session.pending.set_result(None)
+        session.update()
+        session.pending.set_result(payload())
+        session.update()
+        for leveled in (False, True):
+            session.leveled = leveled
+            view.lcd.reset_mock()
+            view.Draw_Screws_Result()
+            instructions = [c.args for c in view.lcd.Draw_String.call_args_list
+                            if c.args[6] in (140, 160, 166)]
+            self.assertEqual(len(instructions), 2)
+            for args in instructions:
+                self.assertEqual(args[3], 0x07E0 if leveled else view.lcd.Color_White)
+
     def test_tramming_menu_uses_marlin_small_stock_icons(self):
         view = self.make()
         row = next(row for row in view._menus['prepare'] if row[0] == 'SCREWS')
