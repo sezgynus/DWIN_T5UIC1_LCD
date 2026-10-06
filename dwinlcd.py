@@ -299,6 +299,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self._live_jog = False
         self._live_jog_future = None
         self._live_jog_pending = None
+        self._info_scroll = 0
         self._loop = UIEventLoop(self._initialize, self._process_input,
                                  self._ui_tick, self._close_resources)
         self._loop.start()
@@ -1101,10 +1102,19 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self.lcd.UpdateLCD()
 
     def HMI_Info(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_NO:
             return
-        if (encoder_diffState == self.ENCODER_DIFF_ENTER):
+        items = self._info_items()
+        max_scroll = max(0, len(items) - 11)
+        if event == self.ENCODER_DIFF_CW:
+            self._info_scroll = min(max_scroll, self._info_scroll + 1)
+            self.Draw_Info_Menu()
+        elif event == self.ENCODER_DIFF_CCW:
+            self._info_scroll = max(0, self._info_scroll - 1)
+            self.Draw_Info_Menu()
+        elif event == self.ENCODER_DIFF_ENTER:
+            self._info_scroll = 0
             if self.pd.HAS_ONESTEP_LEVELING:
                 self.checkkey = self.Control
                 self.select_control.set(self.CONTROL_CASE_INFO)
@@ -2016,47 +2026,70 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self._draw_capability_menu('control', self.select_control)
 
     def _draw_info_row(self, label, value, y):
-        self._draw_menu_text(label, 24, y)
+        self._draw_menu_text(label, 16, y)
         text = T5UIC1_LCD._panel_text(value)[:17]
         self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
-                             self.lcd.Color_Bg_Black, 136, y, text)
+                             self.lcd.Color_Bg_Black, 128, y, text)
 
     def _draw_info_section(self, label, y):
+        text = T5UIC1_LCD._panel_text(label)[:28]
         self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
-                             self.lcd.Color_Bg_Black, 16, y, label.upper())
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Blue, 16, y + 19, 255, y + 20)
+                             self.lcd.Color_Bg_Black, 16, y, text.upper())
+        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Blue, 16, y + 18, 255, y + 19)
+
+    def _info_items(self):
+        info = self.pd.system_info
+        cpu = info.get('host_cpu')
+        temp = info.get('host_temp')
+        items = [
+            ('section', 'Machine', None),
+            ('row', 'Size', self.pd.MACHINE_SIZE),
+            ('row', 'Network', info.get('network', 'Unknown')),
+            ('row', 'IP', info.get('ip', 'Unavailable')),
+            ('section', 'Host', None),
+            ('row', 'CPU', 'N/A' if cpu is None else '{:.0f}%'.format(cpu)),
+            ('row', 'CPU temp', 'N/A' if temp is None else '{:.1f} C'.format(temp)),
+            ('section', 'Software', None),
+            ('row', 'KlipperDWIN', info.get('klipperdwin', 'Unavailable')),
+            ('row', 'Klipper', self.pd.SHORT_BUILD_VERSION),
+            ('row', 'Moonraker', info.get('moonraker', 'Unavailable')),
+            ('row', 'Mainsail', info.get('mainsail', 'Unavailable')),
+        ]
+        mcus = info.get('mcus') or ()
+        if not mcus:
+            items.extend((('section', 'MCU', None), ('row', 'Status', 'Unavailable')))
+        for mcu in mcus:
+            name = str(mcu.get('name', 'mcu'))
+            load = mcu.get('load')
+            temperature = mcu.get('temperature')
+            items.extend((
+                ('section', 'MCU: ' + name, None),
+                ('row', 'Status', 'Connected'),
+                ('row', 'Load', 'N/A' if load is None else '{:.1f}%'.format(load)),
+                ('row', 'Temp', 'N/A' if temperature is None else '{:.1f} C'.format(temperature)),
+            ))
+        return items
 
     def Draw_Info_Menu(self):
         self.pd.refresh_system_info()
         self.Clear_Main_Window()
         self.Draw_Title('Info')
         self.Draw_Back_First()
-        info = self.pd.system_info
-
-        self._draw_info_section('Machine', 76)
-        self._draw_info_row('Size', self.pd.MACHINE_SIZE, 100)
-        self._draw_info_row('Network', info.get('network', 'Unknown'), 122)
-        self._draw_info_row('IP', info.get('ip', 'Unavailable'), 144)
-
-        self._draw_info_section('Host', 170)
-        cpu = info.get('host_cpu')
-        temp = info.get('host_temp')
-        self._draw_info_row('CPU', 'N/A' if cpu is None else '{:.0f}%'.format(cpu), 194)
-        self._draw_info_row('CPU temp', 'N/A' if temp is None else '{:.1f} C'.format(temp), 216)
-
-        self._draw_info_section('Software', 242)
-        self._draw_info_row('KlipperDWIN', info.get('klipperdwin', 'Unavailable'), 266)
-        self._draw_info_row('Klipper', self.pd.SHORT_BUILD_VERSION, 288)
-        self._draw_info_row('Moonraker', info.get('moonraker', 'Unavailable'), 310)
-        self._draw_info_row('Mainsail', info.get('mainsail', 'Unavailable'), 332)
-
-        self._draw_info_section('MCU', 358)
-        mcus = info.get('mcus') or ()
-        if not mcus:
-            self._draw_info_row('Status', 'Unavailable', 382)
-        else:
-            for index, (name, _) in enumerate(mcus[:3]):
-                self._draw_info_row(name, 'Connected', 382 + index * 22)
+        items = self._info_items()
+        visible_count = 11
+        max_scroll = max(0, len(items) - visible_count)
+        self._info_scroll = max(0, min(getattr(self, '_info_scroll', 0), max_scroll))
+        y = 76
+        for kind, label, value in items[self._info_scroll:self._info_scroll + visible_count]:
+            if kind == 'section':
+                self._draw_info_section(label, y)
+            else:
+                self._draw_info_row(label, value, y)
+            y += 24
+        if self._info_scroll:
+            self._draw_menu_text('^', 256, 76)
+        if self._info_scroll < max_scroll:
+            self._draw_menu_text('v', 256, 328)
 
     def Draw_Tune_Menu(self):
         self._draw_capability_menu('tune', self.select_tune, self.index_tune)
