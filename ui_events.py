@@ -65,6 +65,11 @@ class UIEventLoop:
             return False
         return True
 
+    def set_interval(self, interval):
+        if not math.isfinite(interval) or interval <= 0:
+            raise ValueError('UI interval must be positive')
+        self._interval = interval
+
     def _run(self):
         try:
             try:

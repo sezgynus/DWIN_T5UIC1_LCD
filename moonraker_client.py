@@ -73,6 +73,21 @@ class MoonrakerClient:
         # Each polling attempt opens a fresh request: recovery needs no restart.
         return self.request('GET', path)
 
+    def get_bytes(self, path, max_bytes=2_000_000):
+        if not path.startswith('/') or path.startswith('//'):
+            raise ValueError('Endpoint path must start with a single slash')
+        if self._stop.is_set():
+            raise MoonrakerError('Client is closed')
+        request = Request(self.url + path, headers=self.headers, method='GET')
+        try:
+            with self._opener.open(request, timeout=self.timeout) as response:
+                data = response.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise MoonrakerError('Thumbnail exceeds download limit')
+            return data
+        except (HTTPError, URLError, OSError) as error:
+            raise MoonrakerError('Thumbnail download failed') from error
+
     def post(self, path, payload=None, guard=None, cleanup=None, report_error=True):
         future = Future()
         future.cleanup_complete = cleanup is not None

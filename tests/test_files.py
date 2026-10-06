@@ -20,6 +20,7 @@ class FileTests(unittest.TestCase):
         result.lcd.DWIN_WIDTH = 272
         result.pd.GetDirectory = lambda directory='': result.pd.GetFiles()
         result._refresh_file_snapshot()
+        result._open_file_preview = lambda path: (setattr(result, '_preview_path', path), setattr(result, '_preview_epoch', result.pd.state.epoch), setattr(result, '_preview_choice', 0), result.HMI_File_Preview())
         result._show_message = Mock()
         result.Goto_PrintProcess = Mock()
         result.Goto_MainMenu = Mock()
@@ -266,6 +267,7 @@ class DirectoryBrowserTests(unittest.TestCase):
     def test_nested_navigation_back_and_full_path_print_submission(self):
         view,_=self.make();view.pd.postREST=Mock(return_value=Future())
         self.choose(view,'parts/');self.choose(view,'parts/inner/')
+        view._open_file_preview = lambda path: (setattr(view, '_preview_path', path), setattr(view, '_preview_epoch', view.pd.state.epoch), setattr(view, '_preview_choice', 0), view.HMI_File_Preview())
         self.choose(view,'parts/inner/deep.gcode')
         view.pd.postREST.assert_called_once_with('/printer/print/start',json={'filename':'parts/inner/deep.gcode'})
         view._pending_start=None;view.select_file.reset();view.HMI_SelectFile()

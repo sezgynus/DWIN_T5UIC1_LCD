@@ -121,3 +121,18 @@ class TransportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.get('printer/info')
         opener.open.assert_not_called()
+
+class BinaryDownloadTests(unittest.TestCase):
+    client = TransportTests.client
+    def test_thumbnail_binary_limit_auth_and_timeout(self):
+        opener=Mock();data=response({'result':'ok'});data.read.return_value=b'png'
+        opener.open.return_value=data
+        client=self.client(opener,api_key='key',timeout=2)
+        self.assertEqual(client.get_bytes('/server/files/gcodes/.thumbs/a.png',max_bytes=3),b'png')
+        data.read.assert_called_once_with(4)
+        self.assertEqual(opener.open.call_args.args[0].get_header('X-api-key'),'key')
+        data.read.return_value=b'oversize'
+        with self.assertRaises(MoonrakerError):client.get_bytes('/image',max_bytes=3)
+        with self.assertRaises(ValueError):client.get_bytes('//other-host/image')
+        client.close()
+        with self.assertRaises(MoonrakerError):client.get_bytes('/image')

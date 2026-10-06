@@ -8,6 +8,7 @@ from ui_case_light import CaseLightMixin
 from ui_mmu import MMUViewMixin
 from ui_screws_tilt import ScrewsTiltMixin
 from ui_bed_mesh import BedMeshMixin
+from ui_file_preview import FilePreviewMixin
 
 from encoder import Encoder
 from gpiozero import Button, Device
@@ -52,7 +53,7 @@ class select_t:
         return self.changed()
 
 
-class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
+class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, FilePreviewMixin):
 
     TROWS = 6
     MROWS = TROWS - 1  # Total rows, and other-than-Back
@@ -121,6 +122,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
     MeshProfiles = 42
     BedMeshMenu = 43
     MMUMenu = 44
+    FilePreview = 45
 
     MINUNITMULT = 10
 
@@ -366,6 +368,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
                 self.Draw_Bed_Mesh_Menu()
             if getattr(self, 'checkkey', None) == self.MMUMenu:
                 self.Draw_MMU_Menu()
+            if getattr(self, 'checkkey', None) == self.FilePreview:
+                self.Draw_File_Preview()
             self.lcd.UpdateLCD()
             if self.pd.connection_error:
                 self._show_message('Moonraker unavailable')
@@ -385,6 +389,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             self._ensure_uart()
             return
         try:
+            if getattr(self, 'checkkey', None) == self.FilePreview:
+                if not getattr(self, '_pending_start', None) and not getattr(self, '_start_error_visible', False):
+                    self._poll_file_preview()
+                if time.monotonic() < getattr(self, '_preview_status_at', 0):
+                    return
+                self._preview_status_at = time.monotonic() + 2.0
+            elif hasattr(self, '_loop'):
+                self._loop.set_interval(2.0)
             self.EachMomentUpdate()
         except OSError:
             if self.lcd is not None and getattr(self.lcd, '_closed', False):
@@ -1009,14 +1021,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             if path.endswith('/'):
                 self._enter_file_directory(path[:-1])
                 return
-            try:
-                future = self.pd.openAndPrintFile(path)
-            except ValueError as error:
-                self._show_message(str(error))
-                self._start_error_visible = True
-                return
-            self._pending_start = (future, self.pd.state.epoch, time.monotonic())
-            self._show_message('Starting print...')
+            self._open_file_preview(path)
             return
         self.index_file = max(self.MROWS, self.select_file.now,
                               min(self.index_file, self.select_file.now + self.MROWS))
@@ -2555,6 +2560,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
         if getattr(self, '_offline', False):
             self._offline = False
             self.HMI_StartFrame(False)
+            if self.checkkey == self.FilePreview:
+                self.Draw_File_Preview()
         # An active numeric move editor owns its value until confirmation
         # when live jog is disabled.  Only live-jog editors follow external
         # position updates while idle.
@@ -2670,6 +2677,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             self.HMI_Motion()
         elif self.checkkey in (self.ScrewsTiltMenu, self.ScrewsTiltResult):
             self.HMI_Screws_Tilt()
+        elif self.checkkey == self.FilePreview:
+            self.HMI_File_Preview()
         elif self.checkkey == self.MMUMenu:
             self.HMI_MMU_Menu()
         elif self.checkkey == self.BedMeshMenu:
