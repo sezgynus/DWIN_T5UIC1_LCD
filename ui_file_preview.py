@@ -2,6 +2,7 @@
 import logging
 import time
 from thumbnail_cache import ThumbnailCache
+from preview_metadata import PreviewDetails, amount, duration
 
 
 class FilePreviewMixin:
@@ -51,21 +52,56 @@ class FilePreviewMixin:
         for index, label in enumerate(('Print', 'Cancel')):
             x = 20 + index*126
             color = self.lcd.Color_Bg_Blue if self._preview_choice == index else self.lcd.Color_Bg_Black
-            self.lcd.Draw_Rectangle(1, color, x, 290, x+106, 332)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, 290, x+106, 332)
-            self._draw_menu_text(label, x+(106-len(label)*8)//2, 303)
+            self.lcd.Draw_Rectangle(1, color, x, 312, x+106, 354)
+            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, 312, x+106, 354)
+            self._draw_menu_text(label, x+(106-len(label)*8)//2, 325)
 
     def Draw_File_Preview(self):
         self.Clear_Main_Window()
         self.Draw_Title('Print preview')
-        self._draw_menu_text(self._preview_path.rsplit('/', 1)[-1][:30], 16, 45)
+        self._draw_menu_text(self._preview_path.rsplit('/', 1)[-1][:32], 8, 45)
         self._preview_shown = False
         self._preview_message = None
         if self._thumbnail_cache.address(self._preview_cache_key) is None:
-            self._preview_message = self._preview_error or 'Loading thumbnail...'
-            self._draw_menu_text(self._preview_message, 16, 225)
+            self._preview_message = self._preview_error or 'Loading...'
+            self._draw_menu_text(self._preview_message[:16], 8, 120)
+        self._preview_details_drawn = None
+        self._draw_preview_metadata(force=True)
         self._preview_buttons()
         self.lcd.UpdateLCD()
+
+    def _draw_preview_metadata(self, force=False):
+        details = self._thumbnail_cache.details.get(self._preview_cache_key, PreviewDetails())
+        if not force and details == getattr(self, '_preview_details_drawn', None):
+            return
+        self._preview_details_drawn = details
+        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 144, 68, 271, 207)
+        for y, label, value in ((70, 'Time', duration(details.seconds)),
+                                (114, 'Changes', str(details.changes) if details.changes is not None else '--'),
+                                (158, 'Filament', amount(details.millimeters/1000 if details.millimeters is not None else None,'m')
+                                 + '/' + amount(details.grams,'g'))):
+            self._draw_menu_text(label, 148, y)
+            if label == 'Filament' and len(value) > 14:
+                length, weight = value.split('/')
+                self._draw_menu_text(length[:14], 148, y+16)
+                self._draw_menu_text(weight[:14], 148, y+32)
+            else:
+                self._draw_menu_text(value[:14], 148, y+18)
+        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 208, 271, 310)
+        total = len(details.filaments)
+        heading = 'Filaments' if total <= 4 else 'Filaments 4/%d' % total
+        self._draw_menu_text(heading, 8, 208)
+        for row, filament in enumerate(details.filaments[:4]):
+            y = 232+20*row
+            if filament.color is not None:
+                self.lcd.Draw_Rectangle(1, filament.color, 8, y+2, 19, y+13)
+            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 8, y+2, 19, y+13)
+            self._draw_menu_text('T%d' % filament.tool, 28, y)
+            self._draw_menu_text(filament.material[:10], 64, y)
+            grams = amount(filament.grams, 'g')
+            self._draw_menu_text(grams, 264-len(grams)*8, y)
+        if not total:
+            self._draw_menu_text('No filament data', 8, 232)
 
     def _leave_file_preview(self):
         if hasattr(self, '_loop'):
@@ -82,7 +118,7 @@ class FilePreviewMixin:
             if self._preview_error != 'Connection changed':
                 self._preview_error = 'Connection changed'
                 self.Draw_File_Preview()
-                self._draw_menu_text(self._preview_error, 16, 225)
+                self._draw_menu_text(self._preview_error[:16], 8, 120)
                 self.lcd.UpdateLCD()
             return
         self._sync_thumbnail_cache()
@@ -94,8 +130,8 @@ class FilePreviewMixin:
             cache.tick(self.lcd, foreground=key, chunks=8)
             address = cache.address(key, touch=True)
             if address is not None:
-                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 220, 271, 250)
-                self.lcd.SRAM_Icon(72, 80, address)
+                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 8, 68, 135, 195)
+                self.lcd.SRAM_Icon(8, 68, address)
                 self._preview_shown = True
                 self._preview_error = None
                 self._preview_message = None
@@ -105,9 +141,10 @@ class FilePreviewMixin:
             elif key in cache.errors:
                 self._preview_error = 'No thumbnail'
         if self._preview_error and self._preview_error != self._preview_message:
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 220, 271, 250)
-            self._draw_menu_text(self._preview_error, 16, 225)
+            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 8, 68, 135, 195)
+            self._draw_menu_text(self._preview_error[:16], 8, 120)
             self._preview_message = self._preview_error
+        self._draw_preview_metadata()
         self.lcd.UpdateLCD()
 
     def HMI_File_Preview(self):

@@ -5,6 +5,7 @@ import time
 import logging
 from urllib.parse import quote
 from PIL import Image
+from preview_metadata import PreviewData, details_from_metadata
 
 
 def image_jpeg(data):
@@ -25,9 +26,10 @@ def image_jpeg(data):
     return jpeg
 
 
-def load_thumbnail(client, filename):
+def load_thumbnail(client, filename, metadata=None):
     started = time.monotonic()
-    metadata = client.get('/server/files/metadata?filename=' + quote(filename, safe=''))['result']
+    if metadata is None:
+        metadata = client.get('/server/files/metadata?filename=' + quote(filename, safe=''))['result']
     thumbs = metadata.get('thumbnails', [])
     candidates = [t for t in thumbs if isinstance(t, dict) and isinstance(t.get('relative_path'), str)
                   and all(isinstance(t.get(k), int) and 0 < t[k] <= 4080 for k in ('width', 'height'))]
@@ -46,3 +48,14 @@ def load_thumbnail(client, filename):
                      filename, downloaded-started, time.monotonic()-downloaded, len(jpeg))
         return jpeg
     raise ValueError('No thumbnail')
+
+
+def load_preview(client, filename):
+    metadata = client.get('/server/files/metadata?filename=' + quote(filename, safe=''))['result']
+    details = details_from_metadata(metadata)
+    try:
+        jpeg = load_thumbnail(client, filename, metadata=metadata)
+    except Exception as error:
+        logging.info('Thumbnail unavailable %s: %s', filename, error)
+        jpeg = None
+    return PreviewData(jpeg, details)

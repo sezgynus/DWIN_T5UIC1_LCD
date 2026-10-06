@@ -5,7 +5,8 @@ from threading import Thread
 import logging
 import time
 
-from thumbnail_preview import load_thumbnail
+from thumbnail_preview import load_preview
+from preview_metadata import PreviewData
 
 
 class ThumbnailCache:
@@ -15,6 +16,7 @@ class ThumbnailCache:
         self.client = client
         self.loader = loader or self._load_async
         self.entries = OrderedDict()
+        self.details = OrderedDict()
         self.errors = {}
         self.retry_at = {}
         self.valid = set()
@@ -28,7 +30,7 @@ class ThumbnailCache:
         future = Future()
         def work():
             try:
-                future.set_result(load_thumbnail(self.client, key[0]))
+                future.set_result(load_preview(self.client, key[0]))
             except Exception as error:
                 future.set_exception(error)
         Thread(target=work, name='thumbnail-loader', daemon=True).start()
@@ -39,6 +41,7 @@ class ThumbnailCache:
             self.epoch = epoch
             self.generation += 1
             self.entries.clear()
+            self.details.clear()
             self.errors.clear()
             self.retry_at.clear()
             self.upload = None
@@ -51,6 +54,7 @@ class ThumbnailCache:
             if key not in self.valid:
                 del self.entries[key]
         self.errors = {key: value for key, value in self.errors.items() if key in self.valid}
+        self.details = OrderedDict((key, value) for key, value in self.details.items() if key in self.valid)
         self.retry_at = {key: value for key, value in self.retry_at.items() if key in self.errors}
         if self.upload and self.upload['key'] not in self.valid:
             self.upload = None
@@ -89,6 +93,7 @@ class ThumbnailCache:
             if victim is None:
                 return None
             del self.entries[victim]
+            self.details.pop(victim, None)
 
     def tick(self, lcd, foreground=None, chunks=2):
         """Transfer at most `chunks` packets; publish only complete SRAM entries."""
@@ -104,6 +109,17 @@ class ThumbnailCache:
             if generation == self.generation and key in self.valid:
                 try:
                     data = future.result()
+                    if isinstance(data, PreviewData):
+                        self.details[key] = data.details
+                        self.details.move_to_end(key)
+                        while len(self.details) > 64:
+                            victim = next((item for item in self.details if item not in self.entries and item not in self.priority), None)
+                            if victim is None:
+                                break
+                            del self.details[victim]
+                        data = data.jpeg
+                        if data is None:
+                            raise ValueError('No thumbnail')
                     if not isinstance(data, bytes) or not 0 < len(data) <= self.capacity:
                         raise ValueError('Invalid JPEG size')
                     # Drop an obsolete preload before allocating or writing any bytes.

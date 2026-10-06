@@ -83,7 +83,7 @@ class ThumbnailTests(unittest.TestCase):
         view._thumbnail_cache.entries[view._preview_cache_key]=(4096,2300)
         view.Draw_File_Preview();view.lcd.reset_mock()
         view._poll_file_preview()
-        view.lcd.SRAM_Icon.assert_called_once_with(72,80,4096)
+        view.lcd.SRAM_Icon.assert_called_once_with(8,68,4096)
         view.lcd.Write_SRAM.assert_not_called()
         view._uart_epoch=1;view.Draw_File_Preview();view._poll_file_preview()
         self.assertFalse(view._thumbnail_cache.entries)
@@ -102,14 +102,14 @@ class ThumbnailTests(unittest.TestCase):
         self.assertEqual(view.lcd.Write_SRAM.call_count,8)
         view.lcd.SRAM_Icon.assert_not_called()
         view._poll_file_preview();view._poll_file_preview();view._poll_file_preview()
-        view.lcd.SRAM_Icon.assert_called_once_with(72,80,0)
+        view.lcd.SRAM_Icon.assert_called_once_with(8,68,0)
         calls=view.lcd.Write_SRAM.call_args_list
         self.assertEqual(b''.join(c.args[1] for c in calls),b'x'*2300)
         self.assertEqual([c.args[0] for c in calls],list(range(0,2300,128)))
         self.assertTrue(all(1<=len(c.args[1])<=128 for c in calls))
         view.lcd.reset_mock();view.Draw_File_Preview();view._poll_file_preview()
         view.lcd.Write_SRAM.assert_not_called()
-        view.lcd.SRAM_Icon.assert_called_once_with(72,80,0)
+        view.lcd.SRAM_Icon.assert_called_once_with(8,68,0)
 
     def test_cancel_or_changed_connection_stops_partial_jpeg_upload(self):
         for cancel in (True,False):
@@ -155,7 +155,7 @@ class ThumbnailTests(unittest.TestCase):
         view._open_file_preview('a.gcode')
         view._thumbnail_cache.loader.assert_not_called()
         view.lcd.Write_SRAM.assert_not_called()
-        view.lcd.SRAM_Icon.assert_called_once_with(72,80,3000)
+        view.lcd.SRAM_Icon.assert_called_once_with(8,68,3000)
 
     def test_replaced_file_cannot_print_from_old_preview(self):
         view=self.make();view._preview_choice=0

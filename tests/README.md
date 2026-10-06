@@ -185,3 +185,10 @@ priority, temporary failure retry, stale worker results and reconnect invalidati
 UI coverage checks cache hits without downloads/uploads, redraw from SRAM,
 background work without thumbnail display, replacement checks before Print and
 prompt scheduling when switching from slow status polling to thumbnail work.
+
+Metadata regressions use an OrcaSlicer-style response with only T1/T2 referenced,
+JSON-encoded material lists, per-tool weight/color indexing, all four tools,
+plain single-material values, missing/invalid fields and unknown placeholders.
+They check one shared metadata request, details without a thumbnail, cache
+invalidation, row/text bounds above the existing status area and no repeated
+metadata rendering on cache-hit ticks.
