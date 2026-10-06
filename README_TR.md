@@ -431,6 +431,10 @@ Light is ON, Brightness=128
 
 Çift yönlü case-light status istiyorsanız macro'nuzu bu sözleşmeye uygun hale getirin.
 
+## Encoder ile yazıcıyı açma
+
+Moonraker'da bir `[power Printer]` cihazı tanımlıysa, cihaz kapalıyken encoder butonunu 2 saniye basılı tutmak yazıcıyı açar. Cihaz adı varsayılan olarak `Printer`'dır ve `DWIN_POWER_DEVICE` ile değiştirilebilir. Bu özellik Klipper'ın hazır olmasına veya LCD UART bağlantısının mevcut olmasına bağlı değildir.
+
 ## Güvenilirlik ve güvenlik davranışı
 
 Proje yazıcıyı değiştiren işlemlerde bilinçli olarak optimistic UI state kullanmaz.

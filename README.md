@@ -431,6 +431,10 @@ Light is ON, Brightness=128
 
 Adapt your macro to that contract if you want bidirectional case-light status.
 
+## Encoder power-on
+
+When Moonraker has a `[power Printer]` device, holding the encoder button for 2 seconds while that device is off turns it on. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. This path does not depend on Klipper being ready or on the LCD UART being connected.
+
 ## Reliability and safety behavior
 
 The project intentionally avoids optimistic UI state for printer-changing actions.
@@ -533,7 +537,3 @@ GNU General Public License v3.0. See [LICENSE](LICENSE).
 <p align="center">
   <strong>Klipper on the printer. Moonraker on the network. DWIN at your fingertips.</strong>
 </p>
-
-### Encoder power-on
-
-When Moonraker has a `[power Printer]` device, holding the encoder button for 2 seconds while that device is off turns it on. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. This path does not depend on Klipper being ready or on the LCD UART being connected.
