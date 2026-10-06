@@ -426,10 +426,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     def _configure_menus(self):
         caps = self.pd.capabilities
         recovery = self.pd.jog_recovery_required
-        if getattr(self, '_menu_capabilities', None) == caps and getattr(self, '_menu_recovery', False) == recovery:
+        preset_revision = getattr(self.pd, 'preset_revision', 0)
+        if (getattr(self, '_menu_capabilities', None) == caps
+                and getattr(self, '_menu_recovery', False) == recovery
+                and getattr(self, '_menu_preset_revision', -1) == preset_revision):
             return False
         self._menu_capabilities = caps
         self._menu_recovery = recovery
+        self._menu_preset_revision = preset_revision
         heat = self.pd.HAS_HOTEND or self.pd.HAS_HEATED_BED
         self._menus = {
             'prepare': [('MOVE', 'Move', self.ICON_Axis), ('DISA', 'Disable steppers', self.ICON_CloseMotor),

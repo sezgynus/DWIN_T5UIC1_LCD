@@ -206,16 +206,10 @@ class PrinterData:
         self.preset_store = PresetStore(settings_path)
         self.settings_error = None
         self.mainsail_presets_error = None
-        try:
-            mainsail = self.client.get('/server/database/item?namespace=mainsail&key=presets.presets')
-            values = mainsail.get('result', {}).get('value', {})
-            if isinstance(values, Mapping):
-                presets = [material_preset_t.from_mainsail(item) for item in values.values()]
-                if presets:
-                    self.material_preset = presets
-        except (MoonrakerError, ValueError, TypeError) as error:
-            self.mainsail_presets_error = str(error)
-            logging.warning('Cannot load Mainsail presets: %s', error)
+        self.preset_revision = 0
+        self._preset_refresh_at = 0.0
+        self._preset_refresh_interval = 5.0
+        self.refresh_mainsail_presets(force=True)
         try:
             saved = self.preset_store.load()
             if saved is not None and not self.material_preset:
@@ -232,6 +226,35 @@ class PrinterData:
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
         self.probe_wizard = ProbeWizard(self)
+
+    @staticmethod
+    def _preset_signature(presets):
+        return tuple((item.name, item.hotend_temp, item.bed_temp, item.fan_speed)
+                     for item in presets)
+
+    def refresh_mainsail_presets(self, force=False):
+        now = time.monotonic()
+        if not force and now < self._preset_refresh_at:
+            return False
+        self._preset_refresh_at = now + self._preset_refresh_interval
+        try:
+            mainsail = self.client.get('/server/database/item?namespace=mainsail&key=presets.presets')
+            values = mainsail.get('result', {}).get('value', {})
+            if not isinstance(values, Mapping):
+                raise ValueError('Invalid Mainsail preset database')
+            presets = [material_preset_t.from_mainsail(item) for item in values.values()]
+            if not presets:
+                return False
+            changed = self._preset_signature(presets) != self._preset_signature(self.material_preset)
+            if changed:
+                self.material_preset = presets
+                self.preset_revision += 1
+            self.mainsail_presets_error = None
+            return changed
+        except (MoonrakerError, KeyError, ValueError, TypeError) as error:
+            self.mainsail_presets_error = str(error)
+            logging.warning('Cannot refresh Mainsail presets: %s', error)
+            return False
 
     def _apply_capabilities(self, caps):
         self.HAS_HOTEND = caps.active_hotend is not None
@@ -409,6 +432,7 @@ class PrinterData:
 
     def update_variable(self):
         self.check_command_results()
+        presets_changed = self.refresh_mainsail_presets()
         try:
             state = PrinterState.from_snapshot(self.subscription.snapshot())
             if not state.ready:
@@ -526,7 +550,7 @@ class PrinterData:
             self.connection_error = str(exc)
             return False
         self.connection_error = None
-        changed = state != self.state or spoolman_changed
+        changed = state != self.state or spoolman_changed or presets_changed
         self.state = state
         self.capabilities = caps
         self._apply_capabilities(caps)
