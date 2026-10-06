@@ -326,7 +326,7 @@ Installer:
 - gerekli sistem ve Python bağımlılıklarını kurar
 - Python virtual environment'ını Git reposunun dışında `~/klipperdwin-env` altında oluşturur
 - `KlipperDWIN.service` systemd servisini oluşturur ve etkinleştirir
-- kullanıcı ayarlarını `~/.config/KlipperDWIN` altında tutar
+- ilk kurulumda interaktif yapılandırmayı çalıştırır ve kullanıcı ayarlarını `~/.config/KlipperDWIN` altında tutar
 - `KlipperDWIN` servisini Moonraker'ın allowed-services dosyasına ekler
 - `moonraker.conf` yanına `KlipperDWIN.conf` oluşturur ve otomatik include eder
 - Mainsail'in reponun `master` branch'indeki güncellemeleri kontrol edip kurabilmesi için `[update_manager KlipperDWIN]` kaydını oluşturur
@@ -340,11 +340,25 @@ Moonraker standart dışı bir configuration path kullanıyorsa:
 MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
 ```
 
-Kurulumdan sonra yazıcınızın UART, encoder pinleri, buton pini ve opsiyonel Moonraker power-device adına göre şu dosyayı düzenleyin:
+İlk kurulumda donanıma bağlı ayarlar interaktif olarak sorulur. Varsayılanları kabul etmek için Enter'a basabilirsiniz:
 
 ```text
-~/.config/KlipperDWIN/KlipperDWIN.env
+Moonraker URL [http://127.0.0.1:7125]:
+Serial port [/dev/ttyS0]:
+Encoder A GPIO (BCM) [21]:
+Encoder B GPIO (BCM) [19]:
+Encoder button GPIO (BCM) [20]:
+Moonraker power device [Printer]:
 ```
+
+Bu ayarları daha sonra değiştirmek için:
+
+```bash
+cd ~/KlipperDWIN
+./configure.sh
+```
+
+`install.sh` tekrar çalıştırıldığında mevcut kullanıcı ayarları korunur. `configure.sh` mevcut değerleri varsayılan olarak gösterir, `~/.config/KlipperDWIN/KlipperDWIN.env` dosyasını günceller ve kayıttan sonra servisi yeniden başlatabilir.
 
 ## UART hazırlığı
 

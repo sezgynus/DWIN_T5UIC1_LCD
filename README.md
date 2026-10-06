@@ -326,7 +326,7 @@ The installer:
 - installs the required system and Python dependencies
 - creates the Python virtual environment at `~/klipperdwin-env`, outside the Git repository
 - creates and enables the `KlipperDWIN.service` systemd service
-- stores user configuration under `~/.config/KlipperDWIN`
+- runs an interactive first-time configuration and stores the result under `~/.config/KlipperDWIN`
 - adds `KlipperDWIN` to Moonraker's allowed-services file
 - creates `KlipperDWIN.conf` next to `moonraker.conf` and includes it automatically
 - registers `[update_manager KlipperDWIN]` so Mainsail can check and install updates from the repository's `master` branch
@@ -340,13 +340,25 @@ If Moonraker uses a non-standard configuration path, run:
 MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
 ```
 
-After installation, edit:
+The first installation prompts for the hardware-facing settings. Press Enter to accept the defaults:
 
 ```text
-~/.config/KlipperDWIN/KlipperDWIN.env
+Moonraker URL [http://127.0.0.1:7125]:
+Serial port [/dev/ttyS0]:
+Encoder A GPIO (BCM) [21]:
+Encoder B GPIO (BCM) [19]:
+Encoder button GPIO (BCM) [20]:
+Moonraker power device [Printer]:
 ```
 
-to match the UART, encoder pins, button pin and optional Moonraker power-device name used by your printer.
+To change these settings later, run:
+
+```bash
+cd ~/KlipperDWIN
+./configure.sh
+```
+
+Existing configuration is preserved when `install.sh` is run again. `configure.sh` shows the current values as defaults, writes `~/.config/KlipperDWIN/KlipperDWIN.env`, and can restart the service after saving.
 
 ## UART preparation
 

@@ -61,10 +61,11 @@ sudo -u "$INSTALL_USER" "$VENV_DIR/bin/python" -m pip install -r "$REPO_DIR/requ
 echo "Preparing KlipperDWIN configuration..."
 sudo -u "$INSTALL_USER" mkdir -p "$APP_CONFIG_DIR"
 if [[ ! -f "$ENV_FILE" ]]; then
-    sed "s|^DWIN_SETTINGS_FILE=.*|DWIN_SETTINGS_FILE=$APP_CONFIG_DIR/presets.json|" \
-        "$REPO_DIR/dwin-lcd.env.example" > "$ENV_FILE"
-    chown "$INSTALL_USER:$INSTALL_USER" "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
+    echo "No existing KlipperDWIN configuration found."
+    echo "Starting first-time configuration..."
+    sudo -u "$INSTALL_USER" "$REPO_DIR/configure.sh"
+else
+    echo "Keeping existing configuration: $ENV_FILE"
 fi
 
 supp_groups=()
