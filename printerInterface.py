@@ -574,7 +574,7 @@ class PrinterData:
         script = 'G28 X Y'
         if homeZ:
             script += (' Z')
-        self.sendGCode(script)
+        return self.sendGCode(script)
 
     def _jog(self, axis, value, speed, absolute):
         if self.jog_recovery_required:

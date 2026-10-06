@@ -67,6 +67,14 @@ class RegressionContracts(unittest.TestCase):
         printer.resume_job()
         printer.postREST.assert_called_once_with('/printer/print/resume', json=None)
 
+    def test_home_returns_command_future(self):
+        printer = self.printer()
+        command_future = object()
+        printer.sendGCode.return_value = command_future
+
+        self.assertIs(printer.home(homeZ=True), command_future)
+        printer.sendGCode.assert_called_once_with('G28 X Y Z')
+
     def test_paused_progress_is_retained(self):
         self.assertAlmostEqual(self.printer().getPercent(), 42.0)
 
