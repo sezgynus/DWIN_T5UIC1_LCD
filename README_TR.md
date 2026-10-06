@@ -39,7 +39,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - Max velocity, max acceleration, square-corner velocity ve minimum cruise ratio için runtime motion ayarı
 - Runtime Z-offset kontrolü
 - Açık TESTZ adımları ve kontrollü SAVE_CONFIG akışına sahip probe kalibrasyon sihirbazı
-- PLA/ABS preset düzenleme ve kalıcı JSON saklama
+- Otomatik Mainsail temperature-preset keşfi, LCD üzerinden düzenleme ve Mainsail'e geri kaydetme
 - M355 macro üzerinden opsiyonel case-light arayüzü
 - Ana ekranda Happy Hare MMU görselleştirmesi
 - Gate başına filament rengi ve MMU unit adı
@@ -58,7 +58,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - ✅ **Capability tabanlı UI** — dinamik menüler ve canlı yazıcı dashboard'u.
 - ✅ **Baskı akışı** — dosya tarayıcısı, print-state takibi ve baskı kontrolleri.
 - ✅ **Yazıcı kontrolleri** — Tune, Prepare, Move / Live Jog ve runtime Motion kontrolleri.
-- ✅ **Temperature & presetler** — temperature kontrolleri ve kalıcı lokal PLA/ABS presetleri.
+- ✅ **Temperature & presetler** — dinamik olarak keşfedilen, LCD üzerinden düzenlenip kaydedilebilen Mainsail presetleriyle temperature kontrolleri.
 - ✅ **Case Light** — uyumlu bir `M355` macro üzerinden kontrol.
 - ✅ **Happy Hare görselleştirmesi** — Home ekranında MMU gate renkleri ve exit-LED state'i.
 - ✅ **Spoolman entegrasyonu** — MMU gate başına kalan filament yüzdesi.
@@ -68,7 +68,6 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - 🛠️ **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.
 - 🛠️ **Bed Mesh Visualization & Control** — grafiksel `bed_mesh` gösterimi, ölçülen Z değerlerinin görselleştirilmesi, aktif mesh/profile bilgisi ve Bed Mesh işlemlerine LCD üzerinden erişim.
 - 🛠️ **Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.
-- 🛠️ **Mainsail preset senkronizasyonu** — sabit lokal presetler yerine Mainsail'de kullanıcının oluşturduğu presetlerin adları, sıcaklıkları ve fan değerleriyle birlikte otomatik olarak alınması.
 - 🛠️ **Happy Hare MMU Control** — mevcut Home-screen görselleştirmesine ek olarak ayrı MMU kontrol menüsü.
 - 🛠️ **Happy Hare Multi-Unit Support** — mevcut sabit `unit0_mmu_exit_leds` kaynağı yerine dinamik MMU unit ve LED-source keşfi.
 - 🛠️ **Hardware Validation** — fiziksel testlerin ek DWIN T5UIC1 ve Klipper konfigürasyonlarında genişletilmesi.
@@ -266,21 +265,11 @@ Control daha çok yapılandırma odaklı menüdür. Mevcut satırlar capability 
 
 Temperature kontrolleri kurulu cihazlardan üretilir: hotend, heated bed ve part fan birbirinden bağımsız olarak opsiyoneldir.
 
-PLA ve ABS profilleri lokal olarak düzenlenebilir ve versioned JSON dosyasına kaydedilebilir. Profil uygulamadan önce kullanılabilir tüm hedefler doğrulanır, ardından kurulu cihazlar için tek script gönderilir. Preset kaydetmek yazıcıyı ısıtmaz.
+Temperature presetleri Moonraker database üzerinden Mainsail'den otomatik olarak keşfedilir. Preset adları ve etkin hotend/bed hedefleri hem Prepare hem de Temperature menülerine dinamik olarak yansır; böylece Mainsail'de eklenen, silinen veya değiştirilen presetler sabit bir PLA/ABS listesine ihtiyaç olmadan LCD'ye aktarılır.
 
-Varsayılan saklama yeri:
+Preset hotend ve bed değerleri LCD üzerinden de düzenlenebilir ve ilgili Mainsail presetine geri kaydedilebilir. Mainsail temperature presetlerinde fan ayarı bulunmadığı için preset senkronizasyonuna part-fan değeri dahil edilmez. Preset uygulanırken mevcut heater hedefleri ısıtma öncesinde doğrulanır; preset ayarlarını kaydetmek tek başına yazıcıyı ısıtmaz.
 
-```text
-$XDG_CONFIG_HOME/dwin-lcd/presets.json
-```
-
-veya:
-
-```text
-~/.config/dwin-lcd/presets.json
-```
-
-Özel path `--settings-file` ile verilebilir.
+Mainsail preset database erişilemezse eski lokal preset store fallback olarak kullanılmaya devam eder. `--settings-file` bu fallback store'u belirler; Mainsail presetlerine başarıyla erişildiğinde authoritative kaynak Mainsail olur.
 
 ### 10. Motion (runtime)
 

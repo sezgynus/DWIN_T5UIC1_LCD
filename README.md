@@ -25,7 +25,7 @@ This project turns the common 4.3-inch DWIN T5UIC1 rotary-encoder display used o
 
 The application runs on a Raspberry Pi, talks to the display over UART, reads the encoder through GPIO, and communicates with the printer through Moonraker HTTP/WebSocket APIs. It does not require an OctoPrint compatibility layer or a direct Klipper Unix-socket integration.
 
-It has grown beyond a small compatibility patch: the current codebase includes a dedicated Moonraker client/subscription layer, capability-driven menus, command/result tracking, safe input routing, runtime motion controls, live jogging, probe calibration, persistent presets, Happy Hare MMU visualization, Spoolman remaining-filament data, case-light control, UART recovery, and a regression-test suite.
+It has grown beyond a small compatibility patch: the current codebase includes a dedicated Moonraker client/subscription layer, capability-driven menus, command/result tracking, safe input routing, runtime motion controls, live jogging, probe calibration, Mainsail-synchronized temperature presets, Happy Hare MMU visualization, Spoolman remaining-filament data, case-light control, UART recovery, and a regression-test suite.
 
 ## Highlights
 
@@ -38,7 +38,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Optional Live Jog mode
 - Runtime motion tuning for max velocity, max acceleration, square-corner velocity and minimum cruise ratio
 - Runtime Z-offset control
-- PLA/ABS preset editing and persistent JSON storage
+- Automatic Mainsail temperature-preset discovery, editing and write-back
 - Optional case-light UI through an M355 macro
 - Happy Hare MMU visualization on the home screen
 - Per-gate filament colors and MMU unit name
@@ -57,7 +57,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - ✅ **Capability-driven UI** — dynamic menus and live printer dashboard.
 - ✅ **Print workflow** — file browser, print-state tracking and print controls.
 - ✅ **Printer controls** — Tune, Prepare, Move / Live Jog and runtime Motion controls.
-- ✅ **Temperature & presets** — temperature controls with persistent local PLA/ABS presets.
+- ✅ **Temperature & presets** — temperature controls with dynamically discovered Mainsail presets that can be edited and saved from the LCD.
 - ✅ **Case Light** — control through a compatible `M355` macro.
 - ✅ **Happy Hare visualization** — MMU gate colors and exit-LED state on the Home screen.
 - ✅ **Spoolman integration** — remaining-filament percentage per MMU gate.
@@ -67,7 +67,6 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - 🛠️ **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.
 - 🛠️ **Bed Mesh Visualization & Control** — graphical `bed_mesh` display, probed Z-value visualization, active mesh/profile information and LCD access to Bed Mesh operations.
 - 🛠️ **Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.
-- 🛠️ **Mainsail preset synchronization** — replace fixed local presets with automatic discovery of the presets configured in Mainsail, including preset names, temperatures and fan values.
 - 🛠️ **Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.
 - 🛠️ **Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.
 - 🛠️ **Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations.
@@ -265,21 +264,11 @@ Control is the configuration-oriented menu. Available rows are capability-driven
 
 Temperature controls are generated from installed devices: hotend, heated bed and part fan are independently optional.
 
-PLA and ABS profiles can be edited locally and saved to a versioned JSON file. Applying a profile validates every available target first, then sends one script for the installed devices. Saving a preset does not heat the printer.
+Temperature presets are discovered automatically from Mainsail through Moonraker's database. Preset names and enabled hotend/bed targets are reflected dynamically in both the Prepare and Temperature menus, so the LCD follows presets added, removed or changed in Mainsail without requiring a fixed PLA/ABS list.
 
-Default storage:
+Preset hotend and bed values can also be edited on the LCD and saved back to the corresponding Mainsail preset. Preset synchronization does not include part-fan values because Mainsail temperature presets do not define a fan setting. Applying a preset validates the available heater targets before heating; saving preset settings by itself does not heat the printer.
 
-```text
-$XDG_CONFIG_HOME/dwin-lcd/presets.json
-```
-
-or:
-
-```text
-~/.config/dwin-lcd/presets.json
-```
-
-A custom path can be supplied with `--settings-file`.
+If the Mainsail preset database is unavailable, the legacy local preset store remains available as a fallback. `--settings-file` controls that fallback store; once Mainsail presets are successfully available, Mainsail is authoritative.
 
 ### 10. Motion (runtime)
 
