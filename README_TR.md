@@ -130,7 +130,7 @@ Mevcut uygulama canlı exit-LED renkleri için `unit0_mmu_exit_leds` nesnesine a
 
 ### 3. Baskı dosyası tarayıcısı
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Baskı dosyası tarayıcısı temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/print-file.png" width="360" alt="Baskı dosyası tarayıcısı"></p>
 
 Dosya tarayıcısı Moonraker dosya listesini kullanır ve encoder navigasyonunun akıcı kalması için sıralanmış, cache'lenmiş bir path snapshot'ı tutar.
 
