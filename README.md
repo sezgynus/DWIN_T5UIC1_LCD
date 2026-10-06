@@ -39,6 +39,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Runtime motion tuning for max velocity, max acceleration, square-corner velocity and minimum cruise ratio
 - Runtime Z-offset control
 - Four-corner screws tilt calibration with Klipper turn-direction guidance
+- Bed mesh calibration, colored height maps and saved-profile viewing
 - Probe calibration wizard with explicit TESTZ steps and guarded SAVE_CONFIG
 - Automatic Mainsail temperature-preset discovery, editing and write-back
 - Optional case-light UI through an M355 macro
@@ -68,7 +69,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - ✅ **Reliability** — UART recovery, guarded command execution and regression tests.
 - ✅ **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.
 - ✅ **Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.
-- 🛠️ **Bed Mesh Visualization & Control** — graphical `bed_mesh` display, probed Z-value visualization, active mesh/profile information and LCD access to Bed Mesh operations.
+- ✅ **Bed Mesh Visualization & Control** — `BED_MESH_CALIBRATE`, a colored Z grid, guarded profile saving and saved-profile viewing without changing the active mesh.
 - 🛠️ **Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.
 - 🛠️ **Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.
 - 🛠️ **Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations.
@@ -237,6 +238,18 @@ Values remain synchronized with Moonraker status. An editor keeps its local targ
 
 Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
 
+#### Bed Mesh Calibrate / Mesh Viewer
+
+When `[bed_mesh]` and a probe are available, **Prepare → Bed Mesh Calibrate** starts a measurement. **Leveling** on the Home screen opens the same calibration flow. Missing homed axes trigger `G28` first, followed by `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0`. The session chooses an unused `lcd_mesh_N` name to avoid overwriting existing profiles. Calibration is blocked during printing, pause, a manual-probe session, another LCD calibration, jog recovery or unrelated pending config changes.
+
+The measurement screen shows a grid, point values available from probe responses and **Cancel**. These live values are marked **raw Z**; repeated probe samples update the same point. The result screen opens only after confirmed command completion and a fresh `bed_mesh` query. Klipper's `probed_matrix` values appear in circles whose color and size depend on height, with minimum/maximum Z and **Save / Continue** below. Low Y is at the bottom and high Y at the top. **Continue** returns to the menu that opened calibration.
+
+**Save** opens a confirmation showing the profile name and the Klipper restart; **Back** is selected by default. After confirmation, the current mesh, profile and `save_config_pending_items` are queried again. `SAVE_CONFIG` is sent only when the pending changes match the profile measured by this session; other settings are not saved together. **Continue** does not persist the profile; the profile created by Klipper during calibration remains available for the current session. Repeated measurements before saving reuse the same LCD profile name. A lost response during restart is not treated as successful persistence; check the profile again.
+
+**Control → Mesh Viewer** lists **Current Mesh** and profiles from Klipper's `bed_mesh.profiles`. Selecting a profile with the encoder queries fresh data and opens that profile's map. This does not send `BED_MESH_PROFILE LOAD` or change the active mesh. **Continue** returns to the profile list. The list scrolls; empty, deleted or invalid meshes are never replaced with an earlier map.
+
+Klipper has no separate command to immediately cancel normal calibration, so **Cancel → Stop** confirmation uses Moonraker's `printer.emergency_stop` request. The confirmation explicitly states that Klipper will enter shutdown; `FIRMWARE_RESTART` is required to resume operation. Measurement, stop and save commands are never replayed automatically.
+
 #### Screws Tilt Adjust
 
 <p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerance achieved"></p>
@@ -270,7 +283,7 @@ The position source is Klipper's command-space `gcode_move.position`, so the UI 
 
 <p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menu"></p>
 
-Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, probe calibration, case light and information pages.
+Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, Mesh Viewer, probe calibration, case light and information pages.
 
 ### 9. Temperature / presets
 
@@ -410,7 +423,7 @@ flowchart LR
     KL <--> HH[Happy Hare]
 ```
 
-The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; HTTP commands run on a separate serialized worker. Long operations such as Screws Tilt use completion-tracked WebSocket RPC requests without blocking telemetry or UI rendering.
+The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; HTTP commands run on a separate serialized worker. Long operations such as Screws Tilt and Bed Mesh use completion-tracked WebSocket RPC requests without blocking telemetry or UI rendering.
 
 </details>
 
@@ -428,7 +441,7 @@ http://127.0.0.1:7125
 The application uses:
 
 - HTTP for commands and bounded request/response operations
-- Moonraker WebSocket JSON-RPC for printer object discovery, live subscriptions and completion tracking of long Screws Tilt commands
+- Moonraker WebSocket JSON-RPC for printer object discovery, live subscriptions and completion tracking of long Screws Tilt / Bed Mesh commands
 - connection epochs so queued commands from an old connection cannot run after reconnect
 - automatic WebSocket reconnect
 - ping/pong checks for silent disconnect detection
@@ -515,7 +528,7 @@ The service runs as the installation user with the `~/klipperdwin-env` virtual e
 
 The project intentionally avoids optimistic UI state for printer-changing actions.
 
-- HTTP commands are serialized on a dedicated worker; long Screws Tilt RPC requests do not block telemetry.
+- HTTP commands are serialized on a dedicated worker; long calibration RPC requests do not block telemetry.
 - Failed commands are not replayed automatically.
 - Connection changes invalidate queued commands from the old epoch.
 - Offline/old input events are discarded.
@@ -525,7 +538,9 @@ The project intentionally avoids optimistic UI state for printer-changing action
 - Print start waits for both command result and subscribed print state.
 - Pause/resume/cancel wait for the corresponding subscribed state.
 - Probe calibration waits for manual-probe state changes.
-- Screws Tilt waits for confirmed command completion followed by a fresh result query.
+- Screws Tilt and Bed Mesh wait for confirmed command completion followed by a fresh result query.
+- Viewing mesh profiles never sends a LOAD command.
+- Bed Mesh saving accepts only pending config changes belonging to the measured profile.
 - UART writes fail closed on short writes/errors.
 - Panel reconnect redraws state but never replays printer commands.
 
@@ -571,6 +586,8 @@ The tests cover the Moonraker client/subscription layer, printer-state normaliza
 
 Screws Tilt regressions cover WebSocket RPC completion, fresh and identical repeated results, corner placement, tolerance, instruction colors and error/disconnect flows.
 
+Bed Mesh regressions cover measurement/result tracking, profile selection without changing the active mesh, sample deduplication, save/stop confirmations, rejection of unrelated config changes, grid orientation, text bounds and UART reconnect without command replay.
+
 Unit tests do not replace physical validation on a printer.
 
 </details>
@@ -586,6 +603,9 @@ Unit tests do not replace physical validation on a printer.
 - Case-light support depends on a compatible `M355` macro.
 - Runtime Motion values are not automatically persisted to printer configuration.
 - The Screws Tilt view requires four distinct corner screws; its success threshold is a fixed 0.05 mm peak-to-peak height difference.
+- Bed Mesh supports matrices up to 25×25 points. Dense grids omit some labels to avoid text overlap; every point is drawn and included in the min/max calculation.
+- Live Bed Mesh points depend on standard probe console responses. Scan/probe methods without these responses display the final map after measurement completes.
+- Bed Mesh Cancel confirmation requires Klipper shutdown; persistent Save confirmation requires a Klipper restart.
 - Hardware compatibility outside the tested DWIN/encoder wiring should be validated before relying on motion controls.
 
 </details>

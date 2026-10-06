@@ -15,8 +15,8 @@ Hardware and live-server validation are still separate from these isolated tests
 
 Initial coverage: resume routing, paused progress/duration, homing invalidation,
 and hotend/bed target application through both Temperature and Tune menus.
-Transport reconnection, file-list changes, coordinate/modal-state preservation
-and UART framing need dedicated fixtures as those interfaces are refactored.
+Coverage now also includes transport reconnection, file-list changes,
+coordinate/modal-state preservation and UART framing as described below.
 
 Transport coverage now also checks optional authentication, timeout forwarding,
 HTTP/JSON error handling, recovery on the next GET, observable POST results,
@@ -122,3 +122,28 @@ Physical check: open Prepare → Screws Tilt Adjust → Calculate, compare Base 
 every direction/amount with the Moonraker console, turn the indicated screw and
 repeat. Check input is ignored while probing, Continue returns to Calculate,
 missing homing runs first, and all labels fit on the actual panel.
+
+Bed mesh coverage checks completion-tracked calibration and fresh result queries,
+conditional homing, duplicate/mutually exclusive calibration guards, profile
+selection without LOAD, malformed/empty/deleted profiles, raw probe sample
+mapping with XY offsets, repeated samples and measurements, config ownership
+and exact pending-profile validation before SAVE_CONFIG, explicit stop/save
+confirmations, interruption and timeout handling. UI tests cover grid orientation,
+color/radius scaling, bounded labels through 25×25, profile-list scrolling,
+real UART result/menu packets and reconnect redraw without command replay.
+
+Physical bed mesh checks:
+
+- Open Prepare → Bed Mesh Calibrate and compare the final point values and
+  min/max with Moonraker's bed_mesh.probed_matrix.
+- Check raw probe progress, circle colors/sizes and labels on the physical LCD.
+- Continue, then repeat calibration; the owned pending profile must not block it.
+- Open Control → Mesh Viewer, select saved profiles and Current Mesh, and verify
+  that viewing does not change bed_mesh.profile_name or move the printer.
+- Save only after the displayed profile/restart confirmation; after restart,
+  verify the new lcd_mesh_N profile persists and matches the measured matrix.
+- If testing Cancel, confirm Stop only when a Klipper shutdown is intended;
+  restore operation with FIRMWARE_RESTART afterward.
+
+These isolated tests do not verify physical probing, LCD appearance, service
+lifecycle or live-server persistence.

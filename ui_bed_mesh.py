@@ -54,12 +54,13 @@ class BedMeshMixin:
         for y in ys[1:-1]: self.lcd.Draw_Line(color, 25, y, 247, y)
         # Avoid overlaps in dense grids without changing any underlying values.
         stride = max(1, math.ceil((36 if columns < 9 else 24) / (222/(columns-1))))
+        row_stride = max(1, math.ceil(12 / (222/(rows-1))))
         for (x, y), z in sorted(points.items()):
             color, radius = point_style(z, max(columns, rows))
             for dy in range(-radius, radius+1):
                 dx = math.isqrt(radius*radius-dy*dy)
                 self.lcd.Draw_Rectangle(1, color, xs[x]-dx, ys[y]+dy, xs[x]+dx, ys[y]+dy)
-            if x % stride == 0:
+            if x % stride == 0 and y % row_stride == 0:
                 label = point_label(z, columns)
                 tx = max(0, min(272-len(label)*6, xs[x]-len(label)*3))
                 self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,

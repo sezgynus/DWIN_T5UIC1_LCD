@@ -325,6 +325,11 @@ class MeshViewTests(unittest.TestCase):
                 args=call.args;self.assertGreaterEqual(args[5],0)
                 self.assertLessEqual(args[5]+len(args[-1])*6,272)
                 self.assertGreaterEqual(args[6],31);self.assertLessEqual(args[6]+12,300)
+            boxes=[(call.args[5],call.args[6],call.args[5]+len(call.args[-1])*6,call.args[6]+12)
+                   for call in view.lcd.Draw_String.call_args_list]
+            for index,(x1,y1,x2,y2) in enumerate(boxes):
+                for a1,b1,a2,b2 in boxes[index+1:]:
+                    self.assertFalse(x1<a2 and a1<x2 and y1<b2 and b1<y2, 'overlapping mesh labels')
             for call in view.lcd.Draw_Rectangle.call_args_list:
                 _,_,x1,y1,x2,y2=call.args
                 self.assertGreaterEqual(x1,0);self.assertLessEqual(x2,271)

@@ -39,6 +39,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - Max velocity, max acceleration, square-corner velocity ve minimum cruise ratio için runtime motion ayarı
 - Runtime Z-offset kontrolü
 - Klipper yön ve dönüş miktarlarını gösteren dört köşe vida ayarı
+- Bed mesh kalibrasyonu, renkli yükseklik haritası ve kayıtlı profil görüntüleme
 - Açık TESTZ adımları ve kontrollü SAVE_CONFIG akışına sahip probe kalibrasyon sihirbazı
 - Otomatik Mainsail temperature-preset keşfi, LCD üzerinden düzenleme ve Mainsail'e geri kaydetme
 - M355 macro üzerinden opsiyonel case-light arayüzü
@@ -68,7 +69,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - ✅ **Güvenilirlik** — UART recovery, kontrollü komut yürütme ve regression testleri.
 - ✅ **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.
 - ✅ **Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.
-- 🛠️ **Bed Mesh Visualization & Control** — grafiksel `bed_mesh` gösterimi, ölçülen Z değerlerinin görselleştirilmesi, aktif mesh/profile bilgisi ve Bed Mesh işlemlerine LCD üzerinden erişim.
+- ✅ **Bed Mesh Visualization & Control** — `BED_MESH_CALIBRATE`, renkli Z ızgarası, kontrollü profil kaydı ve kayıtlı profilleri aktif mesh'i değiştirmeden görüntüleme.
 - 🛠️ **Happy Hare MMU Control** — mevcut Home-screen görselleştirmesine ek olarak ayrı MMU kontrol menüsü.
 - 🛠️ **Happy Hare Multi-Unit Support** — mevcut sabit `unit0_mmu_exit_leds` kaynağı yerine dinamik MMU unit ve LED-source keşfi.
 - 🛠️ **Hardware Validation** — fiziksel testlerin ek DWIN T5UIC1 ve Klipper konfigürasyonlarında genişletilmesi.
@@ -237,6 +238,18 @@ Değerler Moonraker status ile senkron kalır. Açık bir editör kendi lokal he
 
 Prepare; homing, hareket, cooldown/preheat ve runtime Z-offset erişimi gibi yazıcı hazırlık işlemlerini içerir. Girdiler, her yazıcının aynı heater, fan, probe veya leveling donanımına sahip olduğunu varsaymak yerine keşfedilen Klipper capability'lerinden oluşturulur.
 
+#### Bed Mesh Calibrate / Mesh Viewer
+
+`[bed_mesh]` ve bir probe mevcutsa **Prepare → Bed Mesh Calibrate** ölçümü başlatır. Home ekranındaki **Leveling** de aynı kalibrasyon akışını açar. Eksenlerin homing'i eksikse önce `G28` çalışır, ardından `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0` gönderilir. Oturum, mevcut profil adlarını ezmemek için kullanılmayan bir `lcd_mesh_N` adı seçer. Baskı, duraklatma, manual-probe oturumu, başka bir LCD kalibrasyonu, jog recovery veya ilgisiz bekleyen config değişiklikleri sırasında kalibrasyon başlatılmaz.
+
+Ölçüm ekranında ızgara, probe yanıtlarından alınabilen nokta değerleri ve **Cancel** bulunur. Bu canlı değerler **raw Z** olarak işaretlenir; tekrarlanan probe örnekleri aynı noktada güncellenir. Sonuç ekranı yalnızca komutun tamamlandığı doğrulandıktan ve `bed_mesh` yeniden sorgulandıktan sonra açılır. Klipper'ın `probed_matrix` değerleri, renk ve boyutları yüksekliğe göre değişen dairelerde gösterilir; minimum/maksimum Z ve **Save / Continue** altta yer alır. Küçük Y altta, büyük Y üsttedir. **Continue** kalibrasyonu açtığınız menüye döner.
+
+**Save**, profil adını ve Klipper'ın yeniden başlayacağını gösteren bir onay açar; varsayılan seçim **Back**'tir. Onaydan sonra mevcut mesh, profil ve `save_config_pending_items` yeniden sorgulanır. Yalnızca bu oturumun ölçtüğü profilin eşleşen değişiklikleri varsa `SAVE_CONFIG` gönderilir; başka ayarlar birlikte kaydedilmez. **Continue** kalıcı kayıt yapmaz; Klipper'ın kalibrasyon sırasında oluşturduğu profil oturumda kullanılabilir. Kaydetmeden tekrar ölçüm yapılırsa aynı LCD profil adı kullanılır. Yeniden başlatma sırasında cevap kaybolursa kayıt başarılı varsayılmaz; profil yeniden kontrol edilmelidir.
+
+**Control → Mesh Viewer**, **Current Mesh** ile Klipper'ın `bed_mesh.profiles` alanındaki profilleri listeler. Enkoderle bir profil seçildiğinde güncel veri yeniden sorgulanır ve o profilin haritası açılır. Bu işlem `BED_MESH_PROFILE LOAD` göndermez ve aktif mesh'i değiştirmez. **Continue** profil listesine döner. Liste kaydırılabilir; boş, silinmiş veya geçersiz bir mesh önceki haritayla değiştirilmez.
+
+Klipper'da normal kalibrasyonu anında iptal eden ayrı bir komut bulunmadığından **Cancel → Stop** onayı, Moonraker'ın `printer.emergency_stop` isteğini kullanır. Onay ekranı Klipper'ın shutdown durumuna geçeceğini açıkça belirtir; tekrar çalışmak için `FIRMWARE_RESTART` gerekir. Ölçüm, durdurma veya kayıt komutları otomatik tekrar gönderilmez.
+
 #### Screws Tilt Adjust
 
 <p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerans sağlandı"></p>
@@ -270,7 +283,7 @@ Konum kaynağı Klipper'ın command-space `gcode_move.position` değeridir; böy
 
 <p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menüsü"></p>
 
-Control daha çok yapılandırma odaklı menüdür. Mevcut satırlar capability tabanlıdır ve temperature presetleri, motion kontrolleri, probe calibration, case light ve bilgi sayfalarına yönlendirebilir.
+Control daha çok yapılandırma odaklı menüdür. Mevcut satırlar capability tabanlıdır ve temperature presetleri, motion kontrolleri, Mesh Viewer, probe calibration, case light ve bilgi sayfalarına yönlendirebilir.
 
 ### 9. Temperature / presetler
 
@@ -410,7 +423,7 @@ flowchart LR
     KL <--> HH[Happy Hare]
 ```
 
-Rendering ve menü state'inin sahibi display thread'idir. GPIO callback'leri yalnızca immutable input eventlerini kuyruğa ekler. Yazıcı state'i birleştirilmiş ve immutable Moonraker subscription snapshot'ından gelir; HTTP komutları ayrı seri worker üzerinde yürütülür. Screws Tilt gibi uzun işlemler, telemetriyi ve UI rendering'i engellemeyen, tamamlanması takip edilen WebSocket RPC istekleri kullanır.
+Rendering ve menü state'inin sahibi display thread'idir. GPIO callback'leri yalnızca immutable input eventlerini kuyruğa ekler. Yazıcı state'i birleştirilmiş ve immutable Moonraker subscription snapshot'ından gelir; HTTP komutları ayrı seri worker üzerinde yürütülür. Screws Tilt ve Bed Mesh gibi uzun işlemler, telemetriyi ve UI rendering'i engellemeyen, tamamlanması takip edilen WebSocket RPC istekleri kullanır.
 
 </details>
 
@@ -428,7 +441,7 @@ http://127.0.0.1:7125
 Uygulama şunları kullanır:
 
 - komutlar ve bounded request/response işlemleri için HTTP
-- printer object discovery, canlı subscription ve uzun Screws Tilt komutlarının tamamlanma takibi için Moonraker WebSocket JSON-RPC
+- printer object discovery, canlı subscription ve uzun Screws Tilt / Bed Mesh komutlarının tamamlanma takibi için Moonraker WebSocket JSON-RPC
 - eski connection'dan kalan queued komutların reconnect sonrası çalışmasını engelleyen connection epoch'ları
 - otomatik WebSocket reconnect
 - sessiz bağlantı kopmalarını algılayan ping/pong kontrolleri
@@ -515,7 +528,7 @@ Servis kurulum kullanıcısıyla, `~/klipperdwin-env` sanal ortamında çalış�
 
 Proje yazıcıyı değiştiren işlemlerde bilinçli olarak optimistic UI state kullanmaz.
 
-- HTTP komutları ayrı worker üzerinde seri yürütülür; uzun Screws Tilt RPC istekleri telemetriyi engellemez.
+- HTTP komutları ayrı worker üzerinde seri yürütülür; uzun kalibrasyon RPC istekleri telemetriyi engellemez.
 - Başarısız komutlar otomatik tekrar gönderilmez.
 - Connection değişimi eski epoch'tan kalan queued komutları geçersiz kılar.
 - Offline/eski input eventleri atılır.
@@ -525,7 +538,9 @@ Proje yazıcıyı değiştiren işlemlerde bilinçli olarak optimistic UI state 
 - Print start hem command result hem subscribed print state bekler.
 - Pause/resume/cancel karşılık gelen subscribed state'i bekler.
 - Probe calibration manual-probe state değişimlerini bekler.
-- Screws Tilt, komutun doğrulanmış tamamlanmasını ve ardından güncel sonuç sorgusunu bekler.
+- Screws Tilt ve Bed Mesh, komutun doğrulanmış tamamlanmasını ve ardından güncel sonuç sorgusunu bekler.
+- Mesh profilleri görüntülenirken yazıcıya LOAD komutu gönderilmez.
+- Bed Mesh kaydı yalnızca ölçülen profile ait bekleyen config değişikliklerini kabul eder.
 - UART short-write/hatalarda fail-closed davranır.
 - Panel reconnect state'i yeniden çizer fakat printer komutlarını tekrar oynatmaz.
 
@@ -573,6 +588,8 @@ Testler Moonraker client/subscription katmanını, printer-state normalization'�
 
 Screws Tilt regresyonları; WebSocket RPC tamamlanmasını, güncel ve aynı değerli tekrar sonuçlarını, köşe yerleşimini, toleransı, talimat renklerini ve hata/bağlantı kaybı akışlarını kapsar.
 
+Bed Mesh regresyonları; ölçüm/sonuç takibini, profil seçiminin aktif mesh'i değiştirmemesini, örneklerin tekilleştirilmesini, kayıt/durdurma onaylarını, ilgisiz config değişikliklerinin reddini, ızgara yönünü, metin sınırlarını ve UART reconnect sırasında komutların tekrarlanmamasını kapsar.
+
 Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 
 </details>
@@ -588,6 +605,9 @@ Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 - Case-light desteği uyumlu bir `M355` macro'ya bağlıdır.
 - Runtime Motion değerleri otomatik olarak printer configuration'a kalıcı yazılmaz.
 - Screws Tilt görünümü dört ayrı köşe vidası gerektirir; başarı eşiği sabit 0,05 mm peak-to-peak yükseklik farkıdır.
+- Bed Mesh ekranı en fazla 25×25 noktalı matrisleri destekler. Yoğun ızgaralarda yazı çakışmasını önlemek için bazı etiketler atlanır; tüm noktalar çizilir ve min/max hesabına katılır.
+- Canlı Bed Mesh noktaları standart probe konsol yanıtlarına bağlıdır. Bu yanıtları üretmeyen scan/probe yöntemlerinde son harita ölçüm tamamlandıktan sonra gösterilir.
+- Bed Mesh Cancel onayı Klipper shutdown, kalıcı Save onayı Klipper restart gerektirir.
 - Test edilen DWIN/encoder bağlantısı dışındaki donanım uyumluluğu motion kontrollerine güvenmeden önce doğrulanmalıdır.
 
 </details>
