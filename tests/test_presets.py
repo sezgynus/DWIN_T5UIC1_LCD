@@ -78,17 +78,13 @@ class PresetTests(unittest.TestCase):
 
 
 class MainsailPresetTests(unittest.TestCase):
-    def test_maps_name_heaters_and_part_fan(self):
+    def test_maps_name_and_heaters(self):
         preset = backend.material_preset_t.from_mainsail({'name':'PETG Fast','gcode':'M106 S128','values':{'extruder':{'bool':True,'type':'heater','value':235},'heater_bed':{'bool':True,'type':'heater','value':80}}})
         self.assertEqual((preset.name, preset.hotend_temp, preset.bed_temp), ('PETG Fast',235,80))
 
     def test_ignores_disabled_values(self):
         preset = backend.material_preset_t.from_mainsail({'name':'ABS','gcode':'','values':{'extruder':{'bool':False,'type':'heater','value':260},'heater_bed':{'bool':True,'type':'heater','value':105}}})
         self.assertEqual((preset.hotend_temp,preset.bed_temp),(0,105))
-
-    def test_temperature_fan_value_is_preserved(self):
-        preset = backend.material_preset_t.from_mainsail({'name':'Chamber','gcode':'','values':{'temperature_fan chamber':{'bool':True,'type':'temperature_fan','value':45}}})
-        self.assertEqual(preset.fan_speed,45)
 
     def test_invalid_preset_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -109,7 +105,7 @@ class MainsailPresetTests(unittest.TestCase):
     def test_mainsail_presets_write_back_to_database(self):
         printer = self.printer()
         printer.presets_from_mainsail = True
-        printer.material_preset = [backend.material_preset_t('PETG', 240, 85, 30)]
+        printer.material_preset = [backend.material_preset_t('PETG', 240, 85)]
         printer.material_preset[0].mainsail_id = 'preset-id'
         printer.material_preset[0].mainsail_raw = {'name':'PETG','gcode':'M106 S128','values':{'extruder':{'bool':True,'type':'heater','value':240},'heater_bed':{'bool':True,'type':'heater','value':85}}}
         future = Mock()

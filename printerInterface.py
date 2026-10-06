@@ -205,12 +205,12 @@ class PrinterData:
         self.refresh_mainsail_presets(force=True)
         try:
             saved = self.preset_store.load()
-            if saved is not None and not self.material_preset:
+            if saved is not None and not self.presets_from_mainsail and not self.material_preset:
                 self.material_preset = [material_preset_t(**item) for item in saved]
         except (OSError, ValueError, TypeError, UnicodeError) as error:
             self.settings_error = str(error)
             logging.warning('Cannot load presets from %s: %s', self.preset_store.path, error)
-        if not self.material_preset:
+        if not self.material_preset and not self.presets_from_mainsail:
             self.material_preset = copy.deepcopy(type(self).material_preset)
         self.files = []
         self.file_error = None
@@ -235,7 +235,12 @@ class PrinterData:
             values = mainsail.get('result', {}).get('value', {})
             if not isinstance(values, Mapping):
                 raise ValueError('Invalid Mainsail preset database')
-            presets = [material_preset_t.from_mainsail(item, preset_id) for preset_id, item in values.items()]
+            presets = []
+            for preset_id, item in values.items():
+                try:
+                    presets.append(material_preset_t.from_mainsail(item, preset_id))
+                except (ValueError, TypeError) as error:
+                    logging.warning('Ignoring invalid Mainsail preset %s: %s', preset_id, error)
             if not presets:
                 changed = bool(self.material_preset)
                 if changed:

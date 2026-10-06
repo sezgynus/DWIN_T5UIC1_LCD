@@ -426,6 +426,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         caps = self.pd.capabilities
         recovery = self.pd.jog_recovery_required
         preset_revision = getattr(self.pd, 'preset_revision', 0)
+        if getattr(self, '_menu_preset_revision', preset_revision) != preset_revision and self.checkkey in (self.PLAPreheat, self.ABSPreheat):
+            self.checkkey = self.TemperatureID
+            self.select_temperature.reset()
+            self._active_preset = 0
         if (getattr(self, '_menu_capabilities', None) == caps
                 and getattr(self, '_menu_recovery', False) == recovery
                 and getattr(self, '_menu_preset_revision', -1) == preset_revision):
@@ -1487,6 +1491,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     def _preset_hmi(self, profile=None):
         profile = getattr(self, '_active_preset', 0) if profile is None else profile
+        if not 0 <= profile < len(self.pd.material_preset):
+            self.checkkey = self.TemperatureID
+            self.select_temperature.reset()
+            self.Draw_Temperature_Menu()
+            self.lcd.UpdateLCD()
+            return
         selection = self.select_PLA
         draw = lambda: self._draw_capability_menu('preheat', selection, profile=profile)
         if self._menu_navigation('preheat', selection, 'index_preset', draw):
