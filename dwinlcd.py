@@ -2026,7 +2026,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self._draw_capability_menu('control', self.select_control)
 
     def _draw_info_row(self, label, value, y):
-        self._draw_menu_text(label, 16, y)
+        self._draw_menu_text(label, 8, y)
         text = T5UIC1_LCD._panel_text(value)[:17]
         color = self.lcd.Color_White
         if label == 'Network':
@@ -2036,7 +2036,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             elif state == 'offline':
                 color = 0xF800
         self.lcd.Draw_String(False, False, self.lcd.font8x16, color,
-                             self.lcd.Color_Bg_Black, 128, y, text)
+                             self.lcd.Color_Bg_Black, 120, y, text)
 
     def _draw_info_section(self, label, y):
         text = T5UIC1_LCD._panel_text(label)[:24]
@@ -2051,10 +2051,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         else:
             color, icon = palette.get(key, (self.lcd.Color_White, self.ICON_Info))
         if icon is not None:
-            self.lcd.ICON_Show(self.ICON, icon, 16, y - 2)
+            self.lcd.ICON_Show(self.ICON, icon, 8, y - 2)
         self.lcd.Draw_String(False, False, self.lcd.font10x20, color,
-                             self.lcd.Color_Bg_Black, 48, y, key)
-        self.lcd.Draw_Rectangle(1, color, 48, y + 21, 255, y + 22)
+                             self.lcd.Color_Bg_Black, 40, y, key)
+        self.lcd.Draw_Rectangle(1, color, 40, y + 21, 255, y + 22)
 
     def _info_items(self):
         info = self.pd.system_info
