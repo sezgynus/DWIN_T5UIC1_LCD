@@ -93,6 +93,24 @@ class MainsailPresetTests(unittest.TestCase):
         preset = backend.material_preset_t.from_mainsail({'name':'PETG Fast','gcode':'M106 S128','values':{'extruder':{'bool':True,'type':'heater','value':235},'heater_bed':{'bool':True,'type':'heater','value':80}}})
         self.assertEqual((preset.name, preset.hotend_temp, preset.bed_temp), ('PETG Fast',235,80))
 
+    def test_maps_mainsail_string_temperatures(self):
+        preset = backend.material_preset_t.from_mainsail({
+            'name': 'PETG',
+            'values': {
+                'extruder': {'bool': True, 'type': 'heater', 'value': '250'},
+                'heater_bed': {'bool': True, 'type': 'heater', 'value': '80'},
+            },
+        })
+        self.assertEqual((preset.hotend_temp, preset.bed_temp), (250, 80))
+
+    def test_rejects_invalid_mainsail_string_temperatures(self):
+        for value in ('', 'NaN', 'inf', '-inf', 'not-a-number'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                backend.material_preset_t.from_mainsail({
+                    'name': 'Broken',
+                    'values': {'extruder': {'bool': True, 'type': 'heater', 'value': value}},
+                })
+
     def test_ignores_disabled_values(self):
         preset = backend.material_preset_t.from_mainsail({'name':'ABS','gcode':'','values':{'extruder':{'bool':False,'type':'heater','value':260},'heater_bed':{'bool':True,'type':'heater','value':105}}})
         self.assertEqual((preset.hotend_temp,preset.bed_temp),(0,105))

@@ -112,8 +112,16 @@ class material_preset_t:
             if not isinstance(setting, Mapping) or not setting.get('bool', False):
                 continue
             value = setting.get('value')
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            if isinstance(value, bool):
                 raise ValueError('Invalid Mainsail preset value')
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                raise ValueError('Invalid Mainsail preset value')
+            if not math.isfinite(value):
+                raise ValueError('Invalid Mainsail preset value')
+            if value.is_integer():
+                value = int(value)
             if device == 'extruder':
                 hotend = value
             elif device == 'heater_bed':
