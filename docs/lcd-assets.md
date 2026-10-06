@@ -1,27 +1,50 @@
-# LCD asset verification
+# LCD compatibility and asset inventory
 
-Reference: [mriscoc 05903a80](https://github.com/mriscoc/Ender3V2S1/tree/05903a80d6e15cc91b0bc690b35e08fd440a21e9),
-`display assets/stock/DWIN_SET`, `common/dwin_set.h` and ProUI `dwinui.cpp`.
+KlipperDWIN targets the **272×480 DWIN T5UIC1** display layout. A matching
+icon library and English bitmap sheet must already be installed on the panel.
+The installer does not flash LCD firmware or install display assets.
 
-- Python selects library 9 (`9.ICO`), English JPG 1 and cache 1.
-- All 91 Python icon IDs have nonempty, in-bounds directory entries in stock
-  `9.ICO`. Named IDs match the common header; `ICON_StockConfiguraton` is the
-  Python spelling of reference `ICON_StockConfiguration` (58).
-- The JPEG is stored as 480 × 272. Rotating it clockwise for direction 1 gives
-  the 272 × 480 coordinate space used by the UI. It must not be rejected merely
-  because its raw dimensions are landscape.
-- All 50 statically specified copy regions are ordered and within that space.
-  Visual inspection of the rotated stock English sheet confirms the upper menu
-  label sheet and lower button sheet. Dynamic destinations remain UI-controlled.
-- The checked metadata, icon sizes, region inventory and stock file SHA-256
-  hashes are recorded in `lcd-assets.json`; firmware images are not bundled.
+## Required layout
 
-ProUI primarily draws labels as text. This Python UI still uses the stock English
-bitmap label sheet, so a compatible 1_English.jpg is required in addition to the
-icon library. A custom ProUI icon set alone does not establish bitmap compatibility.
-DWIN_SET files apply to DWIN panels; DACAI/private and TJC packages are separate.
+- Icon library **9** (`9.ICO`).
+- English JPEG **1**, copied through cache **1**.
+- Display direction **1**, giving a 272×480 coordinate space.
+- A compatible `1_English.jpg` bitmap sheet as well as the icon library: some
+  existing labels/buttons still use frame copies rather than font rendering.
 
-This verifies the repository reference assets, not the files actually installed
-on a connected LCD. The installed historical asset/kernel version is unknown.
-No LCD flashing was performed or is required by this change. Physical appearance,
-transparent filtering and installed asset equivalence remain hardware checks.
+The audited English JPEG is stored as 480×272; clockwise rotation yields the
+portrait coordinate space. Its raw landscape dimensions alone do not indicate
+incompatibility. A replacement icon library does not establish bitmap-sheet
+compatibility. DWIN, DACAI and TJC packages are not interchangeable.
+
+## Inventory and verification
+
+[lcd-assets.json](lcd-assets.json) records the audited stock file SHA-256 hashes,
+icon dimensions and static copy regions. The inventory covers 91 icon IDs and
+50 statically specified copy regions; the regression tests check that current
+source constants and copy coordinates remain compatible with that inventory.
+This does not identify the exact files installed on an individual panel.
+
+Dynamic text is sanitized/transliterated for the stock ASCII fonts. Coordinates,
+string payloads and numeric fields are bounded; numeric overflow draws markers
+instead of silently changing the value. UART recovery redraws the screen without
+replaying printer commands.
+
+## Print-preview images
+
+Preview images do not require a new asset pack. Moonraker thumbnails are converted
+to baseline **128×128 JPEG**, preserving aspect ratio on black. The driver uploads
+JPEG bytes through command **0x31** in chunks of at most **128 bytes**, then displays
+them from SRAM using **0x24**.
+
+The cache allocator manages **32 KiB (32768 bytes)** of volatile SRAM. Images are
+published only after their complete upload; entries are discarded after a panel
+or backend reconnection. No flash writes or installed-icon replacement occur.
+Direct JPEG display and preview caching have been exercised on the user's panel;
+other kernel/asset combinations still need physical verification.
+
+## Physical checks
+
+Verify menu icons, bitmap labels, text bounds, colors and JPEG display on the
+actual panel. Passing mocked UART packet tests validates framing and routing,
+not screen-side rendering or compatibility with every panel firmware.
