@@ -266,6 +266,28 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn(result._rgb565((1.0, 0.0, 0.0)), fills)
         self.assertNotIn(result._rgb565((0.1, 0.0, 0.0)), fills)
 
+    def test_mmu_lane_number_uses_contrasting_text_color(self):
+        result = display(snapshot())
+        result.lcd.DWIN_WIDTH = 272
+        result.lcd.DWIN_HEIGHT = 480
+        result.lcd.Color_White = 0xffff
+        result.lcd.Color_Bg_Black = 0x0841
+        result.lcd.Select_Color = 0x33bb
+        result.lcd.font6x12 = 0
+        result.pd.mmu = {
+            'num_gates': 2, 'gate': 0, 'gate_status': (1, 1),
+            'gate_color_rgb': ((1.0, 1.0, 1.0),) * 2,
+            'remaining_percent': (50, 50),
+            'exit_led_rgb': ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+            'name': 'MMU', 'filament': 'Loaded',
+        }
+        result.lcd.Draw_String.reset_mock()
+        result.Draw_MMU_Status()
+        labels = [call.args for call in result.lcd.Draw_String.call_args_list
+                  if call.args[-1] in ('1', '2')]
+        self.assertEqual(labels[0][3], 0x0000)
+        self.assertEqual(labels[1][3], result.lcd.Color_White)
+
     def test_mmu_visual_is_not_redrawn_for_unrelated_status_updates(self):
         result = display(snapshot())
         result.pd.mmu = {
