@@ -6,6 +6,7 @@ from threading import Lock
 from ui_events import UIEventLoop, InputEvent
 from ui_case_light import CaseLightMixin
 from ui_mmu import MMUViewMixin
+from ui_screws_tilt import ScrewsTiltMixin
 
 from encoder import Encoder
 from gpiozero import Button, Device
@@ -50,7 +51,7 @@ class select_t:
         return self.changed()
 
 
-class DWIN_LCD(MMUViewMixin, CaseLightMixin):
+class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
 
     TROWS = 6
     MROWS = TROWS - 1  # Total rows, and other-than-Back
@@ -113,6 +114,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     MotionValue = 35
     CaseLight = 37
     CaseLightBrightness = 38
+    ScrewsTiltMenu = 39
+    ScrewsTiltResult = 40
 
     MINUNITMULT = 10
 
@@ -454,6 +457,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             if self.pd.HAS_FAN and menu != 'preheat':
                 self._menus[menu].append(('FAN', 'Fan speed', self.ICON_FanSpeed))
         self._menus['tune'].append(('ZOFF', 'Runtime Z offset', self.ICON_Zoffset))
+        if caps.screws_tilt_adjust:
+            self._menus['prepare'].append(('SCREWS', 'Screws Tilt Adjust', self.ICON_AutoLeveling))
         if heat:
             for index, preset in enumerate(self.pd.material_preset):
                 key = 'PRESET:' + str(index)
@@ -479,7 +484,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
         keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'COOL', 'SPEED', 'TEMP', 'BED', 'FAN',
-                'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT')
+                'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT', 'SCREWS')
         for menu, prefix in prefixes.items():
             for key in keys:
                 setattr(self, prefix + '_CASE_' + key, -1)
@@ -1016,6 +1021,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 self.checkkey = self.AxisMove
                 self.select_axis.reset()
                 self.Draw_Move_Menu()
+            elif self.select_prepare.now == self.PREPARE_CASE_SCREWS:
+                self.checkkey = self.ScrewsTiltMenu
+                self._screws_selection = 0
+                self.Draw_Screws_Menu()
             elif self.select_prepare.now == self.PREPARE_CASE_DISA:  # Disable steppers
                 self._action("Disable steppers", lambda: self.pd.sendGCode("M84"))
             elif self.select_prepare.now == self.PREPARE_CASE_HOME:  # Homing
@@ -2491,6 +2500,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             self._offline = True
         if self._poll_action():
             return
+        self._poll_screws_tilt()
         if self.pd.connection_error:
             if not self._offline:
                 self._show_message('Moonraker unavailable')
@@ -2626,6 +2636,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             self.HMI_Temperature()
         elif self.checkkey == self.Motion:
             self.HMI_Motion()
+        elif self.checkkey in (self.ScrewsTiltMenu, self.ScrewsTiltResult):
+            self.HMI_Screws_Tilt()
         elif self.checkkey == self.ProbeWizardID:
             self.HMI_Probe_Wizard()
         elif self.checkkey == self.MotionValue:

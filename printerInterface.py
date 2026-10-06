@@ -11,6 +11,7 @@ from motion_settings import PARAMETERS, validate as validate_motion
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
 from probe_wizard import ProbeWizard
+from screws_tilt import ScrewsTiltSession
 from preset_store import PresetStore
 from printer_state import PrinterState
 from printer_capabilities import PrinterCapabilities
@@ -240,6 +241,7 @@ class PrinterData:
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
         self.probe_wizard = ProbeWizard(self)
+        self.screws_tilt = ScrewsTiltSession(self)
 
     def refresh_system_info(self, force=False):
         """Refresh component versions and host IPv4 without mutating printer state."""
