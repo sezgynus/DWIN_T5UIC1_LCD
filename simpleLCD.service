@@ -1,5 +1,5 @@
 [Unit]
-Description=DWIN LCD for Klipper and Moonraker
+Description=KlipperDWIN display interface
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=60
@@ -7,16 +7,12 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=dwinlcd
-Group=dwinlcd
-SupplementaryGroups=dialout gpio
-WorkingDirectory=/opt/dwin-lcd
+User=@KLIPPERDWIN_USER@
+@SUPPLEMENTARY_GROUPS@
+WorkingDirectory=@KLIPPERDWIN_HOME@/KlipperDWIN
 Environment=PYTHONUNBUFFERED=1
-Environment=DWIN_SETTINGS_FILE=/var/lib/dwin-lcd/presets.json
-EnvironmentFile=-/etc/default/dwin-lcd
-ExecStart=/opt/dwin-lcd/.venv/bin/python /opt/dwin-lcd/run.py
-StateDirectory=dwin-lcd
-StateDirectoryMode=0750
+EnvironmentFile=@KLIPPERDWIN_HOME@/.config/KlipperDWIN/KlipperDWIN.env
+ExecStart=@KLIPPERDWIN_HOME@/klipperdwin-env/bin/python @KLIPPERDWIN_HOME@/KlipperDWIN/run.py
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30

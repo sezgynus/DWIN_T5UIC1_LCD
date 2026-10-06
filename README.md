@@ -307,29 +307,46 @@ Optional API-key authentication is supported through `MOONRAKER_API_KEY`. Empty 
 ### Requirements
 
 - Raspberry Pi or compatible Linux SBC with accessible UART + GPIO
-- Python 3.11+
-- Klipper
-- Moonraker
+- Klipper and Moonraker
 - DWIN T5UIC1-compatible display/asset set
 
-Install system packages:
+### Automated installation
+
+Clone the master branch to the standard location and run the installer:
 
 ```bash
-sudo apt update
-sudo apt install git python3-venv python3-dev build-essential
+cd ~
+git clone https://github.com/sezgynus/KlipperDWIN.git
+cd ~/KlipperDWIN
+./install.sh
 ```
 
-Clone this development branch:
+The installer:
+
+- installs the required system and Python dependencies
+- creates the Python virtual environment at `~/klipperdwin-env`, outside the Git repository
+- creates and enables the `KlipperDWIN.service` systemd service
+- stores user configuration under `~/.config/KlipperDWIN`
+- adds `KlipperDWIN` to Moonraker's allowed-services file
+- creates `KlipperDWIN.conf` next to `moonraker.conf` and includes it automatically
+- registers `[update_manager KlipperDWIN]` so Mainsail can check and install updates from the repository's `master` branch
+- configures Moonraker to update Python requirements when `requirements.txt` changes
+
+Moonraker's `dev` update channel follows the latest commit on the configured primary branch. The repository itself is kept free of runtime configuration and virtualenv files so Moonraker can manage it as a clean Git repository.
+
+If Moonraker uses a non-standard configuration path, run:
 
 ```bash
-sudo git clone --branch refactor/modern-klipper-moonraker \
-  https://github.com/sezgynus/DWIN_T5UIC1_LCD.git /opt/dwin-lcd
-
-sudo python3 -m venv /opt/dwin-lcd/.venv
-sudo /opt/dwin-lcd/.venv/bin/python -m pip install -r /opt/dwin-lcd/requirements.txt
+MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
 ```
 
-The Python dependencies include GPIOZero, lgpio, pyserial and websocket-client. HTTP uses the Python standard library.
+After installation, edit:
+
+```text
+~/.config/KlipperDWIN/KlipperDWIN.env
+```
+
+to match the UART, encoder pins, button pin and optional Moonraker power-device name used by your printer.
 
 ## UART preparation
 
@@ -346,9 +363,9 @@ Verify the UART assigned to the physical pins for your Pi model. Bluetooth overl
 Example matching the repository defaults:
 
 ```bash
-cd /opt/dwin-lcd
+cd ~/KlipperDWIN
 
-sudo .venv/bin/python run.py \
+.venv/bin/python run.py \
   --serial-port /dev/ttyAMA0 \
   --encoder-pins 21 19 \
   --button-pin 13 \
@@ -379,10 +396,10 @@ id -u dwinlcd >/dev/null 2>&1 || \
   --home-dir /var/lib/dwin-lcd --no-create-home \
   --shell /usr/sbin/nologin dwinlcd
 
-sudo install -m 0600 /opt/dwin-lcd/dwin-lcd.env.example /etc/default/dwin-lcd
+sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
 sudoedit /etc/default/dwin-lcd
 
-sudo install -m 0644 /opt/dwin-lcd/simpleLCD.service \
+sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
   /etc/systemd/system/simpleLCD.service
 
 sudo systemctl daemon-reload
@@ -476,7 +493,7 @@ See [LCD asset notes](docs/lcd-assets.md) and [source audit](docs/source-audit.m
 Run the full isolated test suite with:
 
 ```bash
-cd /opt/dwin-lcd
+cd ~/KlipperDWIN
 .venv/bin/python -m unittest discover -s tests -v
 ```
 

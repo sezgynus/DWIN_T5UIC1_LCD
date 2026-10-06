@@ -307,29 +307,44 @@ Opsiyonel API key authentication `MOONRAKER_API_KEY` üzerinden desteklenir. Bo�
 ### Gereksinimler
 
 - UART + GPIO erişimi olan Raspberry Pi veya uyumlu Linux SBC
-- Python 3.11+
-- Klipper
-- Moonraker
+- Klipper ve Moonraker
 - DWIN T5UIC1 uyumlu ekran/asset seti
 
-Sistem paketleri:
+### Otomatik kurulum
+
+Master branch'i standart konuma klonlayıp installer'ı çalıştırın:
 
 ```bash
-sudo apt update
-sudo apt install git python3-venv python3-dev build-essential
+cd ~
+git clone https://github.com/sezgynus/KlipperDWIN.git
+cd ~/KlipperDWIN
+./install.sh
 ```
 
-Bu geliştirme branch'ini klonlayın:
+Installer:
+
+- gerekli sistem ve Python bağımlılıklarını kurar
+- Python virtual environment'ını Git reposunun dışında `~/klipperdwin-env` altında oluşturur
+- `KlipperDWIN.service` systemd servisini oluşturur ve etkinleştirir
+- kullanıcı ayarlarını `~/.config/KlipperDWIN` altında tutar
+- `KlipperDWIN` servisini Moonraker'ın allowed-services dosyasına ekler
+- `moonraker.conf` yanına `KlipperDWIN.conf` oluşturur ve otomatik include eder
+- Mainsail'in reponun `master` branch'indeki güncellemeleri kontrol edip kurabilmesi için `[update_manager KlipperDWIN]` kaydını oluşturur
+- `requirements.txt` değiştiğinde Python bağımlılıklarını Moonraker'ın güncellemesini sağlar
+
+Moonraker'ın `dev` update channel'ı yapılandırılmış primary branch'teki en yeni commit'i takip eder. Runtime ayarları ve virtualenv repo dışında tutulduğu için Moonraker Git reposunu temiz durumda yönetebilir.
+
+Moonraker standart dışı bir configuration path kullanıyorsa:
 
 ```bash
-sudo git clone --branch refactor/modern-klipper-moonraker \
-  https://github.com/sezgynus/DWIN_T5UIC1_LCD.git /opt/dwin-lcd
-
-sudo python3 -m venv /opt/dwin-lcd/.venv
-sudo /opt/dwin-lcd/.venv/bin/python -m pip install -r /opt/dwin-lcd/requirements.txt
+MOONRAKER_CONFIG=/path/to/moonraker.conf ./install.sh
 ```
 
-Python bağımlılıkları GPIOZero, lgpio, pyserial ve websocket-client içerir. HTTP için Python standart kütüphanesi kullanılır.
+Kurulumdan sonra yazıcınızın UART, encoder pinleri, buton pini ve opsiyonel Moonraker power-device adına göre şu dosyayı düzenleyin:
+
+```text
+~/.config/KlipperDWIN/KlipperDWIN.env
+```
 
 ## UART hazırlığı
 
@@ -346,9 +361,9 @@ Pi modelinizde fiziksel pinlere atanmış gerçek UART'ı doğrulayın. Bluetoot
 Repo varsayılanlarıyla örnek:
 
 ```bash
-cd /opt/dwin-lcd
+cd ~/KlipperDWIN
 
-sudo .venv/bin/python run.py \
+.venv/bin/python run.py \
   --serial-port /dev/ttyAMA0 \
   --encoder-pins 21 19 \
   --button-pin 13 \
@@ -379,10 +394,10 @@ id -u dwinlcd >/dev/null 2>&1 || \
   --home-dir /var/lib/dwin-lcd --no-create-home \
   --shell /usr/sbin/nologin dwinlcd
 
-sudo install -m 0600 /opt/dwin-lcd/dwin-lcd.env.example /etc/default/dwin-lcd
+sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
 sudoedit /etc/default/dwin-lcd
 
-sudo install -m 0644 /opt/dwin-lcd/simpleLCD.service \
+sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
   /etc/systemd/system/simpleLCD.service
 
 sudo systemctl daemon-reload
@@ -478,7 +493,7 @@ Düşük seviye ayrıntılar için [LCD asset notları](docs/lcd-assets.md) ve [
 Tüm izole test suite'i:
 
 ```bash
-cd /opt/dwin-lcd
+cd ~/KlipperDWIN
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
