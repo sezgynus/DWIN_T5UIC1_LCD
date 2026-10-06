@@ -206,6 +206,7 @@ class PrinterData:
         self.preset_store = PresetStore(settings_path)
         self.settings_error = None
         self.mainsail_presets_error = None
+        self.presets_from_mainsail = False
         self.preset_revision = 0
         self._preset_refresh_at = 0.0
         self._preset_refresh_interval = 5.0
@@ -249,6 +250,7 @@ class PrinterData:
             if changed:
                 self.material_preset = presets
                 self.preset_revision += 1
+            self.presets_from_mainsail = True
             self.mainsail_presets_error = None
             return changed
         except (MoonrakerError, KeyError, ValueError, TypeError) as error:
@@ -852,6 +854,10 @@ class PrinterData:
         return self.preHeat(preset.bed_temp, preset.hotend_temp, fan_speed=preset.fan_speed)
 
     def save_settings(self):
+        if self.presets_from_mainsail:
+            self.settings_error = 'Mainsail presets are read-only on the LCD'
+            logging.warning(self.settings_error)
+            return False
         try:
             self.preset_store.save([vars(preset).copy() for preset in self.material_preset])
         except (OSError, ValueError, TypeError, UnicodeError) as error:

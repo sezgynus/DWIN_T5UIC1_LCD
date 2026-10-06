@@ -458,7 +458,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             for index, preset in enumerate(self.pd.material_preset):
                 key = 'PRESET:' + str(index)
                 self._menus['temperature'].append((key, preset.name + ' settings', self.ICON_PLAPreheat))
-        self._menus['preheat'].append(('SAVE', 'Save settings', self.ICON_WriteEEPROM))
+        if not getattr(self.pd, 'presets_from_mainsail', False):
+            self._menus['preheat'].append(('SAVE', 'Save settings', self.ICON_WriteEEPROM))
         if heat or self.pd.HAS_FAN:
             self._menus['control'].append(('TEMP', 'Temperature', self.ICON_Temperature))
         self._menus['control'].append(('MOVE', 'Motion', self.ICON_Motion))
@@ -1488,6 +1489,15 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     def _preset_hmi(self, profile=None):
         profile = getattr(self, '_active_preset', 0) if profile is None else profile
+        if getattr(self.pd, 'presets_from_mainsail', False):
+            # Mainsail owns these presets. Keep the LCD view read-only so local
+            # edits cannot diverge from or be overwritten by the database.
+            if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
+                self.checkkey = self.TemperatureID
+                self.pd.HMI_ValueStruct.show_mode = -1
+                self.Draw_Temperature_Menu()
+                self.lcd.UpdateLCD()
+            return
         selection = self.select_PLA
         draw = lambda: self._draw_capability_menu('preheat', selection, profile=profile)
         if self._menu_navigation('preheat', selection, 'index_preset', draw):

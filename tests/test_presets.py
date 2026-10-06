@@ -108,3 +108,12 @@ class MainsailPresetTests(unittest.TestCase):
         printer = self.printer()
         with self.assertRaises(ValueError):
             printer.preheat_preset(99)
+
+    def test_mainsail_presets_are_read_only_locally(self):
+        printer = self.printer()
+        printer.presets_from_mainsail = True
+        printer.material_preset = [backend.material_preset_t('PETG', 240, 85, 30)]
+        with patch.object(printer.preset_store, 'save') as save:
+            self.assertFalse(printer.save_settings())
+        save.assert_not_called()
+        self.assertIn('read-only', printer.settings_error)
