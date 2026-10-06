@@ -2028,7 +2028,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     def _draw_info_row(self, label, value, y):
         self._draw_menu_text(label, 16, y)
         text = T5UIC1_LCD._panel_text(value)[:17]
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+        color = self.lcd.Color_White
+        if label == 'Network':
+            state = text.strip().lower()
+            if state == 'online':
+                color = 0x07E0
+            elif state == 'offline':
+                color = 0xF800
+        self.lcd.Draw_String(False, False, self.lcd.font8x16, color,
                              self.lcd.Color_Bg_Black, 128, y, text)
 
     def _draw_info_section(self, label, y):
