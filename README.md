@@ -86,7 +86,7 @@ Typical wiring:
 | TX | GPIO15 / UART RX |
 | Encoder A | GPIO21 by default |
 | Encoder B | GPIO19 by default |
-| Encoder Enter | GPIO13 by default |
+| Encoder Enter | GPIO20 by default |
 | VCC | 5 V |
 | GND | GND |
 
@@ -349,6 +349,7 @@ Encoder A GPIO (BCM) [21]:
 Encoder B GPIO (BCM) [19]:
 Encoder button GPIO (BCM) [20]:
 Moonraker power device [Printer]:
+Power-on button hold time (ms, 0 = immediate) [2000]:
 ```
 
 To change these settings later, run:
@@ -359,6 +360,19 @@ cd ~/KlipperDWIN
 ```
 
 Existing configuration is preserved when `install.sh` is run again. `configure.sh` shows the current values as defaults, writes `~/.config/KlipperDWIN/KlipperDWIN.env`, and can restart the service after saving.
+
+The interactive configuration covers the Moonraker endpoint, LCD UART, encoder GPIO pins, encoder button GPIO, Moonraker power-device name, and the power-on hold time. `DWIN_POWER_ON_HOLD_MS` is expressed in milliseconds; the default is `2000`, while `0` requests printer power immediately when the encoder button is pressed.
+
+### Updating with Moonraker / Mainsail
+
+The installer registers KlipperDWIN with Moonraker Update Manager automatically. After Moonraker reloads the generated `KlipperDWIN.conf`, KlipperDWIN appears in Mainsail's **Machine → Update Manager** together with the other managed components.
+
+Use **Refresh** to check for a newer revision and **Update** on the KlipperDWIN entry to install it. Moonraker updates the Git checkout, refreshes Python requirements when needed, and restarts the managed `KlipperDWIN` service. User configuration is kept outside the repository in `~/.config/KlipperDWIN`, so normal Update Manager updates do not overwrite it.
+
+The updater follows the repository's `master` branch. Version tags provide the readable version base shown by Moonraker/Mainsail; commits after a tag may be displayed in a form such as `v0.2.1-1-gabcdef12`.
+
+> [!NOTE]
+> Use `./configure.sh` for configuration changes. Do not edit tracked repository files for local hardware settings, because Moonraker expects the managed Git checkout to remain clean.
 
 ## UART preparation
 
@@ -377,10 +391,10 @@ Example matching the repository defaults:
 ```bash
 cd ~/KlipperDWIN
 
-.venv/bin/python run.py \
-  --serial-port /dev/ttyAMA0 \
+~/klipperdwin-env/bin/python run.py \
+  --serial-port /dev/ttyS0 \
   --encoder-pins 21 19 \
-  --button-pin 13 \
+  --button-pin 20 \
   --moonraker-url http://127.0.0.1:7125
 ```
 
@@ -393,10 +407,12 @@ Available configuration:
 | `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
 | `MOONRAKER_API_KEY` | environment only | empty |
 | `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 s |
-| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyAMA0` |
+| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyS0` |
 | `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
-| `DWIN_BUTTON_PIN` | `--button-pin` | `13` |
-| `DWIN_SETTINGS_FILE` | `--settings-file` | user XDG path |
+| `DWIN_BUTTON_PIN` | `--button-pin` | `20` |
+| `DWIN_SETTINGS_FILE` | `--settings-file` | `~/.config/KlipperDWIN/presets.json` after installer configuration |
+| `DWIN_POWER_DEVICE` | `--power-device` | `Printer` |
+| `DWIN_POWER_ON_HOLD_MS` | `--power-on-hold-ms` | `2000` ms |
 
 ## Run at boot with systemd
 
@@ -462,7 +478,7 @@ Adapt your macro to that contract if you want bidirectional case-light status.
 
 ## Encoder power-on
 
-When Moonraker has a `[power Printer]` device, holding the encoder button for 2 seconds while that device is off turns it on. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. This path does not depend on Klipper being ready or on the LCD UART being connected.
+When Moonraker has a configured power device, the encoder button can turn it on even while Klipper or the LCD UART is offline. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. The hold duration is controlled by `DWIN_POWER_ON_HOLD_MS`: the default `2000` requires a 2-second hold, and `0` requests power-on immediately on the press edge.
 
 ## Reliability and safety behavior
 
@@ -506,7 +522,7 @@ Run the full isolated test suite with:
 
 ```bash
 cd ~/KlipperDWIN
-.venv/bin/python -m unittest discover -s tests -v
+~/klipperdwin-env/bin/python -m unittest discover -s tests -v
 ```
 
 The tests cover the Moonraker client/subscription layer, printer-state normalization, capability detection, menu behavior, input routing, command handling, movement safety, UART framing/render helpers, MMU data and other regressions.

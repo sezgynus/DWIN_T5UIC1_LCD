@@ -86,7 +86,7 @@ Tipik bağlantı:
 | TX | GPIO15 / UART RX |
 | Encoder A | Varsayılan GPIO21 |
 | Encoder B | Varsayılan GPIO19 |
-| Encoder Enter | Varsayılan GPIO13 |
+| Encoder Enter | Varsayılan GPIO20 |
 | VCC | 5 V |
 | GND | GND |
 
@@ -349,6 +349,7 @@ Encoder A GPIO (BCM) [21]:
 Encoder B GPIO (BCM) [19]:
 Encoder button GPIO (BCM) [20]:
 Moonraker power device [Printer]:
+Power-on button hold time (ms, 0 = immediate) [2000]:
 ```
 
 Bu ayarları daha sonra değiştirmek için:
@@ -359,6 +360,19 @@ cd ~/KlipperDWIN
 ```
 
 `install.sh` tekrar çalıştırıldığında mevcut kullanıcı ayarları korunur. `configure.sh` mevcut değerleri varsayılan olarak gösterir, `~/.config/KlipperDWIN/KlipperDWIN.env` dosyasını günceller ve kayıttan sonra servisi yeniden başlatabilir.
+
+İnteraktif yapılandırma; Moonraker endpoint'ini, LCD UART'ını, encoder GPIO pinlerini, encoder buton GPIO'sunu, Moonraker power-device adını ve power-on basılı tutma süresini kapsar. `DWIN_POWER_ON_HOLD_MS` milisaniye cinsindendir; varsayılan değer `2000`'dir. `0` seçilirse encoder butonuna basıldığı anda yazıcıyı açma isteği gönderilir.
+
+### Moonraker / Mainsail ile güncelleme
+
+Installer KlipperDWIN'i Moonraker Update Manager'a otomatik olarak kaydeder. Moonraker oluşturulan `KlipperDWIN.conf` dosyasını yükledikten sonra KlipperDWIN, Mainsail'de **Machine → Update Manager** altında diğer yönetilen bileşenlerle birlikte görünür.
+
+Yeni sürümü kontrol etmek için **Refresh**, kurmak için KlipperDWIN satırındaki **Update** kullanılabilir. Moonraker Git checkout'u günceller, gerektiğinde Python requirements'larını yeniler ve yönetilen `KlipperDWIN` servisini yeniden başlatır. Kullanıcı yapılandırması repo dışında `~/.config/KlipperDWIN` altında tutulduğu için normal Update Manager güncellemeleri bu ayarların üzerine yazmaz.
+
+Updater reponun `master` branch'ini takip eder. Version tag'leri Moonraker/Mainsail'de görünen okunabilir sürümün tabanını oluşturur; tag sonrasındaki commit'ler örneğin `v0.2.1-1-gabcdef12` biçiminde gösterilebilir.
+
+> [!NOTE]
+> Yapılandırma değişiklikleri için `./configure.sh` kullanın. Yerel donanım ayarları için repo tarafından takip edilen dosyaları değiştirmeyin; Moonraker yönetilen Git checkout'un temiz kalmasını bekler.
 
 ## UART hazırlığı
 
@@ -377,10 +391,10 @@ Repo varsayılanlarıyla örnek:
 ```bash
 cd ~/KlipperDWIN
 
-.venv/bin/python run.py \
-  --serial-port /dev/ttyAMA0 \
+~/klipperdwin-env/bin/python run.py \
+  --serial-port /dev/ttyS0 \
   --encoder-pins 21 19 \
-  --button-pin 13 \
+  --button-pin 20 \
   --moonraker-url http://127.0.0.1:7125
 ```
 
@@ -393,10 +407,12 @@ Mevcut ayarlar:
 | `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
 | `MOONRAKER_API_KEY` | yalnız environment | boş |
 | `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 sn |
-| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyAMA0` |
+| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyS0` |
 | `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
-| `DWIN_BUTTON_PIN` | `--button-pin` | `13` |
-| `DWIN_SETTINGS_FILE` | `--settings-file` | kullanıcı XDG path'i |
+| `DWIN_BUTTON_PIN` | `--button-pin` | `20` |
+| `DWIN_SETTINGS_FILE` | `--settings-file` | installer yapılandırmasından sonra `~/.config/KlipperDWIN/presets.json` |
+| `DWIN_POWER_DEVICE` | `--power-device` | `Printer` |
+| `DWIN_POWER_ON_HOLD_MS` | `--power-on-hold-ms` | `2000` ms |
 
 ## systemd ile açılışta çalıştırma
 
@@ -462,7 +478,7 @@ Light is ON, Brightness=128
 
 ## Encoder ile yazıcıyı açma
 
-Moonraker'da bir `[power Printer]` cihazı tanımlıysa, cihaz kapalıyken encoder butonunu 2 saniye basılı tutmak yazıcıyı açar. Cihaz adı varsayılan olarak `Printer`'dır ve `DWIN_POWER_DEVICE` ile değiştirilebilir. Bu özellik Klipper'ın hazır olmasına veya LCD UART bağlantısının mevcut olmasına bağlı değildir.
+Moonraker'da bir power device tanımlıysa encoder butonu, Klipper veya LCD UART offline durumdayken bile yazıcıyı açabilir. Cihaz adı varsayılan olarak `Printer`'dır ve `DWIN_POWER_DEVICE` ile değiştirilebilir. Basılı tutma süresi `DWIN_POWER_ON_HOLD_MS` ile belirlenir: varsayılan `2000` değeri 2 saniye basılı tutmayı gerektirir; `0` ise butona basıldığı anda power-on isteği gönderir.
 
 ## Güvenilirlik ve güvenlik davranışı
 
@@ -508,7 +524,7 @@ Tüm izole test suite'i:
 
 ```bash
 cd ~/KlipperDWIN
-.venv/bin/python -m unittest discover -s tests -v
+~/klipperdwin-env/bin/python -m unittest discover -s tests -v
 ```
 
 Testler Moonraker client/subscription katmanını, printer-state normalization'ı, capability detection'ı, menü davranışlarını, input routing'i, command handling'i, movement safety'yi, UART framing/render helper'larını, MMU verisini ve diğer regression alanlarını kapsar.
