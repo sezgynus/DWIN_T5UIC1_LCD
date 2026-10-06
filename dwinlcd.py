@@ -926,6 +926,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             key = entries[self.select_page.now][0]
             if key == 'PRINT':
                 self.checkkey = self.SelectFile
+                self._file_directory = ''
+                self._file_paths = ()
+                self.select_file.reset()
                 self._refresh_file_snapshot()
                 self.Draw_Print_File_Menu()
             elif key == 'PREPARE':
@@ -953,7 +956,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
         self.lcd.UpdateLCD()
 
     def _refresh_file_snapshot(self):
-        paths = self.pd.GetFiles()
+        paths = self.pd.GetDirectory(getattr(self, '_file_directory', ''))
         if self.pd.file_error:
             return False
         previous = getattr(self, '_file_paths', ())
@@ -967,9 +970,27 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
         self._file_view_sort_revision = self.pd.file_sort_revision
         return True
 
+    def _enter_file_directory(self, directory, select=None):
+        self._file_directory = directory
+        self._file_paths = ()
+        self.select_file.reset()
+        self.index_file = self.MROWS
+        if self._refresh_file_snapshot() and select in self._file_paths:
+            self.select_file.set(self._file_paths.index(select) + 1)
+            self.index_file = max(self.MROWS, self.select_file.now)
+        self.Draw_Print_File_Menu()
+        self.lcd.UpdateLCD()
+
     def HMI_SelectFile(self):
         event = self.get_encoder_state()
         if event == self.ENCODER_DIFF_NO or getattr(self, '_pending_start', None):
+            return
+        if event == self.ENCODER_DIFF_ENTER and self.select_file.now == 0:
+            directory = getattr(self, '_file_directory', '')
+            if directory:
+                self._enter_file_directory(directory.rpartition('/')[0], directory + '/')
+            else:
+                self.Goto_MainMenu()
             return
         if (self.pd.state.epoch != getattr(self, '_file_view_epoch', -1)
                 or self.pd.state.file_revision != getattr(self, '_file_view_revision', -1)
@@ -984,10 +1005,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
         elif event == self.ENCODER_DIFF_CCW:
             self.select_file.dec()
         elif event == self.ENCODER_DIFF_ENTER:
-            if self.select_file.now == 0:
-                self.Goto_MainMenu()
-                return
             path = self._file_paths[self.select_file.now - 1]
+            if path.endswith('/'):
+                self._enter_file_directory(path[:-1])
+                return
             try:
                 future = self.pd.openAndPrintFile(path)
             except ValueError as error:
@@ -1981,8 +2002,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
 
     # Display an SD item
     def Draw_SDItem(self, item, row=0):
-        fl = self._file_paths[item]
-        self.Draw_Menu_Line(row, self.ICON_File, fl)
+        path = self._file_paths[item]
+        is_dir = path.endswith('/')
+        label = path.rstrip('/').rsplit('/', 1)[-1]
+        self.Draw_Menu_Line(row, False if is_dir else self.ICON_File, label)
+        if is_dir:
+            y = self.MBASE(row)
+            self.lcd.Draw_Rectangle(1, 0xFFE0, 26, y-7, 35, y-3)
+            self.lcd.Draw_Rectangle(1, 0xFFE0, 26, y-3, 45, y+10)
 
     def Draw_Select_Highlight(self, sel):
         self.pd.HMI_flag.select_flag = sel
@@ -2028,7 +2055,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
 
     def Draw_Print_File_Menu(self):
         self.Clear_Title_Bar()
-        self.Draw_Title('Print file')
+        directory = getattr(self, '_file_directory', '')
+        self.Draw_Title(('Print: /' + directory)[-32:] if directory else 'Print file')
         self.Redraw_SD_List()
 
     def Draw_Prepare_Menu(self):

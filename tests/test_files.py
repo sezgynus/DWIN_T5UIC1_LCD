@@ -18,6 +18,7 @@ class FileTests(unittest.TestCase):
         result = display(snapshot())
         result.pd = self.backend(paths)
         result.lcd.DWIN_WIDTH = 272
+        result.pd.GetDirectory = lambda directory='': result.pd.GetFiles()
         result._refresh_file_snapshot()
         result._show_message = Mock()
         result.Goto_PrintProcess = Mock()
@@ -197,6 +198,7 @@ class MainsailFileSortTests(unittest.TestCase):
 
     def test_periodic_resort_preserves_selected_path_and_discards_old_enter(self):
         view=display(snapshot());view.pd=self.make({})
+        view.pd.GetDirectory = lambda directory='': view.pd.GetFiles()
         view._refresh_file_snapshot();view.select_file.set(2)
         view.checkkey=view.SelectFile
         view.pd.client.get.return_value={'result':{'value':{'sortBy':'filename','sortDesc':False}}}
@@ -218,3 +220,115 @@ class MainsailFileSortTests(unittest.TestCase):
         result._file_sort_refresh_at=0
         self.assertFalse(result.refresh_file_sort())
         self.assertEqual(result.file_sort_revision,revision)
+
+class DirectoryBrowserTests(unittest.TestCase):
+    def make(self):
+        result=printer(snapshot())
+        result.client.get=Mock(return_value={'result':{'value':{}}})
+        tree={
+            '':{'dirs':[{'dirname':'parts','modified':15,'size':40},{'dirname':'empty','modified':5,'size':0}],
+                'files':[{'filename':'root.gcode','modified':30,'size':5}]},
+            'parts':{'dirs':[{'dirname':'inner','modified':10,'size':0}],
+                'files':[{'filename':'b.gcode','modified':20,'size':10},{'filename':'A.gcode','modified':30,'size':20}]},
+            'parts/inner':{'dirs':[],'files':[{'filename':'deep.gcode','modified':1,'size':1}]},
+            'empty':{'dirs':[],'files':[]},
+        }
+        from urllib.parse import unquote
+        def get(path):
+            if path=='/server/files/list':
+                return {'result':[{'path':prefix+'/'+f['filename'] if prefix else f['filename'],**f}
+                    for prefix,data in tree.items() for f in data['files']]}
+            directory=unquote(path.split('path=')[1])[len('gcodes/'):]
+            if directory not in tree:raise MoonrakerError('Directory missing')
+            return {'result':tree[directory]}
+        result.getREST=Mock(side_effect=get)
+        view=display(snapshot());view.pd=result
+        view.checkkey=view.SelectFile;view._file_directory=''
+        view._refresh_file_snapshot()
+        view.get_encoder_state=Mock(return_value=view.ENCODER_DIFF_ENTER)
+        view._show_message=Mock();view.Goto_MainMenu=Mock()
+        return view,tree
+
+    def choose(self,view,path):
+        view.select_file.set(view._file_paths.index(path)+1)
+        view.HMI_SelectFile()
+
+    def test_root_directories_first_including_empty_directory(self):
+        view,_=self.make()
+        self.assertEqual(view._file_paths,('parts/','empty/','root.gcode'))
+        self.choose(view,'empty/')
+        self.assertEqual(view._file_directory,'empty');self.assertEqual(view._file_paths,())
+        self.assertIn('No files',[c.args[-1] for c in view.lcd.Draw_String.call_args_list])
+        view.HMI_SelectFile()
+        self.assertEqual(view._file_directory,'')
+        self.assertEqual(view._file_paths[view.select_file.now-1],'empty/')
+
+    def test_nested_navigation_back_and_full_path_print_submission(self):
+        view,_=self.make();view.pd.postREST=Mock(return_value=Future())
+        self.choose(view,'parts/');self.choose(view,'parts/inner/')
+        self.choose(view,'parts/inner/deep.gcode')
+        view.pd.postREST.assert_called_once_with('/printer/print/start',json={'filename':'parts/inner/deep.gcode'})
+        view._pending_start=None;view.select_file.reset();view.HMI_SelectFile()
+        self.assertEqual(view._file_directory,'parts')
+        self.assertEqual(view._file_paths[view.select_file.now-1],'parts/inner/')
+        view.select_file.reset();view.HMI_SelectFile()
+        self.assertEqual(view._file_directory,'')
+        view.select_file.reset();view.HMI_SelectFile();view.Goto_MainMenu.assert_called_once()
+
+    def test_sort_fields_and_direction_apply_within_each_directory(self):
+        view,_=self.make()
+        for field,asc in [('filename',('parts/A.gcode','parts/b.gcode')),
+                          ('modified',('parts/b.gcode','parts/A.gcode')),
+                          ('size',('parts/b.gcode','parts/A.gcode'))]:
+            for desc in (False,True):
+                view.pd.client.get.return_value={'result':{'value':{'sortBy':field,'sortDesc':desc}}}
+                view.pd.refresh_file_sort(force=True)
+                paths=view.pd.GetDirectory('parts')
+                self.assertEqual(paths,('parts/inner/',)+(tuple(reversed(asc)) if desc else asc))
+        self.assertEqual(view.pd.GetDirectory(''),('parts/','empty/','root.gcode'))
+
+    def test_cached_directory_resort_needs_no_file_request(self):
+        view,_=self.make();self.choose(view,'parts/')
+        requests=view.pd.getREST.call_count
+        view.pd.client.get.return_value={'result':{'value':{'sortBy':'modified','sortDesc':False}}}
+        view.pd.refresh_file_sort(force=True)
+        view._refresh_file_snapshot()
+        self.assertEqual(view.pd.getREST.call_count,requests)
+        self.assertEqual(view._file_paths,('parts/inner/','parts/b.gcode','parts/A.gcode'))
+
+    def test_removed_selected_file_discards_enter_and_returns_to_back(self):
+        view,tree=self.make();self.choose(view,'parts/')
+        view.select_file.set(view._file_paths.index('parts/A.gcode')+1)
+        tree['parts']['files']=[f for f in tree['parts']['files'] if f['filename']!='A.gcode']
+        data=snapshot();data['file_revision']=view.pd.state.file_revision+1
+        view.pd.subscription.snapshot.return_value=data;view.pd.update_variable()
+        view.pd.openAndPrintFile=Mock();view.HMI_SelectFile()
+        self.assertEqual(view.select_file.now,0)
+        view.pd.openAndPrintFile.assert_not_called()
+        self.assertNotIn('parts/A.gcode',view._file_paths)
+
+    def test_removed_directory_allows_parent_back_without_printing(self):
+        view,tree=self.make();self.choose(view,'empty/');del tree['empty']
+        data=snapshot();data['file_revision']=view.pd.state.file_revision+1
+        view.pd.subscription.snapshot.return_value=data;view.pd.update_variable()
+        self.assertFalse(view._refresh_file_snapshot())
+        view.HMI_SelectFile();self.assertEqual(view._file_directory,'')
+        view.pd.sendGCode.assert_not_called()
+
+    def test_folder_icon_and_labels_show_only_basename(self):
+        view,_=self.make();self.choose(view,'parts/')
+        view.Draw_Menu_Line=Mock();view.lcd.reset_mock()
+        view.Draw_SDItem(0,0)
+        view.Draw_Menu_Line.assert_called_once_with(0,False,'inner')
+        self.assertEqual(view.lcd.Draw_Rectangle.call_count,2)
+        view.Draw_SDItem(1,1)
+        self.assertEqual(view.Draw_Menu_Line.call_args.args,(1,view.ICON_File,'A.gcode'))
+
+    def test_unsafe_directory_and_entry_names_are_rejected(self):
+        view,_=self.make()
+        for path in ('../secret','parts/../secret','/parts','parts//inner'):
+            with self.assertRaises(ValueError):view.pd.GetDirectory(path)
+        view.pd._directory_cache.clear()
+        view.pd.getREST=Mock(return_value={'result':{'dirs':[{'dirname':'../secret'}],'files':[]}})
+        self.assertEqual(view.pd.GetDirectory(''),())
+        self.assertIsNotNone(view.pd.file_error)

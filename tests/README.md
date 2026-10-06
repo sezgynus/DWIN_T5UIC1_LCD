@@ -165,3 +165,8 @@ rendering with distinct selected/unselected colors.
 File sorting regressions cover saved Mainsail name/date/size preferences in both
 directions, newest-first fallback, malformed timestamps/settings, bounded polling,
 cached file lists, selected-path preservation and stale Enter rejection on resort.
+
+Directory browsing regressions cover empty folders, nested entry/parent Back,
+folder-first sorting in both directions at each level, cached resorting, basename
+labels and folder icons, full-path print submission, deleted files/directories,
+stale Enter rejection and invalid path/entry validation.

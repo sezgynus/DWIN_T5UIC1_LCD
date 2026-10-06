@@ -4,6 +4,7 @@ import math
 import re
 import time
 import uuid
+from urllib.parse import quote
 from collections.abc import Mapping
 from concurrent.futures import Future
 from threading import Lock
@@ -243,6 +244,7 @@ class PrinterData:
         self.file_sort = ('modified', True)
         self.file_sort_revision = 0
         self._file_sort_refresh_at = 0.0
+        self._directory_cache = {}
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
         self.probe_wizard = ProbeWizard(self)
         self.screws_tilt = ScrewsTiltSession(self)
@@ -484,18 +486,19 @@ class PrinterData:
         self._sort_files()
         return True
 
-    def _sort_files(self):
+    def _sort_files(self, entries=None):
+        items = self.files if entries is None else entries
         field, descending = self.file_sort
         # Deterministic ties and full paths preserve distinct nested files.
-        self.files.sort(key=lambda item: (item['path'].casefold(), item['path']))
+        items.sort(key=lambda item: (item['path'].casefold(), item['path']))
         def value(item):
             if field == 'filename':
-                return item['path'].rsplit('/', 1)[-1].casefold()
+                return item['path'].rstrip('/').rsplit('/', 1)[-1].casefold()
             number = item.get(field)
             if isinstance(number, (int, float)) and not isinstance(number, bool) and math.isfinite(number):
                 return (True, number)
             return (False, 0)
-        self.files.sort(key=value, reverse=descending)
+        items.sort(key=value, reverse=descending)
 
     def GetFiles(self, refresh=False):
         self.refresh_file_sort()
@@ -517,6 +520,39 @@ class PrinterData:
                 self.file_error = str(exc)
                 self._files_loaded = False
         return tuple(item['path'] for item in self.files)
+
+    def GetDirectory(self, directory=''):
+        self.GetFiles()
+        if self.file_error:
+            return ()
+        if directory and any(part in ('', '.', '..') for part in directory.split('/')):
+            raise ValueError('Invalid directory path')
+        key = (self.state.epoch, self.state.file_revision, directory)
+        try:
+            if key not in self._directory_cache:
+                response = self.getREST('/server/files/directory?path=' + quote('gcodes/' + directory, safe=''))
+                data = response['result']
+                entries = []
+                for group, name_key, is_dir in (('dirs', 'dirname', True), ('files', 'filename', False)):
+                    for item in data[group]:
+                        name = item[name_key]
+                        if not isinstance(name, str) or not name or '/' in name or name in ('.', '..'):
+                            raise ValueError('Invalid directory entry')
+                        path = (directory + '/' if directory else '') + name
+                        entries.append(dict(item, path=path + ('/' if is_dir else ''), isDirectory=is_dir))
+                if len({item['path'] for item in entries}) != len(entries):
+                    raise ValueError('Duplicate directory entries')
+                # Keep only the current revision, retaining directories visited in it.
+                self._directory_cache = {k: v for k, v in self._directory_cache.items() if k[:2] == key[:2]}
+                self._directory_cache[key] = entries
+            entries = list(self._directory_cache[key])
+            self._sort_files(entries)
+            entries.sort(key=lambda item: not item['isDirectory'])
+            return tuple(item['path'] for item in entries)
+        except (MoonrakerError, KeyError, TypeError, ValueError) as error:
+            self.file_error = str(error)
+            self._files_loaded = False
+            return ()
 
     @staticmethod
     def _spool_remaining_percent(spool):
