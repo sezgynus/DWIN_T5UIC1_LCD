@@ -147,3 +147,74 @@ class FileTests(unittest.TestCase):
         self.assertFalse(result._files_loaded)
         with self.assertRaises(ValueError):
             result.openAndPrintFile('old.gcode')
+
+class MainsailFileSortTests(unittest.TestCase):
+    def make(self, settings):
+        result = printer(snapshot())
+        result.client.get = Mock(return_value={'result': {'value': settings}})
+        result.getREST = Mock(return_value={'result': [
+            {'path': 'folder/b.gcode', 'modified': 10, 'size': 30},
+            {'path': 'A.gcode', 'modified': 30, 'size': 10},
+            {'path': 'c.gcode', 'modified': 20, 'size': 20},
+        ]})
+        return result
+
+    def test_default_is_newest_first_and_cache_avoids_repeat_requests(self):
+        result=self.make({})
+        self.assertEqual(result.GetFiles(), ('A.gcode','c.gcode','folder/b.gcode'))
+        result.GetFiles()
+        result.getREST.assert_called_once()
+        result.client.get.assert_called_once_with('/server/database/item?namespace=mainsail&key=view.gcodefiles')
+
+    def test_saved_fields_and_both_directions(self):
+        for field,ascending in [('filename',('A.gcode','folder/b.gcode','c.gcode')),
+                                ('modified',('folder/b.gcode','c.gcode','A.gcode')),
+                                ('size',('A.gcode','c.gcode','folder/b.gcode'))]:
+            for desc in (False,True):
+                result=self.make({'sortBy':field,'sortDesc':desc})
+                self.assertEqual(result.GetFiles(),tuple(reversed(ascending)) if desc else ascending)
+
+    def test_invalid_missing_or_failed_database_defaults_to_modified(self):
+        for setting in (None,[],{'sortBy':'unknown','sortDesc':True},
+                        {'sortBy':'filename','sortDesc':'false'}):
+            result=self.make(setting)
+            self.assertEqual(result.GetFiles(),('A.gcode','c.gcode','folder/b.gcode'))
+        result=self.make({})
+        result.client.get.side_effect=MoonrakerError('missing namespace')
+        self.assertEqual(result.GetFiles(),('A.gcode','c.gcode','folder/b.gcode'))
+        self.assertIsNone(result.file_error)
+
+    def test_numeric_invalid_values_and_ties_are_deterministic(self):
+        result=self.make({})
+        result.getREST.return_value={'result':[
+            {'path':'z.gcode','modified':float('nan')},
+            {'path':'b.gcode','modified':20},
+            {'path':'a.gcode','modified':20},
+            {'path':'missing.gcode'},
+            {'path':'bool.gcode','modified':True},
+        ]}
+        self.assertEqual(result.GetFiles(),('a.gcode','b.gcode','bool.gcode','missing.gcode','z.gcode'))
+
+    def test_periodic_resort_preserves_selected_path_and_discards_old_enter(self):
+        view=display(snapshot());view.pd=self.make({})
+        view._refresh_file_snapshot();view.select_file.set(2)
+        view.checkkey=view.SelectFile
+        view.pd.client.get.return_value={'result':{'value':{'sortBy':'filename','sortDesc':False}}}
+        view.pd._file_sort_refresh_at=0
+        self.assertTrue(view.pd.refresh_file_sort())
+        view.get_encoder_state=Mock(return_value=view.ENCODER_DIFF_ENTER)
+        view.pd.openAndPrintFile=Mock()
+        view.HMI_SelectFile()
+        self.assertEqual(view._file_paths[view.select_file.now-1],'c.gcode')
+        self.assertEqual(view.select_file.now,3)
+        view.pd.openAndPrintFile.assert_not_called()
+        view.pd.getREST.assert_called_once()
+
+    def test_poll_interval_and_unchanged_sort_do_not_bump_revision(self):
+        result=self.make({'sortBy':'size','sortDesc':False});result.GetFiles()
+        revision=result.file_sort_revision
+        self.assertFalse(result.refresh_file_sort())
+        result.client.get.assert_called_once()
+        result._file_sort_refresh_at=0
+        self.assertFalse(result.refresh_file_sort())
+        self.assertEqual(result.file_sort_revision,revision)

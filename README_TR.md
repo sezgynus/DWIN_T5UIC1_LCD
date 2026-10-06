@@ -206,7 +206,7 @@ Mevcut uygulama canlı exit-LED renkleri için `unit0_mmu_exit_leds` nesnesine a
 
 <p align="center"><img src="docs/assets/screens/print-file.png" width="360" alt="Baskı dosyası tarayıcısı"></p>
 
-Dosya tarayıcısı Moonraker dosya listesini kullanır ve encoder navigasyonunun akıcı kalması için sıralanmış, cache'lenmiş bir path snapshot'ı tutar.
+Dosya tarayıcısı Moonraker dosya listesini kullanır ve encoder navigasyonunun akıcı kalması için önbellekte bir yol listesi tutar. Mainsail'in Moonraker veritabanına kaydettiği `view.gcodefiles.sortBy` ve `view.gcodefiles.sortDesc` tercihlerini beş saniyede bir okur. Dosya adı (büyük/küçük harf duyarsız), son değiştirilme tarihi ve dosya boyutu her iki yönde desteklenir. Eksik, geçersiz veya erişilemeyen ayarlarda ve desteklenmeyen metadata sıralama alanlarında son değiştirilme tarihi kullanılır; en yeni dosya üsttedir. Alt klasörlerdeki dosyalar tam yollarıyla tek listede kalır; klasörler gezilemez. Ayarlar yalnızca okunur; LCD Mainsail tercihlerini değiştirmez.
 
 Mümkün olduğunda seçim liste yenilemeleri sırasında korunur. Dosyaların silinmesi veya sırasının değişmesi cursor'u sessizce alakasız bir girdiye taşımaz. Baskı başlatma çift basmaya karşı korunur ve baskı ekranını açmadan önce hem komut kabulünü hem de subscription üzerinden gelen print-state doğrulamasını bekler.
 

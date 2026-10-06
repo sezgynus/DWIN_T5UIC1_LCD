@@ -240,6 +240,9 @@ class PrinterData:
         self._files_loaded = False
         self._file_epoch = -1
         self._file_revision = -1
+        self.file_sort = ('modified', True)
+        self.file_sort_revision = 0
+        self._file_sort_refresh_at = 0.0
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
         self.probe_wizard = ProbeWizard(self)
         self.screws_tilt = ScrewsTiltSession(self)
@@ -457,7 +460,45 @@ class PrinterData:
         # Bootstrap and reconnection run on the subscription thread.
         return self.update_variable()
 
+    def refresh_file_sort(self, force=False):
+        now = time.monotonic()
+        if not force and now < self._file_sort_refresh_at:
+            return False
+        self._file_sort_refresh_at = now + 5.0
+        try:
+            response = self.client.get('/server/database/item?namespace=mainsail&key=view.gcodefiles')
+            values = response.get('result', {}).get('value', {})
+            if not isinstance(values, Mapping):
+                raise ValueError('Invalid file sort settings')
+            field = values.get('sortBy', 'modified')
+            descending = values.get('sortDesc', True)
+            if field not in ('filename', 'modified', 'size') or not isinstance(descending, bool):
+                field, descending = 'modified', True
+            preference = (field, descending)
+        except (MoonrakerError, KeyError, TypeError, ValueError, AttributeError):
+            preference = ('modified', True)
+        if preference == self.file_sort:
+            return False
+        self.file_sort = preference
+        self.file_sort_revision += 1
+        self._sort_files()
+        return True
+
+    def _sort_files(self):
+        field, descending = self.file_sort
+        # Deterministic ties and full paths preserve distinct nested files.
+        self.files.sort(key=lambda item: (item['path'].casefold(), item['path']))
+        def value(item):
+            if field == 'filename':
+                return item['path'].rsplit('/', 1)[-1].casefold()
+            number = item.get(field)
+            if isinstance(number, (int, float)) and not isinstance(number, bool) and math.isfinite(number):
+                return (True, number)
+            return (False, 0)
+        self.files.sort(key=value, reverse=descending)
+
     def GetFiles(self, refresh=False):
+        self.refresh_file_sort()
         if not self._files_loaded or refresh:
             try:
                 files = self.getREST('/server/files/list')['result']
@@ -468,7 +509,8 @@ class PrinterData:
                 paths = [item['path'] for item in files]
                 if len(paths) != len(set(paths)):
                     raise ValueError('Duplicate file paths')
-                self.files = sorted(files, key=lambda item: item['path'])
+                self.files = list(files)
+                self._sort_files()
                 self.file_error = None
                 self._files_loaded = True
             except (MoonrakerError, KeyError, TypeError, ValueError) as exc:
@@ -537,6 +579,7 @@ class PrinterData:
     def update_variable(self):
         self.check_command_results()
         presets_changed = self.refresh_mainsail_presets()
+        sort_changed = self.refresh_file_sort() if self._files_loaded else False
         try:
             state = PrinterState.from_snapshot(self.subscription.snapshot())
             if not state.ready:
@@ -654,7 +697,7 @@ class PrinterData:
             self.connection_error = str(exc)
             return False
         self.connection_error = None
-        changed = state != self.state or spoolman_changed or presets_changed
+        changed = state != self.state or spoolman_changed or presets_changed or sort_changed
         self.state = state
         self.capabilities = caps
         self._apply_capabilities(caps)

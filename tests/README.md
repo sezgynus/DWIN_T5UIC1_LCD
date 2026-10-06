@@ -161,3 +161,7 @@ probe, bounded menu selection and UART reconnect without measurement replay.
 MMU placeholder regressions verify Back-only navigation with and without bed mesh,
 return to the same Home selection, no G-code on entry/exit and bounded reel icon
 rendering with distinct selected/unselected colors.
+
+File sorting regressions cover saved Mainsail name/date/size preferences in both
+directions, newest-first fallback, malformed timestamps/settings, bounded polling,
+cached file lists, selected-path preservation and stale Enter rejection on resort.

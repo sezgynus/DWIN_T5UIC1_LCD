@@ -206,7 +206,7 @@ The current Home-screen implementation subscribes to `unit0_mmu_exit_leds` for l
 
 <p align="center"><img src="docs/assets/screens/print-file.png" width="360" alt="Print file browser"></p>
 
-The file browser uses Moonraker's file list and keeps a cached, sorted path snapshot for responsive encoder navigation.
+The file browser uses Moonraker's file list and keeps a cached path snapshot for responsive encoder navigation. It reads Mainsail's saved `view.gcodefiles.sortBy` and `view.gcodefiles.sortDesc` preferences from the Moonraker database every five seconds. Filename (case-insensitive), last-modified time and file size are supported in either direction. Missing, invalid or unavailable settings, and unsupported metadata sort fields, fall back to last-modified time with the newest file first. Files from subfolders remain in one flat list with their full paths; folders are not navigable. Settings are read-only; the LCD does not change Mainsail preferences.
 
 Selection is preserved across list refreshes where possible. Deleting/reordering files cannot silently move the cursor to an unrelated entry. Print start is guarded against duplicate presses and waits for both command acceptance and subscribed print-state confirmation before opening the print screen.
 
