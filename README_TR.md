@@ -52,6 +52,12 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - systemd servis örneği
 - Python unit/regression testleri
 
+## Proje durumu
+
+| ✅ Şu anda kullanılabilir | 🚧 Yapılacaklar |
+|---|---|
+| Doğrudan Moonraker HTTP + WebSocket entegrasyonu<br>Capability tabanlı menüler ve canlı yazıcı dashboard'u<br>Baskı dosyası tarayıcısı, print-state takibi ve baskı kontrolleri<br>Tune, Prepare, Move / Live Jog ve runtime Motion kontrolleri<br>Temperature kontrolleri ve kalıcı PLA/ABS presetleri<br>Uyumlu bir `M355` macro üzerinden Case Light desteği<br>Gate renkleri ve exit-LED state'i ile Happy Hare MMU görselleştirmesi<br>MMU gate başına Spoolman kalan filament yüzdesi<br>Moonraker power device üzerinden encoder butonuyla yazıcıyı açma<br>İnteraktif kurulum/yapılandırma, systemd servisi ve Moonraker Update Manager entegrasyonu<br>UART recovery, kontrollü komut yürütme ve regression testleri | **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.<br><br>**Bed Mesh Visualization & Control** — grafiksel `bed_mesh` gösterimi, ölçülen Z değerlerinin görselleştirilmesi, aktif mesh/profile bilgisi ve Bed Mesh işlemlerine LCD üzerinden erişim.<br><br>**Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.<br><br>**Happy Hare MMU Control** — mevcut Home-screen görselleştirmesine ek olarak ayrı MMU kontrol menüsü.<br><br>**Happy Hare Multi-Unit Support** — mevcut sabit `unit0_mmu_exit_leds` kaynağı yerine dinamik MMU unit ve LED-source keşfi.<br><br>**Hardware Validation** — fiziksel testlerin ek DWIN T5UIC1 ve Klipper konfigürasyonlarında genişletilmesi. |
+
 ## Kurulum
 
 ### Gereksinimler
@@ -274,23 +280,7 @@ Motion ekranı `SET_VELOCITY_LIMIT` üzerinden Klipper runtime velocity limitler
 
 Desteklenmeyen alanlar gösterilmez. Bunlar runtime değişiklikleridir; ekran bunları otomatik olarak printer configuration içine kalıcı yazmaz.
 
-### 11. Probe calibration sihirbazı
-
-Gerekli probe/manual-probe object'leri mevcut olduğunda Control menüsünde yönlendirmeli probe calibration ekranı görünür.
-
-Sihirbaz adımları bilinçli olarak ayırır:
-
-- `PROBE_CALIBRATE` başlat
-- 0.1 mm Raise / Lower
-- 0.01 mm Raise / Lower
-- Accept
-- Abort
-- yalnızca beklenen probe offset pending configuration change ise Save ve Klipper restart
-- kaydetmeden çık
-
-UI bir HTTP success yanıtının fiziksel/manual-probe state'inin zaten değiştiği anlamına geldiğini varsaymaz; subscription state doğrulamasını bekler.
-
-### 12. Case Light
+### 11. Case Light
 
 <p align="center"><img src="docs/assets/screens/case-light.png" width="360" alt="Case Light ekranı"></p>
 
@@ -304,7 +294,7 @@ Sayfada:
 
 bulunur. Brightness içeride macro'nun 0–255 ölçeğine dönüştürülür.
 
-### 13. Info
+### 12. Info
 
 <p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info ekranı"></p>
 

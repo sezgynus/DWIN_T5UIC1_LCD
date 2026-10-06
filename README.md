@@ -38,7 +38,6 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Optional Live Jog mode
 - Runtime motion tuning for max velocity, max acceleration, square-corner velocity and minimum cruise ratio
 - Runtime Z-offset control
-- Probe calibration wizard with explicit TESTZ steps and guarded SAVE_CONFIG flow
 - PLA/ABS preset editing and persistent JSON storage
 - Optional case-light UI through an M355 macro
 - Happy Hare MMU visualization on the home screen
@@ -51,6 +50,12 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Encoder acceleration with event-queue based input routing
 - systemd service example
 - Python unit/regression tests
+
+## Project status
+
+| ✅ Available now | 🚧 Roadmap |
+|---|---|
+| Native Moonraker HTTP + WebSocket integration<br>Capability-driven menus and live printer dashboard<br>Print browser, print-state tracking and print controls<br>Tune, Prepare, Move / Live Jog and runtime Motion controls<br>Temperature controls and persistent PLA/ABS presets<br>Case Light support through a compatible `M355` macro<br>Happy Hare MMU visualization with gate colors and exit-LED state<br>Spoolman remaining-filament percentage per MMU gate<br>Encoder-button printer power-on through a Moonraker power device<br>Interactive installation/configuration, systemd service and Moonraker Update Manager integration<br>UART recovery, guarded command execution and regression tests | **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.<br><br>**Bed Mesh Visualization & Control** — graphical `bed_mesh` display, probed Z-value visualization, active mesh/profile information and LCD access to Bed Mesh operations.<br><br>**Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.<br><br>**Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.<br><br>**Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.<br><br>**Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations. |
 
 ## Installation
 
@@ -274,23 +279,7 @@ The Motion screen edits Klipper's runtime velocity limits through `SET_VELOCITY_
 
 Unsupported fields are omitted. These are runtime changes; the screen does not automatically persist them into printer configuration.
 
-### 11. Probe calibration wizard
-
-When the required probe/manual-probe objects are available, Control exposes a guided probe calibration screen.
-
-The wizard deliberately separates each step:
-
-- start `PROBE_CALIBRATE`
-- Raise / Lower by 0.1 mm
-- Raise / Lower by 0.01 mm
-- Accept
-- Abort
-- Save and restart Klipper only when the expected probe offset is the pending configuration change
-- leave unsaved
-
-The UI never assumes an HTTP success means the physical/manual-probe state already changed; it waits for subscribed state confirmation.
-
-### 12. Case Light
+### 11. Case Light
 
 <p align="center"><img src="docs/assets/screens/case-light.png" width="360" alt="Case Light screen"></p>
 
@@ -304,7 +293,7 @@ The page provides:
 
 Brightness is converted to the macro's 0–255 scale internally.
 
-### 13. Info
+### 12. Info
 
 <p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info screen"></p>
 
