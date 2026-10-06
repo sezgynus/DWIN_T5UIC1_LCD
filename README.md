@@ -177,7 +177,7 @@ Each section below describes the current screen behavior using captures from the
 
 <p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN home screen"></p>
 
-The home screen is the main navigation hub. It exposes Print, Prepare, Control and either Leveling or Info depending on discovered printer capabilities.
+The home screen is the main navigation hub, with four icons per page. With bed-mesh calibration available, the first page contains Print, Prepare, Control and Leveling; rotating the encoder past Leveling opens the second page and selects Info. Rotating back returns to Leveling. Without calibration support, Info is the fourth icon on the first page. Empty slots cannot be selected. The logo/MMU panel and live dashboard remain fixed while paging; returning from Info restores its Home page.
 
 A compact live dashboard remains visible below the menu area and reports the current hotend/bed state when available, print-speed factor, fan, flow, runtime Z offset and live X/Y/Z coordinates.
 

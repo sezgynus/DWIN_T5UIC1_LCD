@@ -147,3 +147,8 @@ Physical bed mesh checks:
 
 These isolated tests do not verify physical probing, LCD appearance, service
 lifecycle or live-server persistence.
+
+Home navigation regressions cover four-icon paging, forward/reverse page boundaries,
+empty-slot rejection, Leveling and Info routing, return to the originating Home
+page or Control menu, capability removal and preservation of the MMU/dashboard
+areas while paging.

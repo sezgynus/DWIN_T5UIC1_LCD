@@ -177,7 +177,7 @@ Aşağıdaki her bölüm mevcut ekran davranışını açıklar. Temsili görsel
 
 <p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN ana ekranı"></p>
 
-Ana ekran temel navigasyon merkezidir. Print, Prepare, Control ve keşfedilen yazıcı capability'lerine göre Leveling veya Info girişlerini sunar.
+Ana ekran, sayfa başına dört ikon sunan temel navigasyon merkezidir. Bed mesh kalibrasyonu mevcutsa ilk sayfada Print, Prepare, Control ve Leveling bulunur; enkoderi Leveling'den sonra çevirmek ikinci sayfayı açar ve Info'yu seçer. Geri çevirmek Leveling'e döner. Kalibrasyon desteği yoksa Info ilk sayfanın dördüncü ikonudur. Boş alanlar seçilemez. Sayfa geçişinde logo/MMU paneli ve canlı durum alanı sabit kalır; Info'dan dönüş aynı Home sayfasını açar.
 
 Menü alanının altında kalan kompakt canlı dashboard; mevcutsa hotend/bed durumunu, baskı hız faktörünü, fanı, flow'u, runtime Z offset'i ve canlı X/Y/Z koordinatlarını gösterir.
 

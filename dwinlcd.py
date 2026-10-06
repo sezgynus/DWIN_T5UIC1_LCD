@@ -876,68 +876,71 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
         if not self._print_error_visible:
             self.Draw_Status_Area(with_update)
 
+    def _home_entries(self):
+        entries = [('PRINT', 'Print', self.ICON_Print_0, self.ICON_Print_1),
+                   ('PREPARE', 'Prepare', self.ICON_Prepare_0, self.ICON_Prepare_1),
+                   ('CONTROL', 'Control', self.ICON_Control_0, self.ICON_Control_1)]
+        if self.pd.HAS_ONESTEP_LEVELING:
+            entries.append(('LEVEL', 'Leveling', self.ICON_Leveling_0, self.ICON_Leveling_1))
+        entries.append(('INFO', 'Info', self.ICON_Info_0, self.ICON_Info_1))
+        return tuple(entries)
+
+    def _draw_home_page(self):
+        entries = self._home_entries()
+        self.select_page.set(min(self.select_page.now, len(entries)-1))
+        page = self.select_page.now // 4
+        # Clear only navigation: the logo/MMU and live dashboard stay in place.
+        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 126, 271, self.STATUS_Y-1)
+        for index in range(page*4, min(len(entries), page*4+4)):
+            _, label, normal, selected = entries[index]
+            slot = index % 4
+            x, y = (17 if slot % 2 == 0 else 145), (130 if slot < 2 else 246)
+            active = index == self.select_page.now
+            self.lcd.ICON_Show(self.ICON, selected if active else normal, x, y)
+            if active:
+                self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, y, x+109, y+99)
+            self._draw_menu_text(label, x+(109-len(label)*8)//2, y+71)
+        pages = (len(entries)+3)//4
+        if pages > 1:
+            self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
+                                 self.lcd.Color_Bg_Black, 127, 347, str(page+1)+'/'+str(pages))
+
     def HMI_MainMenu(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_NO:
             return
-        if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if(self.select_page.inc(4)):
-                if self.select_page.now == 0:
-                    self.ICON_Print()
-                if self.select_page.now == 1:
-                    self.ICON_Print()
-                    self.ICON_Prepare()
-                if self.select_page.now == 2:
-                    self.ICON_Prepare()
-                    self.ICON_Control()
-                if self.select_page.now == 3:
-                    self.ICON_Control()
-                    if self.pd.HAS_ONESTEP_LEVELING:
-                        self.ICON_Leveling(True)
-                    else:
-                        self.ICON_StartInfo(True)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_page.dec()):
-                if self.select_page.now == 0:
-                    self.ICON_Print()
-                    self.ICON_Prepare()
-                elif self.select_page.now == 1:
-                    self.ICON_Prepare()
-                    self.ICON_Control()
-                elif self.select_page.now == 2:
-                    self.ICON_Control()
-                    if self.pd.HAS_ONESTEP_LEVELING:
-                        self.ICON_Leveling(False)
-                    else:
-                        self.ICON_StartInfo(False)
-                elif self.select_page.now == 3:
-                    if self.pd.HAS_ONESTEP_LEVELING:
-                        self.ICON_Leveling(True)
-                    else:
-                        self.ICON_StartInfo(True)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
-            if self.select_page.now == 0:  # Print File
+        entries = self._home_entries()
+        self.select_page.set(min(self.select_page.now, len(entries)-1))
+        previous = self.select_page.now
+        if event == self.ENCODER_DIFF_CW:
+            self.select_page.inc(len(entries))
+        elif event == self.ENCODER_DIFF_CCW:
+            self.select_page.dec()
+        elif event == self.ENCODER_DIFF_ENTER:
+            key = entries[self.select_page.now][0]
+            if key == 'PRINT':
                 self.checkkey = self.SelectFile
                 self._refresh_file_snapshot()
                 self.Draw_Print_File_Menu()
-            if self.select_page.now == 1:  # Prepare
+            elif key == 'PREPARE':
                 self.checkkey = self.Prepare
                 self.select_prepare.reset()
                 self.index_prepare = self.MROWS
                 self.Draw_Prepare_Menu()
-            if self.select_page.now == 2:  # Control
+            elif key == 'CONTROL':
                 self.checkkey = self.Control
                 self.select_control.reset()
                 self.index_control = self.MROWS
                 self.Draw_Control_Menu()
-            if self.select_page.now == 3:  # Leveling or Info
-                if self.pd.HAS_ONESTEP_LEVELING:
-                    self.checkkey = self.Leveling
-                    self.HMI_Leveling()
-                else:
-                    self.checkkey = self.Info
-                    self.Draw_Info_Menu()
-
+            elif key == 'LEVEL':
+                self.checkkey = self.Leveling
+                self.HMI_Leveling()
+            elif key == 'INFO':
+                self._info_origin = self.MainMenu
+                self.checkkey = self.Info
+                self.Draw_Info_Menu()
+        if event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW) and previous != self.select_page.now:
+            self._draw_home_page()
         self.lcd.UpdateLCD()
 
     def _refresh_file_snapshot(self):
@@ -1098,6 +1101,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
                 self.pd.query_case_light()
                 self.Draw_Case_Light_Menu()
             if (self.select_control.now == self.CONTROL_CASE_INFO):  # Info
+                self._info_origin = self.Control
                 self.checkkey = self.Info
                 self.Draw_Info_Menu()
 
@@ -1117,12 +1121,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             self.Draw_Info_Menu()
         elif event == self.ENCODER_DIFF_ENTER:
             self._info_scroll = 0
-            if self.pd.HAS_ONESTEP_LEVELING:
+            if getattr(self, '_info_origin', self.MainMenu) == self.Control:
                 self.checkkey = self.Control
                 self.select_control.set(self.CONTROL_CASE_INFO)
                 self.Draw_Control_Menu()
             else:
-                self.select_page.set(3)
+                self.select_page.set(next(i for i, entry in enumerate(self._home_entries()) if entry[0] == 'INFO'))
                 self.Goto_MainMenu()
         self.lcd.UpdateLCD()
 
@@ -2200,13 +2204,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             self.Draw_MMU_Status()
         self._drawn_mmu_state = self.pd.mmu
 
-        self.ICON_Print()
-        self.ICON_Prepare()
-        self.ICON_Control()
-        if self.pd.HAS_ONESTEP_LEVELING:
-            self.ICON_Leveling(self.select_page.now == 3)
-        else:
-            self.ICON_StartInfo(self.select_page.now == 3)
+        self._draw_home_page()
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
