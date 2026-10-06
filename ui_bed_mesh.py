@@ -32,6 +32,51 @@ def point_label(z, columns):
 
 
 class BedMeshMixin:
+    def _mesh_menu_entries(self):
+        entries = [('BACK', 'Back', self.ICON_Back)]
+        if self.pd.capabilities.bed_mesh:
+            if self.pd.capabilities.probe:
+                entries.append(('CALIBRATE', 'Bed Mesh Calibrate', self.ICON_HotendTemp))
+            entries.append(('VIEWER', 'Mesh Viewer', self.ICON_HotendTemp))
+        return tuple(entries)
+
+    def Draw_Bed_Mesh_Menu(self):
+        self.Clear_Main_Window()
+        self.Draw_Title('Bed Mesh')
+        entries = self._mesh_menu_entries()
+        choice = min(getattr(self, '_mesh_menu_selection', 0), len(entries)-1)
+        self._mesh_menu_selection = choice
+        for index, (_, label, icon) in enumerate(entries):
+            self.Draw_Menu_Line(index, icon, label)
+        self.Draw_Menu_Cursor(choice)
+        self.lcd.UpdateLCD()
+
+    def HMI_Bed_Mesh_Menu(self):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_NO:
+            return
+        entries = self._mesh_menu_entries()
+        choice = min(getattr(self, '_mesh_menu_selection', 0), len(entries)-1)
+        if event == self.ENCODER_DIFF_CW:
+            self._mesh_menu_selection = min(len(entries)-1, choice+1)
+        elif event == self.ENCODER_DIFF_CCW:
+            self._mesh_menu_selection = max(0, choice-1)
+        elif event == self.ENCODER_DIFF_ENTER:
+            key = entries[choice][0]
+            if key == 'BACK':
+                self.Goto_MainMenu()
+            elif key == 'CALIBRATE':
+                self._start_bed_mesh(self.BedMeshMenu)
+            elif key == 'VIEWER':
+                self._mesh_profile_selection = 0
+                self._open_mesh_profiles()
+            return
+        self.Draw_Bed_Mesh_Menu()
+
+    def _return_to_mesh_menu(self):
+        self.checkkey = self.BedMeshMenu
+        self.Draw_Bed_Mesh_Menu()
+
     def _mesh_text(self, text, y, size=8, color=None):
         text = T5UIC1_LCD._panel_text(text)[:272 // size]
         self.lcd.Draw_String(False, False, self.lcd.font6x12 if size == 6 else self.lcd.font8x16,
@@ -149,11 +194,15 @@ class BedMeshMixin:
         self.Draw_Bed_Mesh()
 
     def HMI_Leveling(self):
-        self._start_bed_mesh(self.MainMenu)
+        self._mesh_menu_selection = 0
+        self._mesh_confirmation = None
+        self._return_to_mesh_menu()
 
     def _return_from_mesh(self):
         self._mesh_confirmation = None
-        if getattr(self, '_mesh_origin', self.Prepare) == self.MainMenu:
+        if getattr(self, '_mesh_origin', self.BedMeshMenu) == self.BedMeshMenu:
+            self._return_to_mesh_menu()
+        elif getattr(self, '_mesh_origin', self.Prepare) == self.MainMenu:
             self.Goto_MainMenu()
         elif getattr(self, '_mesh_origin', self.Prepare) == self.Control:
             self.checkkey = self.Control
@@ -170,8 +219,7 @@ class BedMeshMixin:
             return
         if session.phase != 'listed':
             if event == self.ENCODER_DIFF_ENTER:
-                self.checkkey = self.Control
-                self.Draw_Control_Menu()
+                self._return_to_mesh_menu()
             return
         choice = getattr(self, '_mesh_profile_selection', 0)
         if event == self.ENCODER_DIFF_CW:
@@ -180,8 +228,7 @@ class BedMeshMixin:
             self._mesh_profile_selection = max(0, choice-1)
         elif event == self.ENCODER_DIFF_ENTER:
             if choice == 0:
-                self.checkkey = self.Control
-                self.Draw_Control_Menu()
+                self._return_to_mesh_menu()
                 return
             name = session.entries()[choice-1]
             self._open_mesh_profiles(name, view_after=True)
@@ -244,7 +291,7 @@ class BedMeshMixin:
                 if view_after:
                     try:
                         session.view(name)
-                        self._mesh_origin = self.Control
+                        self._mesh_origin = self.BedMeshMenu
                         self.checkkey = self.BedMeshScreen
                         self.Draw_Bed_Mesh()
                         return

@@ -207,27 +207,32 @@ class MeshViewTests(unittest.TestCase):
     def event(self,view,event):
         view.get_encoder_state.return_value=event;view._dispatch_input()
 
-    def test_prepare_entry_measure_result_continue_and_home_shortcut(self):
-        view=self.make();self.assertGreater(view.PREPARE_CASE_MESH,0)
-        self.assertEqual(display(snapshot()).PREPARE_CASE_MESH,-1)
-        view.select_prepare.set(view.PREPARE_CASE_MESH);view.HMI_Prepare()
+    def test_home_menu_measure_result_continue_and_back(self):
+        view=self.make()
+        self.assertEqual(view.PREPARE_CASE_MESH,-1)
+        self.assertEqual(view.CONTROL_CASE_MESH,-1)
+        view.select_page.set(3)
+        view.HMI_Leveling()
+        self.assertEqual(view.checkkey,view.BedMeshMenu)
+        self.assertIsNone(view.pd.bed_mesh.pending)
+        self.event(view,view.ENCODER_DIFF_CW)
+        self.event(view,view.ENCODER_DIFF_ENTER)
         self.assertEqual(view.checkkey,view.BedMeshScreen)
         self.assertTrue(view.pd.bed_mesh.pending)
         self.complete(view)
         labels=[c.args[-1] for c in view.lcd.Draw_String.call_args_list]
         self.assertIn('Save',labels);self.assertIn('Continue',labels)
         self.event(view,view.ENCODER_DIFF_CW);self.event(view,view.ENCODER_DIFF_ENTER)
-        self.assertEqual(view.checkkey,view.Prepare)
+        self.assertEqual(view.checkkey,view.BedMeshMenu)
+        self.assertEqual(view._mesh_menu_selection,1)
         self.assertEqual(view.pd.subscription.request.call_count,2)
-        view.HMI_Leveling()
-        self.assertEqual(view._mesh_origin,view.MainMenu)
-        self.complete(view)
-        view._mesh_button_selection=1;view.Goto_MainMenu=Mock()
-        self.event(view,view.ENCODER_DIFF_ENTER);view.Goto_MainMenu.assert_called_once()
+        self.event(view,view.ENCODER_DIFF_CCW);self.event(view,view.ENCODER_DIFF_ENTER)
+        self.assertEqual(view.checkkey,view.MainMenu)
+        self.assertEqual(view.select_page.now,3)
 
     def test_profile_menu_refresh_selection_and_return_without_load(self):
-        view=self.make();view.checkkey=view.Control
-        view.select_control.set(view.CONTROL_CASE_MESH);view.HMI_Control()
+        view=self.make();view.HMI_Leveling()
+        view._mesh_menu_selection=2;view.HMI_Bed_Mesh_Menu()
         self.assertEqual(view.checkkey,view.MeshProfiles)
         result=payload('PETG 80C');view.pd.bed_mesh.pending.set_result(result);view._poll_bed_mesh()
         self.event(view,view.ENCODER_DIFF_CW);self.event(view,view.ENCODER_DIFF_CW)
@@ -240,7 +245,7 @@ class MeshViewTests(unittest.TestCase):
         self.assertEqual(view.checkkey,view.MeshProfiles)
         view.pd.bed_mesh.pending.set_result(result);view._poll_bed_mesh()
         view._mesh_profile_selection=0;self.event(view,view.ENCODER_DIFF_ENTER)
-        self.assertEqual(view.checkkey,view.Control)
+        self.assertEqual(view.checkkey,view.BedMeshMenu)
         self.assertTrue(all(c.args[0]=='printer.objects.query' for c in view.pd.subscription.request.call_args_list))
         view.pd.sendGCode.assert_not_called()
 
@@ -250,7 +255,7 @@ class MeshViewTests(unittest.TestCase):
         self.assertEqual(view.pd.bed_mesh.phase,'error')
         self.assertIsNone(view.pd.bed_mesh.mesh)
         self.assertEqual(view.checkkey,view.MeshProfiles)
-        self.event(view,view.ENCODER_DIFF_ENTER);self.assertEqual(view.checkkey,view.Control)
+        self.event(view,view.ENCODER_DIFF_ENTER);self.assertEqual(view.checkkey,view.BedMeshMenu)
         view._open_mesh_profiles(None,view_after=True)
         result=payload();result['status']['bed_mesh']['probed_matrix']=[[]]
         view.pd.bed_mesh.pending.set_result(result);view._poll_bed_mesh()
@@ -435,10 +440,13 @@ class MeshLifecycleTests(unittest.TestCase):
         view._show_message.assert_not_called()
         self.assertIsNone(view.pd.bed_mesh.mesh)
 
-    def test_failed_home_shortcut_returns_to_main_input_routing(self):
+    def test_home_shortcut_opens_menu_without_calibration_even_when_printing(self):
         view=self.make();view.pd.status='printing';view.checkkey=view.Leveling
         view.HMI_Leveling()
-        self.assertEqual(view.checkkey,view.MainMenu)
+        self.assertEqual(view.checkkey,view.BedMeshMenu)
+        view.pd.subscription.request.assert_not_called()
+        view._mesh_menu_selection=1;view.HMI_Bed_Mesh_Menu()
+        self.assertEqual(view.checkkey,view.BedMeshMenu)
         view.pd.subscription.request.assert_not_called()
 
 
@@ -461,4 +469,52 @@ class MeshPacketTests(unittest.TestCase):
         self.assertEqual(frames[-1][1],0x3d)
         view.pd.bed_mesh.phase='listed';view.Draw_Mesh_Profiles()
         self.assertTrue(any(b'lcd_mesh_1' in f for f in frames))
+        view.pd.subscription.request.assert_not_called()
+
+
+class MeshMenuTests(unittest.TestCase):
+    make=MeshViewTests.make
+
+    def test_mesh_entries_are_only_in_home_submenu(self):
+        view=self.make();view.HMI_Leveling()
+        self.assertEqual([e[0] for e in view._mesh_menu_entries()],['BACK','CALIBRATE','VIEWER'])
+        for name in ('prepare','control'):
+            self.assertNotIn('MESH',[e[0] for e in view._menus[name]])
+            self.assertFalse(any(e[1] in ('Bed Mesh Calibrate','Mesh Viewer') for e in view._menus[name]))
+        labels=[c.args[-1] for c in view.lcd.Draw_String.call_args_list]
+        self.assertIn('Bed Mesh Calibrate',labels);self.assertIn('Mesh Viewer',labels)
+        view.pd.subscription.request.assert_not_called()
+
+    def test_without_probe_home_menu_still_has_profile_viewer(self):
+        source=data();source['objects'].remove('probe')
+        view=display(source);view.get_encoder_state=Mock(return_value=view.ENCODER_DIFF_ENTER)
+        view.pd.subscription.request.side_effect=lambda *a:Future()
+        self.assertTrue(view.pd.HAS_ONESTEP_LEVELING)
+        view.HMI_Leveling()
+        self.assertEqual([e[0] for e in view._mesh_menu_entries()],['BACK','VIEWER'])
+        view._mesh_menu_selection=1;view.HMI_Bed_Mesh_Menu()
+        self.assertEqual(view.checkkey,view.MeshProfiles)
+        view.pd.subscription.request.assert_called_once_with('printer.objects.query',{'objects':{'bed_mesh':None}})
+
+    def test_menu_cursor_bounds_and_capability_removal(self):
+        view=self.make();view.HMI_Leveling()
+        view.get_encoder_state.return_value=view.ENCODER_DIFF_CW
+        for _ in range(5):view.HMI_Bed_Mesh_Menu()
+        self.assertEqual(view._mesh_menu_selection,2)
+        view.pd.capabilities=type(view.pd.capabilities)()
+        view.Draw_Bed_Mesh_Menu()
+        self.assertEqual(view._mesh_menu_selection,0)
+        self.assertEqual([e[0] for e in view._mesh_menu_entries()],['BACK'])
+        view.pd.subscription.request.assert_not_called()
+
+    def test_uart_reconnect_redraws_mesh_menu_without_starting_measurement(self):
+        from test_regressions import ui
+        view=self.make();view.HMI_Leveling();view._mesh_menu_selection=2
+        view._closed=False;view._settings=('/dev/fake',);view._uart_epoch=0
+        view._uart_online=False;view._next_uart_retry=0
+        view.HMI_Init=Mock();view.HMI_StartFrame=Mock();view.Draw_Bed_Mesh_Menu=Mock()
+        with patch.object(ui,'T5UIC1_LCD',return_value=Mock()):
+            self.assertTrue(view._ensure_uart())
+        view.Draw_Bed_Mesh_Menu.assert_called_once()
+        self.assertEqual(view._mesh_menu_selection,2)
         view.pd.subscription.request.assert_not_called()

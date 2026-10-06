@@ -134,11 +134,11 @@ real UART result/menu packets and reconnect redraw without command replay.
 
 Physical bed mesh checks:
 
-- Open Prepare → Bed Mesh Calibrate and compare the final point values and
+- Open Home → Leveling → Bed Mesh Calibrate and compare the final point values and
   min/max with Moonraker's bed_mesh.probed_matrix.
 - Check raw probe progress, circle colors/sizes and labels on the physical LCD.
 - Continue, then repeat calibration; the owned pending profile must not block it.
-- Open Control → Mesh Viewer, select saved profiles and Current Mesh, and verify
+- Open Home → Leveling → Mesh Viewer, select saved profiles and Current Mesh, and verify
   that viewing does not change bed_mesh.profile_name or move the printer.
 - Save only after the displayed profile/restart confirmation; after restart,
   verify the new lcd_mesh_N profile persists and matches the measured matrix.
@@ -152,3 +152,8 @@ Home navigation regressions cover four-icon paging, forward/reverse page boundar
 empty-slot rejection, Leveling and Info routing, return to the originating Home
 page or Control menu, capability removal and preservation of the MMU/dashboard
 areas while paging.
+
+Bed Mesh menu regressions check that Prepare/Control no longer duplicate its
+entries, the Home shortcut opens a submenu without starting motion, calibration
+and profile-list Back/Continue return to that menu, viewer-only access without a
+probe, bounded menu selection and UART reconnect without measurement replay.

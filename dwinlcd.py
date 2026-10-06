@@ -119,6 +119,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
     ScrewsTiltResult = 40
     BedMeshScreen = 41
     MeshProfiles = 42
+    BedMeshMenu = 43
 
     MINUNITMULT = 10
 
@@ -360,6 +361,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
                 self.Draw_Bed_Mesh()
             elif getattr(self, 'checkkey', None) == self.MeshProfiles:
                 self.Draw_Mesh_Profiles()
+            elif getattr(self, 'checkkey', None) == self.BedMeshMenu:
+                self.Draw_Bed_Mesh_Menu()
             self.lcd.UpdateLCD()
             if self.pd.connection_error:
                 self._show_message('Moonraker unavailable')
@@ -465,10 +468,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             if self.pd.HAS_FAN and menu != 'preheat':
                 self._menus[menu].append(('FAN', 'Fan speed', self.ICON_FanSpeed))
         self._menus['tune'].append(('ZOFF', 'Runtime Z offset', self.ICON_Zoffset))
-        if caps.bed_mesh and caps.probe:
-            self._menus['prepare'].append(('MESH', 'Bed Mesh Calibrate', self.ICON_HotendTemp))
-        if caps.bed_mesh:
-            self._menus['control'].append(('MESH', 'Mesh Viewer', self.ICON_HotendTemp))
         if caps.screws_tilt_adjust:
             self._menus['prepare'].append(('SCREWS', 'Screws Tilt Adjust', self.ICON_SetEndTemp))
         if heat:
@@ -1036,8 +1035,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
                 self.checkkey = self.AxisMove
                 self.select_axis.reset()
                 self.Draw_Move_Menu()
-            elif self.select_prepare.now == self.PREPARE_CASE_MESH:
-                self._start_bed_mesh(self.Prepare)
             elif self.select_prepare.now == self.PREPARE_CASE_SCREWS:
                 self.checkkey = self.ScrewsTiltMenu
                 self._screws_selection = 0
@@ -1085,9 +1082,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
                 self.checkkey = self.Motion
                 self.select_motion.reset()
                 self.Draw_Motion_Menu()
-            if self.select_control.now == self.CONTROL_CASE_MESH:
-                self._mesh_profile_selection = 0
-                self._open_mesh_profiles()
             if self.select_control.now == self.CONTROL_CASE_PROBE:
                 self.checkkey = self.ProbeWizardID
                 self._probe_selection = 0
@@ -2570,6 +2564,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             self.Draw_Tune_Menu()
         elif update and self.checkkey == self.Motion:
             self.Draw_Motion_Menu()
+        elif update and self.checkkey == self.BedMeshMenu:
+            self.Draw_Bed_Mesh_Menu()
         elif self.checkkey == self.ProbeWizardID:
             self.Draw_Probe_Wizard()
 
@@ -2633,6 +2629,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             self.HMI_Motion()
         elif self.checkkey in (self.ScrewsTiltMenu, self.ScrewsTiltResult):
             self.HMI_Screws_Tilt()
+        elif self.checkkey == self.BedMeshMenu:
+            self.HMI_Bed_Mesh_Menu()
         elif self.checkkey == self.BedMeshScreen:
             self.HMI_Bed_Mesh()
         elif self.checkkey == self.MeshProfiles:

@@ -177,7 +177,7 @@ Aşağıdaki her bölüm mevcut ekran davranışını açıklar. Temsili görsel
 
 <p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN ana ekranı"></p>
 
-Ana ekran, sayfa başına dört ikon sunan temel navigasyon merkezidir. Bed mesh kalibrasyonu mevcutsa ilk sayfada Print, Prepare, Control ve Leveling bulunur; enkoderi Leveling'den sonra çevirmek ikinci sayfayı açar ve Info'yu seçer. Geri çevirmek Leveling'e döner. Kalibrasyon desteği yoksa Info ilk sayfanın dördüncü ikonudur. Boş alanlar seçilemez. Sayfa geçişinde logo/MMU paneli ve canlı durum alanı sabit kalır; Info'dan dönüş aynı Home sayfasını açar.
+Ana ekran, sayfa başına dört ikon sunan temel navigasyon merkezidir. Bed mesh desteği mevcutsa ilk sayfada Print, Prepare, Control ve Leveling bulunur; enkoderi Leveling'den sonra çevirmek ikinci sayfayı açar ve Info'yu seçer. Geri çevirmek Leveling'e döner. Bed mesh desteği yoksa Info ilk sayfanın dördüncü ikonudur. Boş alanlar seçilemez. Sayfa geçişinde logo/MMU paneli ve canlı durum alanı sabit kalır; Info'dan dönüş aynı Home sayfasını açar.
 
 Menü alanının altında kalan kompakt canlı dashboard; mevcutsa hotend/bed durumunu, baskı hız faktörünü, fanı, flow'u, runtime Z offset'i ve canlı X/Y/Z koordinatlarını gösterir.
 
@@ -238,18 +238,6 @@ Değerler Moonraker status ile senkron kalır. Açık bir editör kendi lokal he
 
 Prepare; homing, hareket, cooldown/preheat ve runtime Z-offset erişimi gibi yazıcı hazırlık işlemlerini içerir. Girdiler, her yazıcının aynı heater, fan, probe veya leveling donanımına sahip olduğunu varsaymak yerine keşfedilen Klipper capability'lerinden oluşturulur.
 
-#### Bed Mesh Calibrate / Mesh Viewer
-
-`[bed_mesh]` ve bir probe mevcutsa **Prepare → Bed Mesh Calibrate** ölçümü başlatır. Home ekranındaki **Leveling** de aynı kalibrasyon akışını açar. Eksenlerin homing'i eksikse önce `G28` çalışır, ardından `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0` gönderilir. Oturum, mevcut profil adlarını ezmemek için kullanılmayan bir `lcd_mesh_N` adı seçer. Baskı, duraklatma, manual-probe oturumu, başka bir LCD kalibrasyonu, jog recovery veya ilgisiz bekleyen config değişiklikleri sırasında kalibrasyon başlatılmaz.
-
-Ölçüm ekranında ızgara, probe yanıtlarından alınabilen nokta değerleri ve **Cancel** bulunur. Bu canlı değerler **raw Z** olarak işaretlenir; tekrarlanan probe örnekleri aynı noktada güncellenir. Sonuç ekranı yalnızca komutun tamamlandığı doğrulandıktan ve `bed_mesh` yeniden sorgulandıktan sonra açılır. Klipper'ın `probed_matrix` değerleri, renk ve boyutları yüksekliğe göre değişen dairelerde gösterilir; minimum/maksimum Z ve **Save / Continue** altta yer alır. Küçük Y altta, büyük Y üsttedir. **Continue** kalibrasyonu açtığınız menüye döner.
-
-**Save**, profil adını ve Klipper'ın yeniden başlayacağını gösteren bir onay açar; varsayılan seçim **Back**'tir. Onaydan sonra mevcut mesh, profil ve `save_config_pending_items` yeniden sorgulanır. Yalnızca bu oturumun ölçtüğü profilin eşleşen değişiklikleri varsa `SAVE_CONFIG` gönderilir; başka ayarlar birlikte kaydedilmez. **Continue** kalıcı kayıt yapmaz; Klipper'ın kalibrasyon sırasında oluşturduğu profil oturumda kullanılabilir. Kaydetmeden tekrar ölçüm yapılırsa aynı LCD profil adı kullanılır. Yeniden başlatma sırasında cevap kaybolursa kayıt başarılı varsayılmaz; profil yeniden kontrol edilmelidir.
-
-**Control → Mesh Viewer**, **Current Mesh** ile Klipper'ın `bed_mesh.profiles` alanındaki profilleri listeler. Enkoderle bir profil seçildiğinde güncel veri yeniden sorgulanır ve o profilin haritası açılır. Bu işlem `BED_MESH_PROFILE LOAD` göndermez ve aktif mesh'i değiştirmez. **Continue** profil listesine döner. Liste kaydırılabilir; boş, silinmiş veya geçersiz bir mesh önceki haritayla değiştirilmez.
-
-Klipper'da normal kalibrasyonu anında iptal eden ayrı bir komut bulunmadığından **Cancel → Stop** onayı, Moonraker'ın `printer.emergency_stop` isteğini kullanır. Onay ekranı Klipper'ın shutdown durumuna geçeceğini açıkça belirtir; tekrar çalışmak için `FIRMWARE_RESTART` gerekir. Ölçüm, durdurma veya kayıt komutları otomatik tekrar gönderilmez.
-
 #### Screws Tilt Adjust
 
 <p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerans sağlandı"></p>
@@ -261,6 +249,18 @@ Başarı mesajları yeşil, ayar gereken durumdaki talimatlar nötr beyazdır.
 Sonuç ekranı dört köşe düzenini kullanır: her köşede renkli bir gösterge ve yanında siyah zeminde büyük yazılar görünür: **Base** veya üst satırda **CW/CCW**, alt satırda **tur:dakika**. `01:20`, bir tam tur ve turun 20/60'ı anlamına gelir. Ortadaki talimat, referans dışındaki en büyük dönüşü isteyen vidayı seçerek köşesini, yönünü ve dönüş miktarını gösterir. Yön ve miktar doğrudan Klipper'dan alınır; vida adımı UI'da yeniden hesaplanmaz. Ölçülen en yüksek ve en düşük köşe arasındaki fark **0,05 mm'nin altındaysa** **Corners leveled / Tolerance achieved!** gösterilir; aksi durumda ayar talimatı görünür. Klipper'ın yuvarlayarak verdiği `00:60`, ekranda `01:00` olarak gösterilir.
 
 Hesaplama sırasında enkoder girişi kilitlenir. **Continue** alt menüye döner; **Calculate** ile yeniden ölçüm yapılabilir. Sonuçlar komutun tamamlandığı doğrulandıktan sonra sorgulanır; aynı değerleri veren tekrar ölçümleri de günceldir. Hata, bağlantı kaybı veya doğrulanamayan ölçümde önceki sonuç başarı olarak gösterilmez; komutlar otomatik tekrarlanmaz. `SAVE_CONFIG` veya otomatik vida ayarı yapılmaz. Üç, beş veya daha fazla vidalı yapılandırmalar dört köşe görünümüne zorlanmak yerine reddedilir.
+
+### Bed Mesh menüsü / Mesh Viewer
+
+`[bed_mesh]` mevcutsa **Home → Leveling**, **Back**, **Bed Mesh Calibrate** (probe mevcutsa) ve **Mesh Viewer** girişlerini içeren **Bed Mesh** menüsünü açar. **Bed Mesh Calibrate** seçimi ölçümü başlatır. Bed Mesh girişleri Prepare veya Control yerine bu menüde toplanır. Eksenlerin homing'i eksikse önce `G28` çalışır, ardından `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0` gönderilir. Oturum, mevcut profil adlarını ezmemek için kullanılmayan bir `lcd_mesh_N` adı seçer. Baskı, duraklatma, manual-probe oturumu, başka bir LCD kalibrasyonu, jog recovery veya ilgisiz bekleyen config değişiklikleri sırasında kalibrasyon başlatılmaz.
+
+Ölçüm ekranında ızgara, probe yanıtlarından alınabilen nokta değerleri ve **Cancel** bulunur. Bu canlı değerler **raw Z** olarak işaretlenir; tekrarlanan probe örnekleri aynı noktada güncellenir. Sonuç ekranı yalnızca komutun tamamlandığı doğrulandıktan ve `bed_mesh` yeniden sorgulandıktan sonra açılır. Klipper'ın `probed_matrix` değerleri, renk ve boyutları yüksekliğe göre değişen dairelerde gösterilir; minimum/maksimum Z ve **Save / Continue** altta yer alır. Küçük Y altta, büyük Y üsttedir. **Continue** Bed Mesh menüsüne döner.
+
+**Save**, profil adını ve Klipper'ın yeniden başlayacağını gösteren bir onay açar; varsayılan seçim **Back**'tir. Onaydan sonra mevcut mesh, profil ve `save_config_pending_items` yeniden sorgulanır. Yalnızca bu oturumun ölçtüğü profilin eşleşen değişiklikleri varsa `SAVE_CONFIG` gönderilir; başka ayarlar birlikte kaydedilmez. **Continue** kalıcı kayıt yapmaz; Klipper'ın kalibrasyon sırasında oluşturduğu profil oturumda kullanılabilir. Kaydetmeden tekrar ölçüm yapılırsa aynı LCD profil adı kullanılır. Yeniden başlatma sırasında cevap kaybolursa kayıt başarılı varsayılmaz; profil yeniden kontrol edilmelidir.
+
+**Home → Leveling → Mesh Viewer**, **Current Mesh** ile Klipper'ın `bed_mesh.profiles` alanındaki profilleri listeler. Enkoderle bir profil seçildiğinde güncel veri yeniden sorgulanır ve o profilin haritası açılır. Bu işlem `BED_MESH_PROFILE LOAD` göndermez ve aktif mesh'i değiştirmez. **Continue** profil listesine döner. Profil listesindeki Back, Bed Mesh menüsüne döner. Liste kaydırılabilir; boş, silinmiş veya geçersiz bir mesh önceki haritayla değiştirilmez.
+
+Klipper'da normal kalibrasyonu anında iptal eden ayrı bir komut bulunmadığından **Cancel → Stop** onayı, Moonraker'ın `printer.emergency_stop` isteğini kullanır. Onay ekranı Klipper'ın shutdown durumuna geçeceğini açıkça belirtir; tekrar çalışmak için `FIRMWARE_RESTART` gerekir. Ölçüm, durdurma veya kayıt komutları otomatik tekrar gönderilmez.
 
 ### 7. Move / Live Jog
 
@@ -283,7 +283,7 @@ Konum kaynağı Klipper'ın command-space `gcode_move.position` değeridir; böy
 
 <p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menüsü"></p>
 
-Control daha çok yapılandırma odaklı menüdür. Mevcut satırlar capability tabanlıdır ve temperature presetleri, motion kontrolleri, Mesh Viewer, probe calibration, case light ve bilgi sayfalarına yönlendirebilir.
+Control daha çok yapılandırma odaklı menüdür. Mevcut satırlar capability tabanlıdır ve temperature presetleri, motion kontrolleri, probe calibration, case light ve bilgi sayfalarına yönlendirebilir.
 
 ### 9. Temperature / presetler
 

@@ -177,7 +177,7 @@ Each section below describes the current screen behavior using captures from the
 
 <p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN home screen"></p>
 
-The home screen is the main navigation hub, with four icons per page. With bed-mesh calibration available, the first page contains Print, Prepare, Control and Leveling; rotating the encoder past Leveling opens the second page and selects Info. Rotating back returns to Leveling. Without calibration support, Info is the fourth icon on the first page. Empty slots cannot be selected. The logo/MMU panel and live dashboard remain fixed while paging; returning from Info restores its Home page.
+The home screen is the main navigation hub, with four icons per page. With bed-mesh support available, the first page contains Print, Prepare, Control and Leveling; rotating the encoder past Leveling opens the second page and selects Info. Rotating back returns to Leveling. Without bed-mesh support, Info is the fourth icon on the first page. Empty slots cannot be selected. The logo/MMU panel and live dashboard remain fixed while paging; returning from Info restores its Home page.
 
 A compact live dashboard remains visible below the menu area and reports the current hotend/bed state when available, print-speed factor, fan, flow, runtime Z offset and live X/Y/Z coordinates.
 
@@ -238,18 +238,6 @@ Values remain synchronized with Moonraker status. An editor keeps its local targ
 
 Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
 
-#### Bed Mesh Calibrate / Mesh Viewer
-
-When `[bed_mesh]` and a probe are available, **Prepare → Bed Mesh Calibrate** starts a measurement. **Leveling** on the Home screen opens the same calibration flow. Missing homed axes trigger `G28` first, followed by `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0`. The session chooses an unused `lcd_mesh_N` name to avoid overwriting existing profiles. Calibration is blocked during printing, pause, a manual-probe session, another LCD calibration, jog recovery or unrelated pending config changes.
-
-The measurement screen shows a grid, point values available from probe responses and **Cancel**. These live values are marked **raw Z**; repeated probe samples update the same point. The result screen opens only after confirmed command completion and a fresh `bed_mesh` query. Klipper's `probed_matrix` values appear in circles whose color and size depend on height, with minimum/maximum Z and **Save / Continue** below. Low Y is at the bottom and high Y at the top. **Continue** returns to the menu that opened calibration.
-
-**Save** opens a confirmation showing the profile name and the Klipper restart; **Back** is selected by default. After confirmation, the current mesh, profile and `save_config_pending_items` are queried again. `SAVE_CONFIG` is sent only when the pending changes match the profile measured by this session; other settings are not saved together. **Continue** does not persist the profile; the profile created by Klipper during calibration remains available for the current session. Repeated measurements before saving reuse the same LCD profile name. A lost response during restart is not treated as successful persistence; check the profile again.
-
-**Control → Mesh Viewer** lists **Current Mesh** and profiles from Klipper's `bed_mesh.profiles`. Selecting a profile with the encoder queries fresh data and opens that profile's map. This does not send `BED_MESH_PROFILE LOAD` or change the active mesh. **Continue** returns to the profile list. The list scrolls; empty, deleted or invalid meshes are never replaced with an earlier map.
-
-Klipper has no separate command to immediately cancel normal calibration, so **Cancel → Stop** confirmation uses Moonraker's `printer.emergency_stop` request. The confirmation explicitly states that Klipper will enter shutdown; `FIRMWARE_RESTART` is required to resume operation. Measurement, stop and save commands are never replayed automatically.
-
 #### Screws Tilt Adjust
 
 <p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerance achieved"></p>
@@ -261,6 +249,18 @@ When `[screws_tilt_adjust]` is configured, **Prepare → Screws Tilt Adjust → 
 The result uses a four-corner layout: each corner has a colored marker with large labels beside it on the black background: **Base**, or **CW/CCW** above **turns:minutes**. `01:20` means one full turn plus 20/60 of a turn. The central instruction selects the non-reference screw with the largest required rotation and displays its corner, direction and amount. Directions and amounts come directly from Klipper; the UI does not recalculate thread pitch. **Corners leveled / Tolerance achieved!** requires a peak-to-peak measured height difference below **0.05 mm**. Otherwise an adjustment is shown. Turn values rounded to `00:60` by Klipper are displayed as `01:00`.
 
 Encoder input is locked during calculation. **Continue** returns to the submenu, where **Calculate** can run another measurement. Results are queried after confirmed command completion, so identical repeated measurements are still fresh. Failed, disconnected or unconfirmed measurements never display the previous result as success; commands are never replayed automatically. No `SAVE_CONFIG` or automatic screw adjustment is performed. Configurations with three, five or more screws are rejected rather than forced into the four-corner view.
+
+### Bed Mesh menu / Mesh Viewer
+
+With `[bed_mesh]` available, **Home → Leveling** opens the **Bed Mesh** menu containing **Back**, **Bed Mesh Calibrate** (when a probe is available) and **Mesh Viewer**. Selecting **Bed Mesh Calibrate** starts a measurement. Bed Mesh entries are grouped here rather than in Prepare or Control. Missing homed axes trigger `G28` first, followed by `BED_MESH_CALIBRATE PROFILE=lcd_mesh_N ADAPTIVE=0`. The session chooses an unused `lcd_mesh_N` name to avoid overwriting existing profiles. Calibration is blocked during printing, pause, a manual-probe session, another LCD calibration, jog recovery or unrelated pending config changes.
+
+The measurement screen shows a grid, point values available from probe responses and **Cancel**. These live values are marked **raw Z**; repeated probe samples update the same point. The result screen opens only after confirmed command completion and a fresh `bed_mesh` query. Klipper's `probed_matrix` values appear in circles whose color and size depend on height, with minimum/maximum Z and **Save / Continue** below. Low Y is at the bottom and high Y at the top. **Continue** returns to the Bed Mesh menu.
+
+**Save** opens a confirmation showing the profile name and the Klipper restart; **Back** is selected by default. After confirmation, the current mesh, profile and `save_config_pending_items` are queried again. `SAVE_CONFIG` is sent only when the pending changes match the profile measured by this session; other settings are not saved together. **Continue** does not persist the profile; the profile created by Klipper during calibration remains available for the current session. Repeated measurements before saving reuse the same LCD profile name. A lost response during restart is not treated as successful persistence; check the profile again.
+
+**Home → Leveling → Mesh Viewer** lists **Current Mesh** and profiles from Klipper's `bed_mesh.profiles`. Selecting a profile with the encoder queries fresh data and opens that profile's map. This does not send `BED_MESH_PROFILE LOAD` or change the active mesh. **Continue** returns to the profile list. Back from the profile list returns to the Bed Mesh menu. The list scrolls; empty, deleted or invalid meshes are never replaced with an earlier map.
+
+Klipper has no separate command to immediately cancel normal calibration, so **Cancel → Stop** confirmation uses Moonraker's `printer.emergency_stop` request. The confirmation explicitly states that Klipper will enter shutdown; `FIRMWARE_RESTART` is required to resume operation. Measurement, stop and save commands are never replayed automatically.
 
 ### 7. Move / Live Jog
 
@@ -283,7 +283,7 @@ The position source is Klipper's command-space `gcode_move.position`, so the UI 
 
 <p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menu"></p>
 
-Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, Mesh Viewer, probe calibration, case light and information pages.
+Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, probe calibration, case light and information pages.
 
 ### 9. Temperature / presets
 
