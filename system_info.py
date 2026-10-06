@@ -1,7 +1,6 @@
 """Live software-stack and Raspberry Pi network information."""
 import socket
 import struct
-from urllib.parse import urlsplit
 
 try:
     import fcntl
@@ -22,8 +21,8 @@ def network_info():
     try:
         for _, name in socket.if_nameindex():
             encoded = name.encode('utf-8')[:15]
-            request = struct.pack('256s', encoded)
             try:
+                request = struct.pack('256s', encoded)
                 flags = struct.unpack('H', fcntl.ioctl(sock.fileno(), SIOCGIFFLAGS, request)[16:18])[0]
                 if not flags & IFF_UP or flags & IFF_LOOPBACK:
                     continue
