@@ -7,6 +7,7 @@ from ui_events import UIEventLoop, InputEvent
 from ui_case_light import CaseLightMixin
 from ui_mmu import MMUViewMixin
 from ui_screws_tilt import ScrewsTiltMixin
+from ui_bed_mesh import BedMeshMixin
 
 from encoder import Encoder
 from gpiozero import Button, Device
@@ -51,7 +52,7 @@ class select_t:
         return self.changed()
 
 
-class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
+class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
 
     TROWS = 6
     MROWS = TROWS - 1  # Total rows, and other-than-Back
@@ -116,6 +117,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
     CaseLightBrightness = 38
     ScrewsTiltMenu = 39
     ScrewsTiltResult = 40
+    BedMeshScreen = 41
+    MeshProfiles = 42
+    BedMeshMenu = 43
+    MMUMenu = 44
 
     MINUNITMULT = 10
 
@@ -353,6 +358,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
             self._configure_menus()
             self.HMI_Init()
             self.HMI_StartFrame(False)
+            if getattr(self, 'checkkey', None) == self.BedMeshScreen:
+                self.Draw_Bed_Mesh()
+            elif getattr(self, 'checkkey', None) == self.MeshProfiles:
+                self.Draw_Mesh_Profiles()
+            elif getattr(self, 'checkkey', None) == self.BedMeshMenu:
+                self.Draw_Bed_Mesh_Menu()
+            if getattr(self, 'checkkey', None) == self.MMUMenu:
+                self.Draw_MMU_Menu()
             self.lcd.UpdateLCD()
             if self.pd.connection_error:
                 self._show_message('Moonraker unavailable')
@@ -368,6 +381,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
         if not self._uart_online:
             # Keep status current while the panel is disconnected.
             self.pd.update_variable()
+            self.pd.bed_mesh.update()
             self._ensure_uart()
             return
         try:
@@ -484,7 +498,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
         keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'COOL', 'SPEED', 'TEMP', 'BED', 'FAN',
-                'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT', 'SCREWS')
+                'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT', 'SCREWS', 'MESH')
         for menu, prefix in prefixes.items():
             for key in keys:
                 setattr(self, prefix + '_CASE_' + key, -1)
@@ -864,68 +878,78 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
         if not self._print_error_visible:
             self.Draw_Status_Area(with_update)
 
+    def _home_entries(self):
+        entries = [('PRINT', 'Print', self.ICON_Print_0, self.ICON_Print_1),
+                   ('PREPARE', 'Prepare', self.ICON_Prepare_0, self.ICON_Prepare_1),
+                   ('CONTROL', 'Control', self.ICON_Control_0, self.ICON_Control_1)]
+        if self.pd.HAS_ONESTEP_LEVELING:
+            entries.append(('LEVEL', 'Leveling', self.ICON_Leveling_0, self.ICON_Leveling_1))
+        entries.append(('MMU', 'MMU', None, None))
+        entries.append(('INFO', 'Info', self.ICON_Info_0, self.ICON_Info_1))
+        return tuple(entries)
+
+    def _draw_home_page(self):
+        entries = self._home_entries()
+        self.select_page.set(min(self.select_page.now, len(entries)-1))
+        page = self.select_page.now // 4
+        # Clear only navigation: the logo/MMU and live dashboard stay in place.
+        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 126, 271, self.STATUS_Y-1)
+        for index in range(page*4, min(len(entries), page*4+4)):
+            key, label, normal, selected = entries[index]
+            slot = index % 4
+            x, y = (17 if slot % 2 == 0 else 145), (130 if slot < 2 else 246)
+            active = index == self.select_page.now
+            if key == 'MMU':
+                self.Draw_MMU_Home_Icon(x, y, active)
+            else:
+                self.lcd.ICON_Show(self.ICON, selected if active else normal, x, y)
+            if active:
+                self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, y, x+109, y+99)
+            self._draw_menu_text(label, x+(109-len(label)*8)//2, y+71)
+        pages = (len(entries)+3)//4
+        if pages > 1:
+            self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
+                                 self.lcd.Color_Bg_Black, 127, 347, str(page+1)+'/'+str(pages))
+
     def HMI_MainMenu(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_NO:
             return
-        if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if(self.select_page.inc(4)):
-                if self.select_page.now == 0:
-                    self.ICON_Print()
-                if self.select_page.now == 1:
-                    self.ICON_Print()
-                    self.ICON_Prepare()
-                if self.select_page.now == 2:
-                    self.ICON_Prepare()
-                    self.ICON_Control()
-                if self.select_page.now == 3:
-                    self.ICON_Control()
-                    if self.pd.HAS_ONESTEP_LEVELING:
-                        self.ICON_Leveling(True)
-                    else:
-                        self.ICON_StartInfo(True)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_page.dec()):
-                if self.select_page.now == 0:
-                    self.ICON_Print()
-                    self.ICON_Prepare()
-                elif self.select_page.now == 1:
-                    self.ICON_Prepare()
-                    self.ICON_Control()
-                elif self.select_page.now == 2:
-                    self.ICON_Control()
-                    if self.pd.HAS_ONESTEP_LEVELING:
-                        self.ICON_Leveling(False)
-                    else:
-                        self.ICON_StartInfo(False)
-                elif self.select_page.now == 3:
-                    if self.pd.HAS_ONESTEP_LEVELING:
-                        self.ICON_Leveling(True)
-                    else:
-                        self.ICON_StartInfo(True)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
-            if self.select_page.now == 0:  # Print File
+        entries = self._home_entries()
+        self.select_page.set(min(self.select_page.now, len(entries)-1))
+        previous = self.select_page.now
+        if event == self.ENCODER_DIFF_CW:
+            self.select_page.inc(len(entries))
+        elif event == self.ENCODER_DIFF_CCW:
+            self.select_page.dec()
+        elif event == self.ENCODER_DIFF_ENTER:
+            key = entries[self.select_page.now][0]
+            if key == 'PRINT':
                 self.checkkey = self.SelectFile
                 self._refresh_file_snapshot()
                 self.Draw_Print_File_Menu()
-            if self.select_page.now == 1:  # Prepare
+            elif key == 'PREPARE':
                 self.checkkey = self.Prepare
                 self.select_prepare.reset()
                 self.index_prepare = self.MROWS
                 self.Draw_Prepare_Menu()
-            if self.select_page.now == 2:  # Control
+            elif key == 'CONTROL':
                 self.checkkey = self.Control
                 self.select_control.reset()
                 self.index_control = self.MROWS
                 self.Draw_Control_Menu()
-            if self.select_page.now == 3:  # Leveling or Info
-                if self.pd.HAS_ONESTEP_LEVELING:
-                    self.checkkey = self.Leveling
-                    self.HMI_Leveling()
-                else:
-                    self.checkkey = self.Info
-                    self.Draw_Info_Menu()
-
+            elif key == 'LEVEL':
+                self.checkkey = self.Leveling
+                self.HMI_Leveling()
+            elif key == 'MMU':
+                self.checkkey = self.MMUMenu
+                self.Draw_MMU_Menu()
+            elif key == 'INFO':
+                self._info_origin = self.MainMenu
+                self.checkkey = self.Info
+                self.Draw_Info_Menu()
+        if event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW) and previous != self.select_page.now:
+            self._draw_home_page()
         self.lcd.UpdateLCD()
 
     def _refresh_file_snapshot(self):
@@ -1053,33 +1077,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
         if (encoder_diffState == self.ENCODER_DIFF_NO):
             return
 
-        if (encoder_diffState == self.ENCODER_DIFF_CW):
-            if (self.select_control.inc(1 + self.CONTROL_CASE_TOTAL)):
-                if (self.select_control.now > self.MROWS and self.select_control.now > self.index_control):
-                    self.index_control = self.select_control.now
-                    self.Scroll_Menu(self.DWIN_SCROLL_UP)
-                    self.Draw_Menu_Icon(self.MROWS, self.ICON_Temperature + self.index_control - 1)
-                    self.Draw_More_Icon(self.CONTROL_CASE_TEMP + self.MROWS - self.index_control)  # Temperature >
-                    self.Draw_More_Icon(self.CONTROL_CASE_MOVE + self.MROWS - self.index_control)  # Motion >
-                    if (self.index_control > self.MROWS):
-                        self.Draw_More_Icon(self.CONTROL_CASE_INFO + self.MROWS - self.index_control)  # Info >
-                        self._draw_menu_text('Info', self.LBLX, self.MBASE(self.CONTROL_CASE_INFO - 1))
-                else:
-                    self.Move_Highlight(1, self.select_control.now + self.MROWS - self.index_control)
-        elif (encoder_diffState == self.ENCODER_DIFF_CCW):
-            if (self.select_control.dec()):
-                if (self.select_control.now < self.index_control - self.MROWS):
-                    self.index_control -= 1
-                    self.Scroll_Menu(self.DWIN_SCROLL_DOWN)
-                    if (self.index_control == self.MROWS):
-                        self.Draw_Back_First()
-                    else:
-                        self.Draw_Menu_Line(0, self.ICON_Temperature + self.select_control.now - 1)
-                    self.Draw_More_Icon(0 + self.MROWS - self.index_control + 1)  # Temperature >
-                    self.Draw_More_Icon(1 + self.MROWS - self.index_control + 1)  # Motion >
-                else:
-                    self.Move_Highlight(-1, self.select_control.now + self.MROWS - self.index_control)
-        elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
+        if self._menu_navigation('control', self.select_control, 'index_control', self.Draw_Control_Menu):
+            return
+        if (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if (self.select_control.now == 0):  # Back
                 self.select_page.set(2)
                 self.Goto_MainMenu()
@@ -1105,6 +1105,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
                 self.pd.query_case_light()
                 self.Draw_Case_Light_Menu()
             if (self.select_control.now == self.CONTROL_CASE_INFO):  # Info
+                self._info_origin = self.Control
                 self.checkkey = self.Info
                 self.Draw_Info_Menu()
 
@@ -1124,12 +1125,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
             self.Draw_Info_Menu()
         elif event == self.ENCODER_DIFF_ENTER:
             self._info_scroll = 0
-            if self.pd.HAS_ONESTEP_LEVELING:
+            if getattr(self, '_info_origin', self.MainMenu) == self.Control:
                 self.checkkey = self.Control
                 self.select_control.set(self.CONTROL_CASE_INFO)
                 self.Draw_Control_Menu()
             else:
-                self.select_page.set(3)
+                self.select_page.set(next(i for i, entry in enumerate(self._home_entries()) if entry[0] == 'INFO'))
                 self.Goto_MainMenu()
         self.lcd.UpdateLCD()
 
@@ -2032,7 +2033,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
         self._draw_capability_menu('prepare', self.select_prepare, self.index_prepare)
 
     def Draw_Control_Menu(self):
-        self._draw_capability_menu('control', self.select_control)
+        self._draw_capability_menu('control', self.select_control, getattr(self, 'index_control', self.MROWS))
 
     def _draw_info_row(self, label, value, y):
         self._draw_menu_text(label, 8, y)
@@ -2207,13 +2208,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
             self.Draw_MMU_Status()
         self._drawn_mmu_state = self.pd.mmu
 
-        self.ICON_Print()
-        self.ICON_Prepare()
-        self.ICON_Control()
-        if self.pd.HAS_ONESTEP_LEVELING:
-            self.ICON_Leveling(self.select_page.now == 3)
-        else:
-            self.ICON_StartInfo(self.select_page.now == 3)
+        self._draw_home_page()
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
@@ -2496,11 +2491,15 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
         if not self.pd.connection_error and self._configure_menus():
             for name in self.SELECTIONS:
                 getattr(self, name).reset()
-            self.index_prepare = self.index_tune = self.MROWS
+            self.index_prepare = self.index_tune = self.index_control = self.MROWS
             self._offline = True
         if self._poll_action():
             return
         self._poll_screws_tilt()
+        self._poll_bed_mesh()
+        if self.pd.connection_error and self.checkkey in (self.BedMeshScreen, self.MeshProfiles):
+            self._offline = True
+            return
         if self.pd.connection_error:
             if not self._offline:
                 self._show_message('Moonraker unavailable')
@@ -2575,6 +2574,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
             self.Draw_Tune_Menu()
         elif update and self.checkkey == self.Motion:
             self.Draw_Motion_Menu()
+        elif update and self.checkkey == self.BedMeshMenu:
+            self.Draw_Bed_Mesh_Menu()
         elif self.checkkey == self.ProbeWizardID:
             self.Draw_Probe_Wizard()
 
@@ -2638,6 +2639,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
             self.HMI_Motion()
         elif self.checkkey in (self.ScrewsTiltMenu, self.ScrewsTiltResult):
             self.HMI_Screws_Tilt()
+        elif self.checkkey == self.MMUMenu:
+            self.HMI_MMU_Menu()
+        elif self.checkkey == self.BedMeshMenu:
+            self.HMI_Bed_Mesh_Menu()
+        elif self.checkkey == self.BedMeshScreen:
+            self.HMI_Bed_Mesh()
+        elif self.checkkey == self.MeshProfiles:
+            self.HMI_Mesh_Profiles()
         elif self.checkkey == self.ProbeWizardID:
             self.HMI_Probe_Wizard()
         elif self.checkkey == self.MotionValue:

@@ -1,6 +1,28 @@
-"""Happy Hare MMU home-screen rendering mixin."""
+"""MMU menu and Happy Hare home-screen rendering mixin."""
 
 class MMUViewMixin:
+    def Draw_MMU_Home_Icon(self, x, y, selected):
+        # Three filament reels fit the same tile as the stock Home icons.
+        edge = self.lcd.Color_White if selected else 0x8410
+        colors = (0xF800, 0x07E0, 0x001F) if selected else (0x7800, 0x03E0, 0x0010)
+        for lane, color in enumerate(colors):
+            left = x + 16 + lane * 27
+            self.lcd.Draw_Rectangle(1, color, left+4, y+22, left+18, y+49)
+            for flange in (left, left+19):
+                self.lcd.Draw_Rectangle(1, edge, flange, y+16, flange+3, y+55)
+            self.lcd.Draw_Line(color, left+11, y+56, left+11, y+62)
+        self.lcd.Draw_Line(edge, x+27, y+62, x+81, y+62)
+
+    def Draw_MMU_Menu(self):
+        self.Clear_Main_Window()
+        self.Draw_Title('MMU')
+        self.Draw_Back_First(True)
+
+    def HMI_MMU_Menu(self):
+        if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
+            self.Goto_MainMenu()
+            self.lcd.UpdateLCD()
+
     @staticmethod
     def _rgb565(rgb):
         r, g, b = (int(round(max(0.0, min(1.0, value)) * 31)) for value in rgb)
