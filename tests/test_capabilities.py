@@ -483,7 +483,7 @@ class CapabilityMenuTests(unittest.TestCase):
                             self.assertEqual(len(keys), len(set(keys)))
                             self.assertEqual('TEMP' in keys, hotend)
                             self.assertEqual('BED' in keys, bed)
-                            self.assertEqual('FAN' in keys, fan)
+                            self.assertEqual('FAN' in keys, fan and name != 'preheat')
                         if bed and fan:
                             self.assertNotEqual(result.TEMP_CASE_BED, result.TEMP_CASE_FAN)
 

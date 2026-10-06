@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from preset_store import PresetStore
 from test_regressions import backend
@@ -29,8 +29,10 @@ class PresetTests(unittest.TestCase):
         first.material_preset[0].bed_temp = 70
         self.assertTrue(first.save_settings())
         second = self.printer()
-        self.assertEqual(vars(second.material_preset[0]),
-                         dict(name='PLA', hotend_temp=225, bed_temp=70))
+        self.assertEqual((second.material_preset[0].name, second.material_preset[0].hotend_temp,
+                          second.material_preset[0].bed_temp), ('PLA', 225, 70))
+        self.assertIsNone(second.material_preset[0].mainsail_id)
+        self.assertIsNone(second.material_preset[0].mainsail_raw)
         second.material_preset[0].hotend_temp = 230
         self.assertEqual(first.material_preset[0].hotend_temp, 225)
 
@@ -78,6 +80,15 @@ class PresetTests(unittest.TestCase):
 
 
 class MainsailPresetTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / 'settings' / 'presets.json'
+
+    def printer(self):
+        with patch.object(backend, 'MoonrakerClient'), patch.object(backend, 'MoonrakerSubscription'):
+            return backend.PrinterData(settings_path=self.path)
+
     def test_maps_name_and_heaters(self):
         preset = backend.material_preset_t.from_mainsail({'name':'PETG Fast','gcode':'M106 S128','values':{'extruder':{'bool':True,'type':'heater','value':235},'heater_bed':{'bool':True,'type':'heater','value':80}}})
         self.assertEqual((preset.name, preset.hotend_temp, preset.bed_temp), ('PETG Fast',235,80))
