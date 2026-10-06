@@ -248,7 +248,9 @@ class MoonrakerSubscription:
         names = objects['objects']
         if not all(isinstance(name, str) for name in names) or 'configfile' not in names:
             raise MoonrakerError('Configuration object is unavailable')
-        available = [name for name in names if name in OBJECTS or name in ('mmu', 'mmu_machine') or
+        available = [name for name in names if name in OBJECTS or name in ('mmu', 'mmu_machine', 'mcu') or
+                     name.startswith('mcu ') or name.startswith('temperature_sensor ') or
+                     name.startswith('temperature_fan ') or
                      re.fullmatch(r'unit\d+_mmu_exit_leds', name) or
                      (name.startswith('extruder') and name[8:].isdigit())]
         config = self._rpc('printer.objects.query', {'objects': {'configfile': ['settings']}})

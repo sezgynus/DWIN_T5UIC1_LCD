@@ -299,6 +299,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self._live_jog = False
         self._live_jog_future = None
         self._live_jog_pending = None
+        self._info_scroll = 0
         self._loop = UIEventLoop(self._initialize, self._process_input,
                                  self._ui_tick, self._close_resources)
         self._loop.start()
@@ -1101,10 +1102,19 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self.lcd.UpdateLCD()
 
     def HMI_Info(self):
-        encoder_diffState = self.get_encoder_state()
-        if (encoder_diffState == self.ENCODER_DIFF_NO):
+        event = self.get_encoder_state()
+        if event == self.ENCODER_DIFF_NO:
             return
-        if (encoder_diffState == self.ENCODER_DIFF_ENTER):
+        items = self._info_items()
+        max_scroll = max(0, len(items) - 11)
+        if event == self.ENCODER_DIFF_CW:
+            self._info_scroll = min(max_scroll, getattr(self, '_info_scroll', 0) + 1)
+            self.Draw_Info_Menu()
+        elif event == self.ENCODER_DIFF_CCW:
+            self._info_scroll = max(0, getattr(self, '_info_scroll', 0) - 1)
+            self.Draw_Info_Menu()
+        elif event == self.ENCODER_DIFF_ENTER:
+            self._info_scroll = 0
             if self.pd.HAS_ONESTEP_LEVELING:
                 self.checkkey = self.Control
                 self.select_control.set(self.CONTROL_CASE_INFO)
@@ -2015,26 +2025,95 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     def Draw_Control_Menu(self):
         self._draw_capability_menu('control', self.select_control)
 
-    def _draw_info_text(self, value, y):
-        text = T5UIC1_LCD._panel_text(value)[:self.lcd.DWIN_WIDTH // self.MENU_CHR_W]
-        x = max(0, (self.lcd.DWIN_WIDTH - len(text) * self.MENU_CHR_W) // 2)
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
-                             self.lcd.Color_Bg_Black, x, y, text)
+    def _draw_info_row(self, label, value, y):
+        self._draw_menu_text(label, 8, y)
+        text = T5UIC1_LCD._panel_text(value)[:17]
+        color = self.lcd.Color_White
+        if label == 'Network':
+            state = text.strip().lower()
+            if state == 'online':
+                color = 0x07E0
+            elif state == 'offline':
+                color = 0xF800
+        self.lcd.Draw_String(False, False, self.lcd.font8x16, color,
+                             self.lcd.Color_Bg_Black, 120, y, text)
+
+    def _draw_info_section(self, label, y):
+        text = T5UIC1_LCD._panel_text(label)[:24]
+        palette = {
+            'MACHINE': (0x07FF, self.ICON_PrintSize),
+            'HOST': (0xF81F, self.ICON_Info),
+            'SOFTWARE': (0xA81F, self.ICON_Version),
+        }
+        key = text.upper()
+        if key.startswith('MCU'):
+            color, icon = 0x07E0, None
+        else:
+            color, icon = palette.get(key, (self.lcd.Color_White, self.ICON_Info))
+        if icon is not None:
+            self.lcd.ICON_Show(self.ICON, icon, 8, y - 2)
+        self.lcd.Draw_String(False, False, self.lcd.font10x20, color,
+                             self.lcd.Color_Bg_Black, 40, y, key)
+        self.lcd.Draw_Rectangle(1, color, 40, y + 21, 255, y + 22)
+
+    def _info_items(self):
+        info = self.pd.system_info
+        cpu = info.get('host_cpu')
+        temp = info.get('host_temp')
+        items = [
+            ('section', 'Machine', None),
+            ('row', 'Size', self.pd.MACHINE_SIZE),
+            ('row', 'Network', info.get('network', 'Unknown')),
+            ('row', 'IP', info.get('ip', 'Unavailable')),
+            ('section', 'Host', None),
+            ('row', 'CPU', 'N/A' if cpu is None else '{:.0f}%'.format(cpu)),
+            ('row', 'CPU temp', 'N/A' if temp is None else '{:.1f} C'.format(temp)),
+            ('section', 'Software', None),
+            ('row', 'KlipperDWIN', info.get('klipperdwin', 'Unavailable')),
+            ('row', 'Klipper', self.pd.SHORT_BUILD_VERSION),
+            ('row', 'Moonraker', info.get('moonraker', 'Unavailable')),
+            ('row', 'Mainsail', info.get('mainsail', 'Unavailable')),
+            ('wide', '', 'github.com/sezgynus/KlipperDWIN'),
+        ]
+        mcus = info.get('mcus') or ()
+        if not mcus:
+            items.extend((('section', 'MCU', None), ('row', 'Status', 'Unavailable')))
+        for mcu in mcus:
+            name = str(mcu.get('name', 'mcu'))
+            load = mcu.get('load')
+            temperature = mcu.get('temperature')
+            items.extend((
+                ('section', 'MCU: ' + name, None),
+                ('row', 'Status', 'Connected'),
+                ('row', 'Load', 'N/A' if load is None else '{:.1f}%'.format(load)),
+                ('row', 'Temp', 'N/A' if temperature is None else '{:.1f} C'.format(temperature)),
+            ))
+        return items
 
     def Draw_Info_Menu(self):
+        self.pd.refresh_system_info()
         self.Clear_Main_Window()
-
-        self._draw_info_text(self.pd.MACHINE_SIZE, 122)
-        self._draw_info_text(self.pd.SHORT_BUILD_VERSION, 195)
         self.Draw_Title('Info')
-        self.lcd.Frame_AreaCopy(1, 120, 150, 146, 161, 124, 102)
-        self.lcd.Frame_AreaCopy(1, 146, 151, 254, 161, 82, 175)
-        self.lcd.Frame_AreaCopy(1, 0, 165, 94, 175, 89, 248)
-        self._draw_info_text(self.pd.CORP_WEBSITE_E, 268)
         self.Draw_Back_First()
-        for i in range(3):
-            self.lcd.ICON_Show(self.ICON, self.ICON_PrintSize + i, 26, 99 + i * 73)
-            self.lcd.Draw_Line(self.lcd.Line_Color, 16, self.MBASE(2) + i * 73, 256, 156 + i * 73)
+        items = self._info_items()
+        visible_count = 11
+        max_scroll = max(0, len(items) - visible_count)
+        self._info_scroll = max(0, min(getattr(self, '_info_scroll', 0), max_scroll))
+        y = 92
+        for kind, label, value in items[self._info_scroll:self._info_scroll + visible_count]:
+            if kind == 'section':
+                self._draw_info_section(label, y)
+            elif kind == 'wide':
+                text = T5UIC1_LCD._panel_text(value)[:31]
+                self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                                     self.lcd.Color_Bg_Black, 8, y, text)
+            else:
+                self._draw_info_row(label, value, y)
+            y += 24
+        if self._info_scroll:
+            self._draw_menu_text('^', 256, 76)
+        if self._info_scroll < max_scroll:
+            self._draw_menu_text('v', 256, 328)
 
     def Draw_Tune_Menu(self):
         self._draw_capability_menu('tune', self.select_tune, self.index_tune)
@@ -2418,6 +2497,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             self._offline = True
             return
         self.pd.probe_wizard.update()
+        if self.checkkey == self.Info and self.pd.refresh_system_info():
+            self.Draw_Info_Menu()
+            self.lcd.UpdateLCD()
         if self._poll_print_start() or getattr(self, '_start_error_visible', False):
             return
         if self.checkkey == self.SelectFile and (

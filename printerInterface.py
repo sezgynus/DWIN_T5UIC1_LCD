@@ -14,6 +14,7 @@ from probe_wizard import ProbeWizard
 from preset_store import PresetStore
 from printer_state import PrinterState
 from printer_capabilities import PrinterCapabilities
+from system_info import host_metrics, network_info, updater_version
 
 class xyze_t:
     x = 0.0
@@ -164,7 +165,7 @@ class PrinterData:
     files = None
     MACHINE_SIZE = 'unknown'
     SHORT_BUILD_VERSION = "unknown"
-    CORP_WEBSITE_E = "https://www.klipper3d.org/"
+    CORP_WEBSITE_E = "github.com/sezgynus/KlipperDWIN"
 
     def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0, settings_path=None,
                  power_device='Printer'):
@@ -208,6 +209,18 @@ class PrinterData:
         self.mainsail_presets_error = None
         self.presets_from_mainsail = False
         self.preset_revision = 0
+        self.system_info = {
+            'klipperdwin': 'Unavailable',
+            'moonraker': 'Unavailable',
+            'mainsail': 'Unavailable',
+            'network': 'Unknown',
+            'ip': 'Unavailable',
+            'host_cpu': None,
+            'host_temp': None,
+            'mcus': (),
+        }
+        self._system_info_refresh_at = 0.0
+        self._system_info_refresh_interval = 5.0
         self._preset_refresh_at = 0.0
         self._preset_refresh_interval = 5.0
         self.refresh_mainsail_presets(force=True)
@@ -227,6 +240,81 @@ class PrinterData:
         self._file_revision = -1
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
         self.probe_wizard = ProbeWizard(self)
+
+    def refresh_system_info(self, force=False):
+        """Refresh component versions and host IPv4 without mutating printer state."""
+        now = time.monotonic()
+        if not force and now < self._system_info_refresh_at:
+            return False
+        self._system_info_refresh_at = now + self._system_info_refresh_interval
+        previous = dict(self.system_info)
+        status, address = network_info()
+        current = dict(previous)
+        current['network'] = status
+        current['ip'] = address
+        cpu, temperature = host_metrics()
+        current['host_cpu'] = cpu
+        current['host_temp'] = temperature
+        mcus = []
+        if self.state.ready:
+            temperatures = []
+            for object_name, value in self.state.status.items():
+                if (not (object_name.startswith('temperature_sensor ') or
+                         object_name.startswith('temperature_fan ')) or
+                        not isinstance(value, Mapping)):
+                    continue
+                setting = next((item for key, item in self.state.settings.items()
+                                if key.lower() == object_name.lower()), {})
+                if not isinstance(setting, Mapping) or setting.get('sensor_type') != 'temperature_mcu':
+                    continue
+                # Klipper defaults temperature_mcu sensors to the primary MCU.
+                sensor_mcu = setting.get('sensor_mcu', 'mcu')
+                if not isinstance(sensor_mcu, str):
+                    continue
+                try:
+                    temperature = float(value.get('temperature'))
+                    if math.isfinite(temperature):
+                        temperatures.append((sensor_mcu, temperature))
+                except (TypeError, ValueError):
+                    pass
+            for object_name, value in self.state.status.items():
+                if object_name != 'mcu' and not object_name.startswith('mcu '):
+                    continue
+                if not isinstance(value, Mapping):
+                    continue
+                stats = value.get('last_stats', {})
+                load = None
+                if isinstance(stats, Mapping):
+                    try:
+                        task_avg = float(stats.get('mcu_task_avg'))
+                        task_stddev = float(stats.get('mcu_task_stddev'))
+                        if math.isfinite(task_avg) and math.isfinite(task_stddev):
+                            # Match Mainsail's MCU load calculation exactly.
+                            ratio = task_avg + (3.0 * task_stddev) / 0.0025
+                            load = max(0.0, min(100.0, ratio * 100.0))
+                    except (TypeError, ValueError):
+                        pass
+                temperature = None
+                for sensor_mcu, sensor_temperature in temperatures:
+                    if object_name.endswith(sensor_mcu):
+                        temperature = sensor_temperature
+                        break
+                mcus.append({'name': object_name, 'load': load,
+                             'temperature': temperature,
+                             'version': str(value.get('mcu_version') or '')})
+            current['mcus'] = tuple(mcus)
+        try:
+            response = self.client.get('/machine/update/status')
+            versions = response.get('result', {}).get('version_info', {})
+            if not isinstance(versions, Mapping):
+                raise ValueError('Invalid update-manager status')
+            current['klipperdwin'] = updater_version(versions, 'KlipperDWIN', full=True)
+            current['moonraker'] = updater_version(versions, 'moonraker', full=True)
+            current['mainsail'] = updater_version(versions, 'mainsail')
+        except (MoonrakerError, KeyError, TypeError, ValueError) as error:
+            logging.debug('Cannot refresh component versions: %s', error)
+        self.system_info = current
+        return current != previous
 
     @staticmethod
     def _preset_signature(presets):

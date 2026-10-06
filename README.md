@@ -299,9 +299,20 @@ Brightness is converted to the macro's 0–255 scale internally.
 
 ### 12. Info
 
-<p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info screen"></p>
+<p align="center">
+  <img src="docs/assets/screens/info-overview.png" width="220" alt="Info overview">
+  <img src="docs/assets/screens/info-software.png" width="220" alt="Software and MCU information">
+</p>
+<p align="center">
+  <img src="docs/assets/screens/info-mcu-overview.png" width="220" alt="MCU overview">
+  <img src="docs/assets/screens/info-mcu-details.png" width="220" alt="MCU telemetry details">
+</p>
 
-The Info screen shows detected machine/build information in the familiar DWIN layout. It is used when a dedicated one-step leveling entry is not occupying the fourth home-screen slot.
+The Info screen is a live, encoder-scrollable system overview organized into color-coded Machine, Host, Software and MCU sections. It shows the configured machine dimensions, network state and active IPv4 address; host CPU load and temperature; installed KlipperDWIN, Klipper, Moonraker and Mainsail versions; and the project address `github.com/sezgynus/KlipperDWIN`.
+
+Every connected Klipper MCU is listed separately with connection state and live MCU load. MCU temperature is also shown when Klipper exposes a `temperature_mcu` source for that controller; otherwise the value is reported as `N/A`. The network state is highlighted green while online and red while offline. Long content can be browsed vertically with the encoder without overlapping the persistent printer-status area.
+
+KlipperDWIN uses Moonraker Update Manager's full Git version string when available (for example `v0.4.0-N-gXXXX`), so commits after a release tag remain identifiable.
 
 ## Dynamic capability detection
 
