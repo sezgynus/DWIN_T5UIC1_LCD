@@ -136,8 +136,10 @@ class PrinterData:
     SHORT_BUILD_VERSION = "unknown"
     CORP_WEBSITE_E = "https://www.klipper3d.org/"
 
-    def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0, settings_path=None):
+    def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0, settings_path=None,
+                 power_device='Printer'):
         self.client = MoonrakerClient(URL, API_Key, timeout)
+        self.power_device = str(power_device).strip() or 'Printer'
         # Keep read-only Spoolman telemetry off the serialized printer-command
         # transport. A telemetry timeout must never cancel or delay user commands.
         self.spoolman_client = MoonrakerClient(URL, API_Key, timeout, queue_size=16)
@@ -259,6 +261,27 @@ class PrinterData:
             return current['state'] == 'ready' and current['epoch'] == epoch
 
         return self.client.post(path, json, guard=guard, cleanup=cleanup, report_error=report_error) if cleanup is not None else self.client.post(path, json, guard=guard, report_error=report_error)
+
+    def power_on_if_off(self):
+        """Turn on the configured Moonraker power device only when it is off."""
+        payload = {'device': self.power_device, 'action': 'on'}
+
+        def device_is_off():
+            result = self.client.get('/machine/device_power/devices').get('result', {})
+            devices = result.get('devices', []) if isinstance(result, dict) else []
+            target = next((item for item in devices
+                           if str(item.get('device', '')).casefold() == self.power_device.casefold()), None)
+            if target is None:
+                raise MoonrakerError('Configured power device was not found')
+            if target.get('status') != 'off':
+                raise MoonrakerError('Configured power device is not off')
+            payload['device'] = target['device']
+            return True
+
+        # This intentionally bypasses postREST(): Moonraker must be able to
+        # switch the PSU on while Klipper itself is offline.
+        return self.client.post('/machine/device_power/device', payload,
+                                guard=device_is_off, report_error=False)
 
     def init_Webservices(self):
         # Bootstrap and reconnection run on the subscription thread.

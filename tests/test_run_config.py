@@ -11,7 +11,8 @@ class ConfigTests(unittest.TestCase):
     def test_environment_defaults(self):
         values = dict(MOONRAKER_URL='http://printer:7125', DWIN_SERIAL_PORT='/dev/test',
                       DWIN_ENCODER_PINS='26 19', DWIN_BUTTON_PIN='13',
-                      DWIN_REQUEST_TIMEOUT='2.5', DWIN_SETTINGS_FILE='/tmp/presets.json')
+                      DWIN_REQUEST_TIMEOUT='2.5', DWIN_SETTINGS_FILE='/tmp/presets.json',
+                      DWIN_POWER_DEVICE='Printer')
         with patch.dict(os.environ, values, clear=True):
             args = run.parse_args([])
         self.assertEqual(args.encoder_pins, (26, 19))
@@ -19,6 +20,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(args.serial_port, '/dev/test')
         self.assertEqual(args.settings_file, '/tmp/presets.json')
         self.assertEqual(args.moonraker_url, 'http://printer:7125')
+        self.assertEqual(args.power_device, 'Printer')
 
     def test_cli_overrides_environment(self):
         with patch.dict(os.environ, {'DWIN_ENCODER_PINS': '26 19', 'DWIN_REQUEST_TIMEOUT': '2'}, clear=True):
