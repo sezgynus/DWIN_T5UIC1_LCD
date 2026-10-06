@@ -53,18 +53,24 @@ class AuditRenderingTests(unittest.TestCase):
             'mainsail': 'Ölçüm' * 20,
             'network': 'Online',
             'ip': '192.168.100.200',
+            'host_cpu': 99.9,
+            'host_temp': 52.75,
+            'mcus': (('mcu', 'Connected'), ('toolhead-µcu', 'Connected'),
+                     ('very-long-mcu-name-that-must-be-clipped', 'Connected')),
         }
         result.pd.SHORT_BUILD_VERSION = 'k' * 100
+        result.pd.MACHINE_SIZE = '999x999x999'
         result.Draw_Info_Menu()
         frames = [frame for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11]
-        values = [frame for frame in frames
-                  if int.from_bytes(frame[7:9], 'big') == 120
-                  and int.from_bytes(frame[9:11], 'big') in (82, 124, 166, 208, 250, 292)]
-        self.assertEqual(len(values), 6)
+        values = [frame for frame in frames if int.from_bytes(frame[7:9], 'big') == 136]
+        self.assertEqual(len(values), 12)
         for frame in values:
-            self.assertLessEqual(len(frame[11:-4]), 18)
-        self.assertTrue(any(frame[11:-4] == b'github.com/sezgynus/KlipperDWIN'
-                            for frame in frames))
+            self.assertLessEqual(len(frame[11:-4]), 17)
+            x = int.from_bytes(frame[7:9], 'big')
+            y = int.from_bytes(frame[9:11], 'big')
+            self.assertLessEqual(x + len(frame[11:-4]) * result.MENU_CHR_W,
+                                 result.lcd.DWIN_WIDTH)
+            self.assertLess(y, 480)
 
     def test_large_printer_values_show_overflow_without_changing_target(self):
         result = self.screen()
