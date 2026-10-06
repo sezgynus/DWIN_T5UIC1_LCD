@@ -19,9 +19,6 @@
   <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue">
 </p>
 
-> [!NOTE]
-> The screenshots in this README are temporary placeholders. Real panel captures will replace them after the UI photo set is prepared.
-
 ## What this project is
 
 This project turns the common 4.3-inch DWIN T5UIC1 rotary-encoder display used on printers such as the Ender 3 V2 into a local Klipper control panel.
@@ -41,10 +38,9 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Optional Live Jog mode
 - Runtime motion tuning for max velocity, max acceleration, square-corner velocity and minimum cruise ratio
 - Runtime Z-offset control
-- Probe calibration wizard with explicit TESTZ steps and guarded SAVE_CONFIG flow
 - PLA/ABS preset editing and persistent JSON storage
 - Optional case-light UI through an M355 macro
-- Happy Hare MMU panel on the home screen
+- Happy Hare MMU visualization on the home screen
 - Per-gate filament colors and MMU unit name
 - Live lane indicators driven by Happy Hare exit-LED colors
 - Spoolman remaining-filament percentages per MMU gate
@@ -55,252 +51,26 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - systemd service example
 - Python unit/regression tests
 
-## Architecture
-
-```mermaid
-flowchart LR
-    ENC[Rotary encoder / button] -->|GPIO events| UI[Python UI owner thread]
-    UI -->|draw commands| DWIN[DWIN T5UIC1 LCD]
-    DWIN -->|UART| UI
-    UI --> PD[PrinterData / capability model]
-    PD --> SUB[Moonraker WebSocket subscription]
-    UI --> CMD[Moonraker command worker]
-    SUB <--> MR[Moonraker]
-    CMD -->|HTTP / JSON-RPC| MR
-    MR <--> KL[Klipper]
-    MR <--> SM[Spoolman]
-    KL <--> HH[Happy Hare]
-```
-
-The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; commands are serialized separately so UI rendering does not depend on blocking HTTP requests.
-
-## Supported hardware
-
-The current UI targets the DWIN T5UIC1 panel family used by the Ender 3 V2 layout and its rotary encoder.
-
-Typical wiring:
-
-| Display | Raspberry Pi |
-|---|---|
-| RX | GPIO14 / UART TX |
-| TX | GPIO15 / UART RX |
-| Encoder A | GPIO21 by default |
-| Encoder B | GPIO19 by default |
-| Encoder Enter | GPIO13 by default |
-| VCC | 5 V |
-| GND | GND |
-
-BCM numbering is used. Encoder/button pins and the serial device are configurable, so the defaults are not a requirement.
-
-> [!IMPORTANT]
-> Raspberry Pi UART routing varies by Pi model and OS configuration. Verify which device is actually routed to GPIO14/15 instead of assuming that `/dev/ttyAMA0` or `/dev/serial0` is always correct.
-
-Existing wiring photos and diagrams are available in the [images](images/) directory.
-
-## UI tour
-
-Each section below describes the current screen behavior. The placeholder image will be replaced with a real LCD photograph/capture.
-
-### 1. Home screen
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Home screen placeholder"></p>
-
-The home screen is the main navigation hub. It exposes Print, Prepare, Control and either Leveling or Info depending on discovered printer capabilities.
-
-A compact live dashboard remains visible below the menu area and reports the current hotend/bed state when available, print-speed factor, fan, flow, runtime Z offset and live X/Y/Z coordinates.
-
-When Happy Hare is not detected, the normal logo area is shown. When an MMU is available, that area becomes the live MMU panel described below.
-
-### 2. Happy Hare MMU panel
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Happy Hare MMU panel placeholder"></p>
-
-The MMU panel is integrated directly into the home screen. It adapts to the reported gate count and uses Happy Hare state instead of a hard-coded four-spool model.
-
-For each gate it can show:
-
-- a compact side-view spool graphic
-- filament color from Happy Hare gate metadata
-- remaining percentage fetched from the gate's Spoolman spool ID
-- lane number
-- live lane-indicator color from the Happy Hare exit LED chain
-- MMU unit display name when exposed by `mmu_machine`
-
-LED hue is normalized before RGB565 conversion, so deliberately dim physical LEDs remain visible on the LCD while keeping their color. Fully off LEDs remain black. Lane-number text automatically switches between black and white for contrast.
-
-The current implementation subscribes to `unit0_mmu_exit_leds` for live exit-LED colors. This is intentionally explicit today and can be generalized for multi-unit/alternative-segment setups later.
-
-### 3. Print file browser
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Print browser placeholder"></p>
-
-The file browser uses Moonraker's file list and keeps a cached, sorted path snapshot for responsive encoder navigation.
-
-Selection is preserved across list refreshes where possible. Deleting/reordering files cannot silently move the cursor to an unrelated entry. Print start is guarded against duplicate presses and waits for both command acceptance and subscribed print-state confirmation before opening the print screen.
-
-### 4. Printing screen
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Printing screen placeholder"></p>
-
-The printing screen provides:
-
-- file name
-- progress bar and percentage
-- elapsed print time
-- estimated remaining time
-- Tune
-- Pause / Resume
-- Stop
-
-Paused, completed, cancelled and error states are handled explicitly. Completion follows Klipper's `print_stats.state`; a rounded 100% value alone does not mark a running print as finished.
-
-### 5. Tune menu
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Tune menu placeholder"></p>
-
-Tune is the live-print adjustment menu. Rows appear only when the matching printer capability exists. Depending on the machine, it can expose hotend target, bed target, fan, print speed, runtime Z offset and other active controls.
-
-Values remain synchronized with Moonraker status. An editor keeps its local target while open, then returns to subscribed state after confirmation.
-
-### 6. Prepare menu
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Prepare menu placeholder"></p>
-
-Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
-
-### 7. Move / Live Jog
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Move and Live Jog placeholder"></p>
-
-The movement screen displays live X/Y/Z positions and E when an extruder is available.
-
-Normal edit mode changes a local target and submits a guarded move. Live Jog can apply encoder movement immediately for responsive positioning. Jog commands:
-
-- require the selected axis to be homed
-- respect discovered physical travel limits
-- reject movement while printing/paused
-- validate extrusion against `can_extrude` and the configured extrusion distance
-- save and restore Klipper G-code state around relative movement
-- block further motion if state restoration cannot be confirmed
-
-The position source is Klipper's command-space `gcode_move.position`, so the UI remains consistent with runtime transforms and offsets.
-
-### 8. Control menu
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Control menu placeholder"></p>
-
-Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, probe calibration, case light and information pages.
-
-### 9. Temperature / presets
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Temperature and presets placeholder"></p>
-
-Temperature controls are generated from installed devices: hotend, heated bed and part fan are independently optional.
-
-PLA and ABS profiles can be edited locally and saved to a versioned JSON file. Applying a profile validates every available target first, then sends one script for the installed devices. Saving a preset does not heat the printer.
-
-Default storage:
-
-```text
-$XDG_CONFIG_HOME/dwin-lcd/presets.json
-```
-
-or:
-
-```text
-~/.config/dwin-lcd/presets.json
-```
-
-A custom path can be supplied with `--settings-file`.
-
-### 10. Motion (runtime)
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Runtime motion menu placeholder"></p>
-
-The Motion screen edits Klipper's runtime velocity limits through `SET_VELOCITY_LIMIT`:
-
-- max velocity
-- max acceleration
-- square-corner velocity
-- minimum cruise ratio, when supported
-
-Unsupported fields are omitted. These are runtime changes; the screen does not automatically persist them into printer configuration.
-
-### 11. Probe calibration wizard
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Probe calibration placeholder"></p>
-
-When the required probe/manual-probe objects are available, Control exposes a guided probe calibration screen.
-
-The wizard deliberately separates each step:
-
-- start `PROBE_CALIBRATE`
-- Raise / Lower by 0.1 mm
-- Raise / Lower by 0.01 mm
-- Accept
-- Abort
-- Save and restart Klipper only when the expected probe offset is the pending configuration change
-- leave unsaved
-
-The UI never assumes an HTTP success means the physical/manual-probe state already changed; it waits for subscribed state confirmation.
-
-### 12. Case Light
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Case light placeholder"></p>
-
-If a `gcode_macro M355` capability is detected, the Control menu can expose case-light control.
-
-The page provides:
-
-- on/off state
-- 0–100% brightness editor
-- synchronization from the macro's reported state
-
-Brightness is converted to the macro's 0–255 scale internally.
-
-### 13. Info
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Info screen placeholder"></p>
-
-The Info screen shows detected machine/build information in the familiar DWIN layout. It is used when a dedicated one-step leveling entry is not occupying the fourth home-screen slot.
-
-## Dynamic capability detection
-
-Menus are not built from a fixed printer template. At startup/reconnect the application discovers Moonraker/Klipper objects and derives capabilities from the actual machine.
-
-Examples include:
-
-- hotend present or absent
-- heated bed present or absent
-- part-cooling fan present or absent
-- probe/manual-probe support
-- bed-mesh/leveling support
-- motion fields supported by the active Klipper version
-- case-light macro availability
-- Happy Hare MMU objects
-- MMU unit metadata and exit LEDs
-
-This allows the same UI code to avoid showing controls that cannot work on the connected printer.
-
-## Moonraker connection model
-
-Default endpoint:
-
-```text
-http://127.0.0.1:7125
-```
-
-The application uses:
-
-- HTTP for commands and bounded request/response operations
-- Moonraker WebSocket JSON-RPC for printer object discovery and live subscriptions
-- connection epochs so queued commands from an old connection cannot run after reconnect
-- automatic WebSocket reconnect
-- ping/pong checks for silent disconnect detection
-- immutable merged printer-state snapshots
-- command futures and retained error acknowledgement instead of blind retries
-
-Optional API-key authentication is supported through `MOONRAKER_API_KEY`. Empty keys are not sent.
+## Project status
+
+- ✅ **Moonraker integration** — native HTTP + WebSocket communication.
+- ✅ **Capability-driven UI** — dynamic menus and live printer dashboard.
+- ✅ **Print workflow** — file browser, print-state tracking and print controls.
+- ✅ **Printer controls** — Tune, Prepare, Move / Live Jog and runtime Motion controls.
+- ✅ **Temperature & presets** — temperature controls with persistent local PLA/ABS presets.
+- ✅ **Case Light** — control through a compatible `M355` macro.
+- ✅ **Happy Hare visualization** — MMU gate colors and exit-LED state on the Home screen.
+- ✅ **Spoolman integration** — remaining-filament percentage per MMU gate.
+- ✅ **Encoder power-on** — printer power-on through a Moonraker power device.
+- ✅ **Installation & updates** — interactive configuration, systemd service and Moonraker Update Manager integration.
+- ✅ **Reliability** — UART recovery, guarded command execution and regression tests.
+- 🛠️ **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.
+- 🛠️ **Bed Mesh Visualization & Control** — graphical `bed_mesh` display, probed Z-value visualization, active mesh/profile information and LCD access to Bed Mesh operations.
+- 🛠️ **Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.
+- 🛠️ **Mainsail preset synchronization** — replace fixed local presets with automatic discovery of the presets configured in Mainsail, including preset names, temperatures and fan values.
+- 🛠️ **Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.
+- 🛠️ **Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.
+- 🛠️ **Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations.
 
 ## Installation
 
@@ -349,6 +119,7 @@ Encoder A GPIO (BCM) [21]:
 Encoder B GPIO (BCM) [19]:
 Encoder button GPIO (BCM) [20]:
 Moonraker power device [Printer]:
+Power-on button hold time (ms, 0 = immediate) [2000]:
 ```
 
 To change these settings later, run:
@@ -360,66 +131,206 @@ cd ~/KlipperDWIN
 
 Existing configuration is preserved when `install.sh` is run again. `configure.sh` shows the current values as defaults, writes `~/.config/KlipperDWIN/KlipperDWIN.env`, and can restart the service after saving.
 
-## UART preparation
+The interactive configuration covers the Moonraker endpoint, LCD UART, encoder GPIO pins, encoder button GPIO, Moonraker power-device name, and the power-on hold time. `DWIN_POWER_ON_HOLD_MS` is expressed in milliseconds; the default is `2000`, while `0` requests printer power immediately when the encoder button is pressed.
 
-Use `raspi-config` to disable the serial login console and enable serial hardware, then reboot.
+### Updating with Moonraker / Mainsail
 
-```bash
-sudo raspi-config
+The installer registers KlipperDWIN with Moonraker Update Manager automatically. After Moonraker reloads the generated `KlipperDWIN.conf`, KlipperDWIN appears in Mainsail's **Machine → Update Manager** together with the other managed components.
+
+Use **Refresh** to check for a newer revision and **Update** on the KlipperDWIN entry to install it. Moonraker updates the Git checkout, refreshes Python requirements when needed, and restarts the managed `KlipperDWIN` service. User configuration is kept outside the repository in `~/.config/KlipperDWIN`, so normal Update Manager updates do not overwrite it.
+
+The updater follows the repository's `master` branch. Version tags provide the readable version base shown by Moonraker/Mainsail; commits after a tag may be displayed in a form such as `v0.2.1-1-gabcdef12`.
+
+> [!NOTE]
+> Use `./configure.sh` for configuration changes. Do not edit tracked repository files for local hardware settings, because Moonraker expects the managed Git checkout to remain clean.
+
+## Supported hardware
+
+The current UI targets the DWIN T5UIC1 panel family used by the Ender 3 V2 layout and its rotary encoder.
+
+Typical wiring:
+
+| Display | Raspberry Pi |
+|---|---|
+| RX | GPIO14 / UART TX |
+| TX | GPIO15 / UART RX |
+| Encoder A | GPIO21 by default |
+| Encoder B | GPIO19 by default |
+| Encoder Enter | GPIO20 by default |
+| VCC | 5 V |
+| GND | GND |
+
+BCM numbering is used. Encoder/button pins and the serial device are configurable, so the defaults are not a requirement.
+
+> [!IMPORTANT]
+> Raspberry Pi UART routing varies by Pi model and OS configuration. Verify which device is actually routed to GPIO14/15 instead of assuming that `/dev/ttyAMA0` or `/dev/serial0` is always correct.
+
+Existing wiring photos and diagrams are available in the [images](images/) directory.
+
+## UI tour
+
+Each section below describes the current screen behavior using captures from the current UI.
+
+### 1. Home screen
+
+<p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN home screen"></p>
+
+The home screen is the main navigation hub. It exposes Print, Prepare, Control and either Leveling or Info depending on discovered printer capabilities.
+
+A compact live dashboard remains visible below the menu area and reports the current hotend/bed state when available, print-speed factor, fan, flow, runtime Z offset and live X/Y/Z coordinates.
+
+When Happy Hare is not detected, the normal logo area is shown. When an MMU is available, that area becomes the live MMU visualization described below.
+
+### 2. Happy Hare MMU visualization
+
+There is no separate MMU control screen yet. The current Happy Hare integration is displayed directly on the Home screen shown above. It adapts to the reported gate count and uses Happy Hare state instead of a hard-coded four-spool model.
+
+For each gate it can show:
+
+- a compact side-view spool graphic
+- filament color from Happy Hare gate metadata
+- remaining percentage fetched from the gate's Spoolman spool ID
+- lane number
+- live lane-indicator color from the Happy Hare exit LED chain
+- MMU unit display name when exposed by `mmu_machine`
+
+LED hue is normalized before RGB565 conversion, so deliberately dim physical LEDs remain visible on the LCD while keeping their color. Fully off LEDs remain black. Lane-number text automatically switches between black and white for contrast.
+
+The current Home-screen implementation subscribes to `unit0_mmu_exit_leds` for live exit-LED colors. This is intentionally explicit today and can be generalized for multi-unit/alternative-segment setups later.
+
+### 3. Print file browser
+
+<p align="center"><img src="docs/assets/screens/print-file.png" width="360" alt="Print file browser"></p>
+
+The file browser uses Moonraker's file list and keeps a cached, sorted path snapshot for responsive encoder navigation.
+
+Selection is preserved across list refreshes where possible. Deleting/reordering files cannot silently move the cursor to an unrelated entry. Print start is guarded against duplicate presses and waits for both command acceptance and subscribed print-state confirmation before opening the print screen.
+
+### 4. Printing screen
+
+<p align="center"><img src="docs/assets/screens/printing.png" width="360" alt="Printing screen"></p>
+
+The printing screen provides:
+
+- file name
+- progress bar and percentage
+- elapsed print time
+- estimated remaining time
+- Tune
+- Pause / Resume
+- Stop
+
+Paused, completed, cancelled and error states are handled explicitly. Completion follows Klipper's `print_stats.state`; a rounded 100% value alone does not mark a running print as finished.
+
+### 5. Tune menu
+
+<p align="center"><img src="docs/assets/screens/tune.png" width="360" alt="Tune menu"></p>
+
+Tune is the live-print adjustment menu. Rows appear only when the matching printer capability exists. Depending on the machine, it can expose hotend target, bed target, fan, print speed, runtime Z offset and other active controls.
+
+Values remain synchronized with Moonraker status. An editor keeps its local target while open, then returns to subscribed state after confirmation.
+
+### 6. Prepare menu
+
+<p align="center"><img src="docs/assets/screens/prepare.png" width="360" alt="Prepare menu"></p>
+
+Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
+
+### 7. Move / Live Jog
+
+<p align="center"><img src="docs/assets/screens/move.png" width="360" alt="Move and Live Jog screen"></p>
+
+The movement screen displays live X/Y/Z positions and E when an extruder is available.
+
+Normal edit mode changes a local target and submits a guarded move. Live Jog can apply encoder movement immediately for responsive positioning. Jog commands:
+
+- require the selected axis to be homed
+- respect discovered physical travel limits
+- reject movement while printing/paused
+- validate extrusion against `can_extrude` and the configured extrusion distance
+- save and restore Klipper G-code state around relative movement
+- block further motion if state restoration cannot be confirmed
+
+The position source is Klipper's command-space `gcode_move.position`, so the UI remains consistent with runtime transforms and offsets.
+
+### 8. Control menu
+
+<p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menu"></p>
+
+Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, probe calibration, case light and information pages.
+
+### 9. Temperature / presets
+
+<p align="center"><img src="docs/assets/screens/temperature.png" width="360" alt="Temperature and presets screen"></p>
+
+Temperature controls are generated from installed devices: hotend, heated bed and part fan are independently optional.
+
+PLA and ABS profiles can be edited locally and saved to a versioned JSON file. Applying a profile validates every available target first, then sends one script for the installed devices. Saving a preset does not heat the printer.
+
+Default storage:
+
+```text
+$XDG_CONFIG_HOME/dwin-lcd/presets.json
 ```
 
-Verify the UART assigned to the physical pins for your Pi model. Bluetooth overlays and boot configuration paths differ across Raspberry Pi generations and OS releases, so this project does not prescribe one universal overlay.
+or:
 
-## Run manually
-
-Example matching the repository defaults:
-
-```bash
-cd ~/KlipperDWIN
-
-.venv/bin/python run.py \
-  --serial-port /dev/ttyAMA0 \
-  --encoder-pins 21 19 \
-  --button-pin 13 \
-  --moonraker-url http://127.0.0.1:7125
+```text
+~/.config/dwin-lcd/presets.json
 ```
 
-Use the actual UART and GPIO pins for your installation.
+A custom path can be supplied with `--settings-file`.
 
-Available configuration:
+### 10. Motion (runtime)
 
-| Environment | CLI | Default |
-|---|---|---|
-| `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
-| `MOONRAKER_API_KEY` | environment only | empty |
-| `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 s |
-| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyAMA0` |
-| `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
-| `DWIN_BUTTON_PIN` | `--button-pin` | `13` |
-| `DWIN_SETTINGS_FILE` | `--settings-file` | user XDG path |
+<p align="center"><img src="docs/assets/screens/motion-runtime.png" width="360" alt="Runtime motion menu"></p>
 
-## Run at boot with systemd
+The Motion screen edits Klipper's runtime velocity limits through `SET_VELOCITY_LIMIT`:
 
-A sample unit and environment file are included.
+- max velocity
+- max acceleration
+- square-corner velocity
+- minimum cruise ratio, when supported
 
-```bash
-id -u dwinlcd >/dev/null 2>&1 || \
-  sudo useradd --system --user-group \
-  --home-dir /var/lib/dwin-lcd --no-create-home \
-  --shell /usr/sbin/nologin dwinlcd
+Unsupported fields are omitted. These are runtime changes; the screen does not automatically persist them into printer configuration.
 
-sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
-sudoedit /etc/default/dwin-lcd
+### 11. Case Light
 
-sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
-  /etc/systemd/system/simpleLCD.service
+<p align="center"><img src="docs/assets/screens/case-light.png" width="360" alt="Case Light screen"></p>
 
-sudo systemctl daemon-reload
-sudo systemctl enable --now simpleLCD.service
-sudo journalctl -u simpleLCD.service -f
-```
+If a `gcode_macro M355` capability is detected, the Control menu can expose case-light control.
 
-The service uses a dedicated account, restarts on failure, stores presets in `/var/lib/dwin-lcd`, and logs to journald. Confirm that the service user has access to the actual UART and gpiochip devices on your OS.
+The page provides:
+
+- on/off state
+- 0–100% brightness editor
+- synchronization from the macro's reported state
+
+Brightness is converted to the macro's 0–255 scale internally.
+
+### 12. Info
+
+<p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info screen"></p>
+
+The Info screen shows detected machine/build information in the familiar DWIN layout. It is used when a dedicated one-step leveling entry is not occupying the fourth home-screen slot.
+
+## Dynamic capability detection
+
+Menus are not built from a fixed printer template. At startup/reconnect the application discovers Moonraker/Klipper objects and derives capabilities from the actual machine.
+
+Examples include:
+
+- hotend present or absent
+- heated bed present or absent
+- part-cooling fan present or absent
+- probe/manual-probe support
+- bed-mesh/leveling support
+- motion fields supported by the active Klipper version
+- case-light macro availability
+- Happy Hare MMU objects
+- MMU unit metadata and exit LEDs
+
+This allows the same UI code to avoid showing controls that cannot work on the connected printer.
 
 ## Happy Hare integration
 
@@ -462,9 +373,139 @@ Adapt your macro to that contract if you want bidirectional case-light status.
 
 ## Encoder power-on
 
-When Moonraker has a `[power Printer]` device, holding the encoder button for 2 seconds while that device is off turns it on. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. This path does not depend on Klipper being ready or on the LCD UART being connected.
+When Moonraker has a configured power device, the encoder button can turn it on even while Klipper or the LCD UART is offline. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. The hold duration is controlled by `DWIN_POWER_ON_HOLD_MS`: the default `2000` requires a 2-second hold, and `0` requests power-on immediately on the press edge.
+
+## Architecture
+
+<details>
+<summary><strong>Show architecture</strong></summary>
+
+```mermaid
+flowchart LR
+    ENC[Rotary encoder / button] -->|GPIO events| UI[Python UI owner thread]
+    UI -->|draw commands| DWIN[DWIN T5UIC1 LCD]
+    DWIN -->|UART| UI
+    UI --> PD[PrinterData / capability model]
+    PD --> SUB[Moonraker WebSocket subscription]
+    UI --> CMD[Moonraker command worker]
+    SUB <--> MR[Moonraker]
+    CMD -->|HTTP / JSON-RPC| MR
+    MR <--> KL[Klipper]
+    MR <--> SM[Spoolman]
+    KL <--> HH[Happy Hare]
+```
+
+The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; commands are serialized separately so UI rendering does not depend on blocking HTTP requests.
+
+</details>
+
+## Moonraker connection model
+
+<details>
+<summary><strong>Show connection details</strong></summary>
+
+Default endpoint:
+
+```text
+http://127.0.0.1:7125
+```
+
+The application uses:
+
+- HTTP for commands and bounded request/response operations
+- Moonraker WebSocket JSON-RPC for printer object discovery and live subscriptions
+- connection epochs so queued commands from an old connection cannot run after reconnect
+- automatic WebSocket reconnect
+- ping/pong checks for silent disconnect detection
+- immutable merged printer-state snapshots
+- command futures and retained error acknowledgement instead of blind retries
+
+Optional API-key authentication is supported through `MOONRAKER_API_KEY`. Empty keys are not sent.
+
+</details>
+
+## UART preparation
+
+<details>
+<summary><strong>Show UART setup</strong></summary>
+
+Use `raspi-config` to disable the serial login console and enable serial hardware, then reboot.
+
+```bash
+sudo raspi-config
+```
+
+Verify the UART assigned to the physical pins for your Pi model. Bluetooth overlays and boot configuration paths differ across Raspberry Pi generations and OS releases, so this project does not prescribe one universal overlay.
+
+</details>
+
+## Run manually
+
+<details>
+<summary><strong>Show manual run options</strong></summary>
+
+Example matching the repository defaults:
+
+```bash
+cd ~/KlipperDWIN
+
+~/klipperdwin-env/bin/python run.py \
+  --serial-port /dev/ttyS0 \
+  --encoder-pins 21 19 \
+  --button-pin 20 \
+  --moonraker-url http://127.0.0.1:7125
+```
+
+Use the actual UART and GPIO pins for your installation.
+
+Available configuration:
+
+| Environment | CLI | Default |
+|---|---|---|
+| `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
+| `MOONRAKER_API_KEY` | environment only | empty |
+| `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 s |
+| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyS0` |
+| `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
+| `DWIN_BUTTON_PIN` | `--button-pin` | `20` |
+| `DWIN_SETTINGS_FILE` | `--settings-file` | `~/.config/KlipperDWIN/presets.json` after installer configuration |
+| `DWIN_POWER_DEVICE` | `--power-device` | `Printer` |
+| `DWIN_POWER_ON_HOLD_MS` | `--power-on-hold-ms` | `2000` ms |
+
+</details>
+
+## Run at boot with systemd
+
+<details>
+<summary><strong>Show systemd setup</strong></summary>
+
+A sample unit and environment file are included.
+
+```bash
+id -u dwinlcd >/dev/null 2>&1 || \
+  sudo useradd --system --user-group \
+  --home-dir /var/lib/dwin-lcd --no-create-home \
+  --shell /usr/sbin/nologin dwinlcd
+
+sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
+sudoedit /etc/default/dwin-lcd
+
+sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
+  /etc/systemd/system/simpleLCD.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now simpleLCD.service
+sudo journalctl -u simpleLCD.service -f
+```
+
+The service uses a dedicated account, restarts on failure, stores presets in `/var/lib/dwin-lcd`, and logs to journald. Confirm that the service user has access to the actual UART and gpiochip devices on your OS.
+
+</details>
 
 ## Reliability and safety behavior
+
+<details>
+<summary><strong>Show reliability details</strong></summary>
 
 The project intentionally avoids optimistic UI state for printer-changing actions.
 
@@ -483,7 +524,12 @@ The project intentionally avoids optimistic UI state for printer-changing action
 
 A timeout can still mean that a command reached the printer while its response was lost. Always inspect actual printer state before repeating an uncertain action.
 
+</details>
+
 ## UART/display layer
+
+<details>
+<summary><strong>Show low-level display details</strong></summary>
 
 The DWIN transport implements bounded startup handshakes, incremental ACK parsing, full-frame writes and reconnect attempts.
 
@@ -500,20 +546,30 @@ Rendering includes:
 
 See [LCD asset notes](docs/lcd-assets.md) and [source audit](docs/source-audit.md) for low-level details.
 
+</details>
+
 ## Tests
+
+<details>
+<summary><strong>Show test instructions</strong></summary>
 
 Run the full isolated test suite with:
 
 ```bash
 cd ~/KlipperDWIN
-.venv/bin/python -m unittest discover -s tests -v
+~/klipperdwin-env/bin/python -m unittest discover -s tests -v
 ```
 
 The tests cover the Moonraker client/subscription layer, printer-state normalization, capability detection, menu behavior, input routing, command handling, movement safety, UART framing/render helpers, MMU data and other regressions.
 
 Unit tests do not replace physical validation on a printer.
 
+</details>
+
 ## Current scope / known limitations
+
+<details>
+<summary><strong>Show known limitations</strong></summary>
 
 - The display UI is designed around the existing 272×480 DWIN asset/layout family.
 - Real screenshots in this README are still pending.
@@ -523,7 +579,12 @@ Unit tests do not replace physical validation on a printer.
 - Runtime Motion values are not automatically persisted to printer configuration.
 - Hardware compatibility outside the tested DWIN/encoder wiring should be validated before relying on motion controls.
 
+</details>
+
 ## Project history and credits
+
+<details>
+<summary><strong>Show project history and credits</strong></summary>
 
 This repository retains its open-source lineage and Git history.
 
@@ -543,7 +604,12 @@ Additional projects used or integrated by this software include:
 - [Happy Hare](https://github.com/moggieuk/Happy-Hare)
 - [Spoolman](https://github.com/Donkie/Spoolman)
 
+</details>
+
 ## Contributing
+
+<details>
+<summary><strong>Show contribution guidelines</strong></summary>
 
 Issues and pull requests are welcome. For UI changes, include the printer capability/setup involved and, where possible, add or update a regression test in the same change.
 
@@ -556,6 +622,8 @@ For hardware/UI bugs, useful reports include:
 - relevant optional component (probe, MMU, Spoolman, M355, etc.)
 - log excerpt
 - panel photo when the problem is visual
+
+</details>
 
 ## License
 
