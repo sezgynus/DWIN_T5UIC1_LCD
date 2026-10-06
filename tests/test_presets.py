@@ -96,3 +96,15 @@ class MainsailPresetTests(unittest.TestCase):
     def test_invalid_preset_is_rejected(self):
         with self.assertRaises(ValueError):
             backend.material_preset_t.from_mainsail({'name':'','values':{}})
+
+    def test_preheat_preset_uses_dynamic_index(self):
+        printer = self.printer()
+        printer.material_preset = [backend.material_preset_t('PETG', 240, 85, 30)]
+        with patch.object(printer, 'preHeat') as preheat:
+            printer.preheat_preset(0)
+        preheat.assert_called_once_with(85, 240, fan_speed=30)
+
+    def test_preheat_preset_rejects_invalid_index(self):
+        printer = self.printer()
+        with self.assertRaises(ValueError):
+            printer.preheat_preset(99)

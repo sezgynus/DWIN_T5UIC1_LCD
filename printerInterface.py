@@ -202,7 +202,7 @@ class PrinterData:
         self.HMI_ValueStruct = HMI_value_t()
         self.HMI_flag = HMI_Flag_t()
         self.thermalManager = copy.deepcopy(type(self).thermalManager)
-        self.material_preset = copy.deepcopy(type(self).material_preset)
+        self.material_preset = []
         self.preset_store = PresetStore(settings_path)
         self.settings_error = None
         self.mainsail_presets_error = None
@@ -223,6 +223,8 @@ class PrinterData:
         except (OSError, ValueError, TypeError, UnicodeError) as error:
             self.settings_error = str(error)
             logging.warning('Cannot load presets from %s: %s', self.preset_store.path, error)
+        if not self.material_preset:
+            self.material_preset = copy.deepcopy(type(self).material_preset)
         self.files = []
         self.file_error = None
         self._files_loaded = False
@@ -817,6 +819,12 @@ class PrinterData:
         preset = next((item for item in self.material_preset if item.name == profile), None)
         if preset is None:
             raise ValueError('Unknown preheat profile')
+        return self.preHeat(preset.bed_temp, preset.hotend_temp, fan_speed=preset.fan_speed)
+
+    def preheat_preset(self, index):
+        if not isinstance(index, int) or not 0 <= index < len(self.material_preset):
+            raise ValueError('Unknown preheat preset')
+        preset = self.material_preset[index]
         return self.preHeat(preset.bed_temp, preset.hotend_temp, fan_speed=preset.fan_speed)
 
     def save_settings(self):
