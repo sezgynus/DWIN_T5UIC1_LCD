@@ -396,7 +396,8 @@ class PrinterData:
             thermal['fan_speed'][0] = int(data['fan']['speed'] * 100) if caps.fan else 0
             mmu = None
             spoolman_changed = False
-            if 'mmu' in data:                try:
+            if 'mmu' in data:
+                try:
                     raw_mmu = data['mmu']
                     num_gates = int(raw_mmu.get('num_gates', 0))
                     gate = int(raw_mmu.get('gate', -1))
