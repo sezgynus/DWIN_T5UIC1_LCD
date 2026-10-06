@@ -49,6 +49,8 @@ class PrinterCapabilities:
     axis_minimum: tuple = (0, 0, 0)
     axis_maximum: tuple = (0, 0, 0)
 
+    screws_tilt_adjust: bool = False
+
     @classmethod
     def from_state(cls, state):
         if not state.ready:
@@ -74,7 +76,8 @@ class PrinterCapabilities:
             raise ValueError('Invalid axis range')
         return cls(hotends, active, bed, 'fan' in objects,
                    'probe' in objects or 'bltouch' in objects,
-                   'bed_mesh' in objects, minimum, maximum)
+                   'bed_mesh' in objects, minimum, maximum,
+                   'screws_tilt_adjust' in objects and 'screws_tilt_adjust' in settings)
 
     @property
     def has_heaters(self):

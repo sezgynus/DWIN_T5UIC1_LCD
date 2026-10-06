@@ -235,6 +235,16 @@ Values remain synchronized with Moonraker status. An editor keeps its local targ
 
 Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
 
+
+#### Screws Tilt Adjust
+
+When `[screws_tilt_adjust]` is configured, **Prepare → Screws Tilt Adjust → Calculate** starts Klipper's `SCREWS_TILT_CALCULATE`. This view supports four distinct corner screws and a configured probe. It places screws from their configured XY coordinates, independently of their numbering. Missing homed axes trigger `G28` first; calculation is blocked during printing, pause, another manual-probe session, or unresolved jog recovery.
+
+The result follows the mriscoc ProUI four-corner layout: each corner has a colored marker with large labels beside it on the black background: **Base**, or **CW/CCW** above **turns:minutes**. `01:20` means one full turn plus 20/60 of a turn. The central instruction selects the non-reference screw with the largest required rotation and displays its corner, direction and amount. Directions and amounts come directly from Klipper; the UI does not recalculate thread pitch. As in the reference UI, **Corners leveled / Tolerance achieved!** requires a peak-to-peak measured height difference below **0.05 mm**. Otherwise an adjustment is shown. Turn values rounded to `00:60` by Klipper are displayed as `01:00`.
+
+Encoder input is locked during calculation. **Continue** returns to the submenu, where **Calculate** can run another measurement. Results are queried after confirmed command completion, so identical repeated measurements are still fresh. Failed, disconnected or unconfirmed measurements never display the previous result as success; commands are never replayed automatically. No `SAVE_CONFIG` or automatic screw adjustment is performed. Configurations with three, five or more screws are rejected rather than forced into the four-corner view.
+
+
 ### 7. Move / Live Jog
 
 <p align="center"><img src="docs/assets/screens/move.png" width="360" alt="Move and Live Jog screen"></p>
