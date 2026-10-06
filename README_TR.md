@@ -70,7 +70,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - ✅ **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.
 - ✅ **Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.
 - ✅ **Bed Mesh Visualization & Control** — `BED_MESH_CALIBRATE`, renkli Z ızgarası, kontrollü profil kaydı ve kayıtlı profilleri aktif mesh'i değiştirmeden görüntüleme.
-- 🛠️ **Happy Hare MMU Control** — mevcut Home-screen görselleştirmesine ek olarak ayrı MMU kontrol menüsü.
+- 🛠️ **Happy Hare MMU Control** — Home → MMU menüsü şimdilik yalnızca Back içerir; kontrol işlemleri planlanmaktadır.
 - 🛠️ **Happy Hare Multi-Unit Support** — mevcut sabit `unit0_mmu_exit_leds` kaynağı yerine dinamik MMU unit ve LED-source keşfi.
 - 🛠️ **Hardware Validation** — fiziksel testlerin ek DWIN T5UIC1 ve Klipper konfigürasyonlarında genişletilmesi.
 
@@ -177,7 +177,7 @@ Aşağıdaki her bölüm mevcut ekran davranışını açıklar. Temsili görsel
 
 <p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN ana ekranı"></p>
 
-Ana ekran, sayfa başına dört ikon sunan temel navigasyon merkezidir. Bed mesh desteği mevcutsa ilk sayfada Print, Prepare, Control ve Leveling bulunur; enkoderi Leveling'den sonra çevirmek ikinci sayfayı açar ve Info'yu seçer. Geri çevirmek Leveling'e döner. Bed mesh desteği yoksa Info ilk sayfanın dördüncü ikonudur. Boş alanlar seçilemez. Sayfa geçişinde logo/MMU paneli ve canlı durum alanı sabit kalır; Info'dan dönüş aynı Home sayfasını açar.
+Ana ekran sayfa başına dört ikon sunar. Bed mesh desteği varsa ilk sayfada Print, Prepare, Control ve Leveling; ikinci sayfada MMU ve Info bulunur. Bed mesh desteği yoksa MMU ilk sayfanın dördüncü ikonudur ve Info ikinci sayfadadır. MMU her zaman Info'dan önce gelir. Enkoderi çevirmek sayfalar arasında ilerler veya geri döner; boş alanlar seçilemez. Logo/MMU paneli ve canlı durum alanı sabit kalır. MMU ve Info'dan dönüş aynı Home seçimini korur.
 
 Menü alanının altında kalan kompakt canlı dashboard; mevcutsa hotend/bed durumunu, baskı hız faktörünü, fanı, flow'u, runtime Z offset'i ve canlı X/Y/Z koordinatlarını gösterir.
 
@@ -185,7 +185,7 @@ Happy Hare algılanmadığında normal logo alanı gösterilir. MMU bulunduğund
 
 ### 2. Happy Hare MMU görselleştirmesi
 
-Şu anda ayrı bir MMU kontrol ekranı yoktur. Mevcut Happy Hare entegrasyonu doğrudan yukarıdaki Ana ekranda gösterilir. Bildirilen gate sayısına göre uyarlanır ve sabit dört spool varsaymak yerine Happy Hare state'ini kullanır.
+**Home → MMU** şimdilik yalnızca **Back** içeren boş bir menü açar. MMU kontrol işlemleri henüz uygulanmamıştır. Happy Hare canlı paneli Ana ekranda kalır; bildirilen gate sayısına uyarlanır ve Happy Hare state verisini kullanır.
 
 Her gate için şunları gösterebilir:
 

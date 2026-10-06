@@ -149,7 +149,7 @@ These isolated tests do not verify physical probing, LCD appearance, service
 lifecycle or live-server persistence.
 
 Home navigation regressions cover four-icon paging, forward/reverse page boundaries,
-empty-slot rejection, Leveling and Info routing, return to the originating Home
+empty-slot rejection, Leveling, MMU and Info routing, return to the originating Home
 page or Control menu, capability removal and preservation of the MMU/dashboard
 areas while paging.
 
@@ -157,3 +157,7 @@ Bed Mesh menu regressions check that Prepare/Control no longer duplicate its
 entries, the Home shortcut opens a submenu without starting motion, calibration
 and profile-list Back/Continue return to that menu, viewer-only access without a
 probe, bounded menu selection and UART reconnect without measurement replay.
+
+MMU placeholder regressions verify Back-only navigation with and without bed mesh,
+return to the same Home selection, no G-code on entry/exit and bounded reel icon
+rendering with distinct selected/unselected colors.

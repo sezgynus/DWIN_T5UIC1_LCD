@@ -16,14 +16,18 @@ class HomePageTests(unittest.TestCase):
 
     def test_forward_and_reverse_page_crossing_skips_empty_slots(self):
         view=self.make()
-        self.assertEqual([e[0] for e in view._home_entries()],['PRINT','PREPARE','CONTROL','LEVEL','INFO'])
+        self.assertEqual([e[0] for e in view._home_entries()],['PRINT','PREPARE','CONTROL','LEVEL','MMU','INFO'])
         for index in range(1,5):
             self.step(view,view.ENCODER_DIFF_CW)
             self.assertEqual(view.select_page.now,index)
         view.lcd.reset_mock();view._draw_home_page()
         icons=[c.args[1:] for c in view.lcd.ICON_Show.call_args_list]
-        self.assertEqual(icons,[(view.ICON_Info_1,17,130)])
+        self.assertEqual(icons,[(view.ICON_Info_0,145,130)])
         self.step(view,view.ENCODER_DIFF_CW)
+        self.assertEqual(view.select_page.now,5)
+        self.step(view,view.ENCODER_DIFF_CW)
+        self.assertEqual(view.select_page.now,5)
+        self.step(view,view.ENCODER_DIFF_CCW)
         self.assertEqual(view.select_page.now,4)
         self.step(view,view.ENCODER_DIFF_CCW)
         self.assertEqual(view.select_page.now,3)
@@ -32,25 +36,25 @@ class HomePageTests(unittest.TestCase):
         self.assertEqual(view.select_page.now,0)
         view.pd.sendGCode.assert_not_called()
 
-    def test_without_mesh_info_stays_on_first_page(self):
+    def test_without_mesh_mmu_first_page_and_info_second_page(self):
         view=self.make(False)
-        self.assertEqual([e[0] for e in view._home_entries()],['PRINT','PREPARE','CONTROL','INFO'])
+        self.assertEqual([e[0] for e in view._home_entries()],['PRINT','PREPARE','CONTROL','MMU','INFO'])
         for _ in range(8):self.step(view,view.ENCODER_DIFF_CW)
-        self.assertEqual(view.select_page.now,3)
+        self.assertEqual(view.select_page.now,4)
         view.lcd.reset_mock();view._draw_home_page()
-        self.assertIn((view.ICON_Info_1,145,246),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
+        self.assertIn((view.ICON_Info_1,17,130),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
         self.assertFalse(any(c.args[-1]=='1/1' for c in view.lcd.Draw_String.call_args_list))
 
     def test_home_info_enter_returns_to_same_page(self):
-        view=self.make();view.select_page.set(4);view.Draw_Info_Menu=Mock()
+        view=self.make();view.select_page.set(5);view.Draw_Info_Menu=Mock()
         self.step(view,view.ENCODER_DIFF_ENTER)
         self.assertEqual(view.checkkey,view.Info)
         self.assertEqual(view._info_origin,view.MainMenu)
         view._info_items=Mock(return_value=[])
         view.HMI_Info()
         self.assertEqual(view.checkkey,view.MainMenu)
-        self.assertEqual(view.select_page.now,4)
-        self.assertIn((view.ICON_Info_1,17,130),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
+        self.assertEqual(view.select_page.now,5)
+        self.assertIn((view.ICON_Info_1,145,130),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
 
     def test_control_info_returns_to_control(self):
         view=self.make();view.checkkey=view.Control
@@ -82,6 +86,42 @@ class HomePageTests(unittest.TestCase):
         self.assertIn('2/2',[c.args[-1] for c in view.lcd.Draw_String.call_args_list])
 
     def test_capability_removal_clamps_cursor_to_existing_info(self):
-        view=self.make();view.select_page.set(4);view.pd.HAS_ONESTEP_LEVELING=False
-        view._draw_home_page();self.assertEqual(view.select_page.now,3)
-        self.assertIn((view.ICON_Info_1,145,246),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
+        view=self.make();view.select_page.set(5);view.pd.HAS_ONESTEP_LEVELING=False
+        view._draw_home_page();self.assertEqual(view.select_page.now,4)
+        self.assertIn((view.ICON_Info_1,17,130),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
+
+    def test_mmu_placeholder_back_preserves_home_selection(self):
+        for mesh in (True, False):
+            view=self.make(mesh)
+            index=next(i for i,e in enumerate(view._home_entries()) if e[0]=='MMU')
+            view.select_page.set(index)
+            view.Draw_Back_First=Mock();view.Draw_Title=Mock()
+            self.step(view,view.ENCODER_DIFF_ENTER)
+            self.assertEqual(view.checkkey,view.MMUMenu)
+            view.Draw_Title.assert_called_once_with('MMU')
+            view.Draw_Back_First.assert_called_once_with(True)
+            for event in (view.ENCODER_DIFF_CW,view.ENCODER_DIFF_CCW,view.ENCODER_DIFF_NO):
+                view.get_encoder_state.return_value=event;view._dispatch_input()
+                self.assertEqual(view.checkkey,view.MMUMenu)
+            view.get_encoder_state.return_value=view.ENCODER_DIFF_ENTER
+            view._dispatch_input()
+            self.assertEqual(view.checkkey,view.MainMenu)
+            self.assertEqual(view.select_page.now,index)
+            view.pd.sendGCode.assert_not_called()
+
+    def test_mmu_icon_bounds_and_selection_colors(self):
+        view=self.make()
+        for x,y in ((17,130),(145,246)):
+            for selected in (False,True):
+                view.lcd.reset_mock();view.Draw_MMU_Home_Icon(x,y,selected)
+                colors=set()
+                for call in view.lcd.Draw_Rectangle.call_args_list:
+                    _,color,x0,y0,x1,y1=call.args
+                    colors.add(color)
+                    self.assertTrue(x<=x0<=x1<=x+109)
+                    self.assertTrue(y<=y0<=y1<y+71)
+                self.assertIn(0xF800 if selected else 0x7800,colors)
+                for call in view.lcd.Draw_Line.call_args_list:
+                    _,x0,y0,x1,y1=call.args
+                    self.assertTrue(x<=x0<=x1<=x+109)
+                    self.assertTrue(y<=y0<=y1<y+71)

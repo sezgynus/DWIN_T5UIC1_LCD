@@ -120,6 +120,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
     BedMeshScreen = 41
     MeshProfiles = 42
     BedMeshMenu = 43
+    MMUMenu = 44
 
     MINUNITMULT = 10
 
@@ -363,6 +364,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
                 self.Draw_Mesh_Profiles()
             elif getattr(self, 'checkkey', None) == self.BedMeshMenu:
                 self.Draw_Bed_Mesh_Menu()
+            if getattr(self, 'checkkey', None) == self.MMUMenu:
+                self.Draw_MMU_Menu()
             self.lcd.UpdateLCD()
             if self.pd.connection_error:
                 self._show_message('Moonraker unavailable')
@@ -881,6 +884,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
                    ('CONTROL', 'Control', self.ICON_Control_0, self.ICON_Control_1)]
         if self.pd.HAS_ONESTEP_LEVELING:
             entries.append(('LEVEL', 'Leveling', self.ICON_Leveling_0, self.ICON_Leveling_1))
+        entries.append(('MMU', 'MMU', None, None))
         entries.append(('INFO', 'Info', self.ICON_Info_0, self.ICON_Info_1))
         return tuple(entries)
 
@@ -891,11 +895,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
         # Clear only navigation: the logo/MMU and live dashboard stay in place.
         self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 126, 271, self.STATUS_Y-1)
         for index in range(page*4, min(len(entries), page*4+4)):
-            _, label, normal, selected = entries[index]
+            key, label, normal, selected = entries[index]
             slot = index % 4
             x, y = (17 if slot % 2 == 0 else 145), (130 if slot < 2 else 246)
             active = index == self.select_page.now
-            self.lcd.ICON_Show(self.ICON, selected if active else normal, x, y)
+            if key == 'MMU':
+                self.Draw_MMU_Home_Icon(x, y, active)
+            else:
+                self.lcd.ICON_Show(self.ICON, selected if active else normal, x, y)
             if active:
                 self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, y, x+109, y+99)
             self._draw_menu_text(label, x+(109-len(label)*8)//2, y+71)
@@ -934,6 +941,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             elif key == 'LEVEL':
                 self.checkkey = self.Leveling
                 self.HMI_Leveling()
+            elif key == 'MMU':
+                self.checkkey = self.MMUMenu
+                self.Draw_MMU_Menu()
             elif key == 'INFO':
                 self._info_origin = self.MainMenu
                 self.checkkey = self.Info
@@ -2629,6 +2639,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin):
             self.HMI_Motion()
         elif self.checkkey in (self.ScrewsTiltMenu, self.ScrewsTiltResult):
             self.HMI_Screws_Tilt()
+        elif self.checkkey == self.MMUMenu:
+            self.HMI_MMU_Menu()
         elif self.checkkey == self.BedMeshMenu:
             self.HMI_Bed_Mesh_Menu()
         elif self.checkkey == self.BedMeshScreen:

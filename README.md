@@ -70,7 +70,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - ✅ **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.
 - ✅ **Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.
 - ✅ **Bed Mesh Visualization & Control** — `BED_MESH_CALIBRATE`, a colored Z grid, guarded profile saving and saved-profile viewing without changing the active mesh.
-- 🛠️ **Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.
+- 🛠️ **Happy Hare MMU Control** — Home → MMU currently contains only Back; control operations remain planned.
 - 🛠️ **Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.
 - 🛠️ **Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations.
 
@@ -177,7 +177,7 @@ Each section below describes the current screen behavior using captures from the
 
 <p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN home screen"></p>
 
-The home screen is the main navigation hub, with four icons per page. With bed-mesh support available, the first page contains Print, Prepare, Control and Leveling; rotating the encoder past Leveling opens the second page and selects Info. Rotating back returns to Leveling. Without bed-mesh support, Info is the fourth icon on the first page. Empty slots cannot be selected. The logo/MMU panel and live dashboard remain fixed while paging; returning from Info restores its Home page.
+The home screen shows four icons per page. With bed-mesh support, the first page contains Print, Prepare, Control and Leveling; the second contains MMU and Info. Without bed-mesh support, MMU is the fourth icon on the first page and Info is on the second. MMU always precedes Info. Encoder rotation moves forward or backward between pages; empty slots cannot be selected. The logo/MMU panel and live dashboard remain fixed. Returning from MMU or Info preserves the Home selection.
 
 A compact live dashboard remains visible below the menu area and reports the current hotend/bed state when available, print-speed factor, fan, flow, runtime Z offset and live X/Y/Z coordinates.
 
@@ -185,7 +185,7 @@ When Happy Hare is not detected, the normal logo area is shown. When an MMU is a
 
 ### 2. Happy Hare MMU visualization
 
-There is no separate MMU control screen yet. The current Happy Hare integration is displayed directly on the Home screen shown above. It adapts to the reported gate count and uses Happy Hare state instead of a hard-coded four-spool model.
+**Home → MMU** currently opens an empty menu containing only **Back**. MMU control operations are not implemented yet. The live Happy Hare panel remains on the Home screen, adapting to the reported gate count and using Happy Hare state.
 
 For each gate it can show:
 
