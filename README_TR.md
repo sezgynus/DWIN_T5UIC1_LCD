@@ -302,7 +302,7 @@ bulunur. Brightness içeride macro'nun 0–255 ölçeğine dönüştürülür.
 
 <p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info ekranı"></p>
 
-Info ekranı algılanan machine/build bilgisini tanıdık DWIN düzeninde gösterir. Ana ekranın dördüncü slotunu özel one-step leveling girdisi kullanmıyorsa Info burada yer alır.
+Info ekranı canlı bir sistem özeti sunar. Kurulu KlipperDWIN, Moonraker, Mainsail ve Klipper sürümlerini Raspberry Pi network durumu ve aktif IPv4 adresiyle birlikte gösterir. KlipperDWIN için mümkün olduğunda Moonraker Update Manager'ın tam Git sürüm metni (örneğin `v0.4.0-N-gXXXX`) kullanılır; böylece release tag'inden sonraki commit'ler de ayırt edilebilir. Panelde proje adresi olarak `github.com/sezgynus/KlipperDWIN` gösterilir.
 
 ## Dinamik capability algılama
 

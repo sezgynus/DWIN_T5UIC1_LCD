@@ -529,6 +529,26 @@ class CapabilityMenuTests(unittest.TestCase):
         result.pd.probe_calibrate.assert_not_called()
         self.assertEqual(result.checkkey, result.Homeoffset)
 
+    def test_info_screen_renders_live_stack_and_network_details(self):
+        result = display(snapshot())
+        result.pd.refresh_system_info = Mock(return_value=False)
+        result.pd.system_info = {
+            'klipperdwin': 'v0.4.0-2-g1234abcd',
+            'moonraker': 'v0.9.3-1-gabcd',
+            'mainsail': 'v2.14.0',
+            'network': 'Online',
+            'ip': '192.168.1.50',
+        }
+        result.pd.SHORT_BUILD_VERSION = 'v0.13.0-123'
+        result._draw_menu_text = Mock()
+        result._draw_info_text = Mock()
+        result.Draw_Info_Menu()
+        labels = [call.args[0] for call in result._draw_menu_text.call_args_list]
+        self.assertEqual(labels, ['KlipperDWIN', 'Moonraker', 'Mainsail',
+                                  'Klipper', 'Network', 'IP'])
+        result._draw_info_text.assert_called_once_with(
+            'github.com/sezgynus/KlipperDWIN', 360)
+
     def test_case_light_uses_dedicated_light_icon_alias(self):
         data = snapshot()
         data['objects'].append('gcode_macro M355')

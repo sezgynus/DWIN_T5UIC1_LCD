@@ -2022,19 +2022,28 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                              self.lcd.Color_Bg_Black, x, y, text)
 
     def Draw_Info_Menu(self):
+        self.pd.refresh_system_info()
         self.Clear_Main_Window()
-
-        self._draw_info_text(self.pd.MACHINE_SIZE, 122)
-        self._draw_info_text(self.pd.SHORT_BUILD_VERSION, 195)
         self.Draw_Title('Info')
-        self.lcd.Frame_AreaCopy(1, 120, 150, 146, 161, 124, 102)
-        self.lcd.Frame_AreaCopy(1, 146, 151, 254, 161, 82, 175)
-        self.lcd.Frame_AreaCopy(1, 0, 165, 94, 175, 89, 248)
-        self._draw_info_text(self.pd.CORP_WEBSITE_E, 268)
         self.Draw_Back_First()
-        for i in range(3):
-            self.lcd.ICON_Show(self.ICON, self.ICON_PrintSize + i, 26, 99 + i * 73)
-            self.lcd.Draw_Line(self.lcd.Line_Color, 16, self.MBASE(2) + i * 73, 256, 156 + i * 73)
+
+        info = self.pd.system_info
+        rows = (
+            ('KlipperDWIN', info.get('klipperdwin', 'Unavailable')),
+            ('Moonraker', info.get('moonraker', 'Unavailable')),
+            ('Mainsail', info.get('mainsail', 'Unavailable')),
+            ('Klipper', self.pd.SHORT_BUILD_VERSION),
+            ('Network', info.get('network', 'Unknown')),
+            ('IP', info.get('ip', 'Unavailable')),
+        )
+        y = 82
+        for label, value in rows:
+            self._draw_menu_text(label, 16, y)
+            text = T5UIC1_LCD._panel_text(value)[:18]
+            self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                                 self.lcd.Color_Bg_Black, 120, y, text)
+            y += 42
+        self._draw_info_text(self.pd.CORP_WEBSITE_E, 360)
 
     def Draw_Tune_Menu(self):
         self._draw_capability_menu('tune', self.select_tune, self.index_tune)
@@ -2418,6 +2427,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             self._offline = True
             return
         self.pd.probe_wizard.update()
+        if self.checkkey == self.Info and self.pd.refresh_system_info():
+            self.Draw_Info_Menu()
+            self.lcd.UpdateLCD()
         if self._poll_print_start() or getattr(self, '_start_error_visible', False):
             return
         if self.checkkey == self.SelectFile and (
