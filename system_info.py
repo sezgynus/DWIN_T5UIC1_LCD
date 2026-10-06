@@ -1,6 +1,7 @@
 """Live software-stack and Raspberry Pi network information."""
 import socket
 import struct
+import os
 
 try:
     import fcntl
@@ -45,3 +46,25 @@ def updater_version(version_info, name, full=False):
     else:
         value = item.get('version') or item.get('full_version_string')
     return str(value) if value else 'Unavailable'
+
+
+def host_metrics():
+    """Return lightweight Linux host CPU usage and thermal-zone temperature."""
+    cpu = None
+    temp = None
+    try:
+        load1 = os.getloadavg()[0]
+        count = os.cpu_count() or 1
+        cpu = max(0.0, min(100.0, load1 * 100.0 / count))
+    except (OSError, AttributeError):
+        pass
+    for path in ('/sys/class/thermal/thermal_zone0/temp',
+                 '/sys/class/hwmon/hwmon0/temp1_input'):
+        try:
+            with open(path, 'r', encoding='ascii') as stream:
+                value = float(stream.read().strip())
+            temp = value / 1000.0 if value > 1000 else value
+            break
+        except (OSError, ValueError):
+            continue
+    return cpu, temp
