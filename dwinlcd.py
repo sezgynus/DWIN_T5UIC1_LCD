@@ -1612,7 +1612,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             bed_line = self.TEMP_CASE_BED
         elif self.pd.HMI_ValueStruct.show_mode == -2:
             bed_line = self.PREHEAT_CASE_BED
-                else:
+        else:
             bed_line = self.TUNE_CASE_BED + self.MROWS - self.index_tune
 
         if (encoder_diffState == self.ENCODER_DIFF_ENTER):
