@@ -100,6 +100,13 @@ class MetadataTests(unittest.TestCase):
             x,y,text=call.args[-3:]
             self.assertGreaterEqual(x,0);self.assertLessEqual(x+len(text)*8,272)
             self.assertLess(y+16,360)
+        texts=[call.args[-1] for call in view.lcd.Draw_String.call_args_list]
+        for label in ('Print time','Tool changes','Total usage','Filaments used'):
+            self.assertIn(label,texts)
+        last_row=next(call.args[-2] for call in view.lcd.Draw_String.call_args_list if call.args[-1]=='T3')
+        button_top=min(call.args[3] for call in view.lcd.Draw_Rectangle.call_args_list
+                       if call.args[2] in (20,146) and call.args[3]>=300)
+        self.assertGreaterEqual(button_top-(last_row+16),12)
         view.lcd.reset_mock();view._poll_file_preview()
         view.lcd.Draw_String.assert_not_called();view.lcd.Write_SRAM.assert_not_called()
         view.lcd.SRAM_Icon.assert_not_called()

@@ -52,9 +52,9 @@ class FilePreviewMixin:
         for index, label in enumerate(('Print', 'Cancel')):
             x = 20 + index*126
             color = self.lcd.Color_Bg_Blue if self._preview_choice == index else self.lcd.Color_Bg_Black
-            self.lcd.Draw_Rectangle(1, color, x, 312, x+106, 354)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, 312, x+106, 354)
-            self._draw_menu_text(label, x+(106-len(label)*8)//2, 325)
+            self.lcd.Draw_Rectangle(1, color, x, 314, x+106, 356)
+            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, 314, x+106, 356)
+            self._draw_menu_text(label, x+(106-len(label)*8)//2, 327)
 
     def Draw_File_Preview(self):
         self.Clear_Main_Window()
@@ -76,23 +76,24 @@ class FilePreviewMixin:
             return
         self._preview_details_drawn = details
         self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 144, 68, 271, 207)
-        for y, label, value in ((70, 'Time', duration(details.seconds)),
-                                (114, 'Changes', str(details.changes) if details.changes is not None else '--'),
-                                (158, 'Filament', amount(details.millimeters/1000 if details.millimeters is not None else None,'m')
+        for y, label, value in ((70, 'Print time', duration(details.seconds)),
+                                (114, 'Tool changes', str(details.changes) if details.changes is not None else '--'),
+                                (158, 'Total usage', amount(details.millimeters/1000 if details.millimeters is not None else None,'m')
                                  + '/' + amount(details.grams,'g'))):
             self._draw_menu_text(label, 148, y)
-            if label == 'Filament' and len(value) > 14:
+            if label == 'Total usage' and len(value) > 14:
                 length, weight = value.split('/')
                 self._draw_menu_text(length[:14], 148, y+16)
                 self._draw_menu_text(weight[:14], 148, y+32)
             else:
                 self._draw_menu_text(value[:14], 148, y+18)
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 208, 271, 310)
+        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 202, 143, 223)
+        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 224, 271, 310)
         total = len(details.filaments)
-        heading = 'Filaments' if total <= 4 else 'Filaments 4/%d' % total
-        self._draw_menu_text(heading, 8, 208)
+        heading = 'Filaments used' if total <= 4 else 'Used tools 4/%d' % total
+        self._draw_menu_text(heading, 8, 202)
         for row, filament in enumerate(details.filaments[:4]):
-            y = 232+20*row
+            y = 226+20*row
             if filament.color is not None:
                 self.lcd.Draw_Rectangle(1, filament.color, 8, y+2, 19, y+13)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 8, y+2, 19, y+13)
@@ -101,7 +102,7 @@ class FilePreviewMixin:
             grams = amount(filament.grams, 'g')
             self._draw_menu_text(grams, 264-len(grams)*8, y)
         if not total:
-            self._draw_menu_text('No filament data', 8, 232)
+            self._draw_menu_text('No filament data', 8, 226)
 
     def _leave_file_preview(self):
         if hasattr(self, '_loop'):
