@@ -147,12 +147,20 @@ class RegressionContracts(unittest.TestCase):
 
 class BackendConnectionTests(unittest.TestCase):
     def test_initialization_does_not_open_klipper_socket(self):
-        with patch.object(backend, 'MoonrakerClient') as transport, patch.object(backend, 'MoonrakerSubscription') as subscription:
+        command_client = Mock()
+        telemetry_client = Mock()
+        with patch.object(backend, 'MoonrakerClient',
+                          side_effect=[command_client, telemetry_client]) as transport, \
+                patch.object(backend, 'MoonrakerSubscription'):
             printer = backend.PrinterData(URL='http://localhost:7125', timeout=2)
-            transport.assert_called_once_with('http://localhost:7125', '', 2)
+            self.assertEqual(
+                transport.call_args_list,
+                [unittest.mock.call('http://localhost:7125', '', 2),
+                 unittest.mock.call('http://localhost:7125', '', 2, queue_size=16)])
             self.assertIsNone(printer.status)
             printer.close()
-            transport.return_value.close.assert_called_once()
+            command_client.close.assert_called_once()
+            telemetry_client.close.assert_called_once()
 
     def test_missing_snapshot_preserves_previous_state(self):
         with patch.object(backend, 'MoonrakerClient'), patch.object(backend, 'MoonrakerSubscription'):
