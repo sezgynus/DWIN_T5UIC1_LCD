@@ -12,6 +12,7 @@ from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
 from probe_wizard import ProbeWizard
 from screws_tilt import ScrewsTiltSession
+from bed_mesh import BedMeshSession
 from preset_store import PresetStore
 from printer_state import PrinterState
 from printer_capabilities import PrinterCapabilities
@@ -242,6 +243,7 @@ class PrinterData:
         self.subscription = MoonrakerSubscription(URL, API_Key, timeout)
         self.probe_wizard = ProbeWizard(self)
         self.screws_tilt = ScrewsTiltSession(self)
+        self.bed_mesh = BedMeshSession(self)
 
     def refresh_system_info(self, force=False):
         """Refresh component versions and host IPv4 without mutating printer state."""

@@ -3,6 +3,7 @@
 Long-running commands may be sent as JSON-RPC notifications so transport acknowledgement
 is decoupled from physical completion. Completion is confirmed from subscribed printer state.
 """
+from collections import deque
 import copy
 import json
 import math
@@ -18,7 +19,7 @@ from moonraker_client import MoonrakerError
 
 
 OBJECTS = ('webhooks', 'toolhead', 'gcode_move', 'print_stats', 'virtual_sdcard',
-           'pause_resume', 'extruder', 'heater_bed', 'fan', 'motion_report', 'manual_probe', 'configfile', 'screws_tilt_adjust')
+           'pause_resume', 'extruder', 'heater_bed', 'fan', 'motion_report', 'manual_probe', 'configfile', 'screws_tilt_adjust', 'bed_mesh')
 
 
 def connect(url, timeout, headers):
@@ -69,6 +70,8 @@ class MoonrakerSubscription:
         self._completion_requests = set()
         self._pending_requests = {}
         self.gcode_responses = Queue(maxsize=64)
+        self._response_history = deque(maxlen=256)
+        self._response_serial = 0
         self._last_receive = time.monotonic()
         self._last_ping = time.monotonic()
         self._thread = Thread(target=self._run, name='moonraker-status', daemon=True)
@@ -143,6 +146,9 @@ class MoonrakerSubscription:
                 self._file_revision += 1
         elif method == 'notify_gcode_response':
             if isinstance(params, list) and len(params) == 1 and isinstance(params[0], str):
+                with self._lock:
+                    self._response_serial += 1
+                    self._response_history.append((self._response_serial, params[0]))
                 try:
                     self.gcode_responses.put_nowait(params[0])
                 except Full:
@@ -151,6 +157,12 @@ class MoonrakerSubscription:
                     except Empty:
                         pass
                     self.gcode_responses.put_nowait(params[0])
+
+    def responses_since(self, cursor):
+        """Independent bounded response cursor; consumers never steal messages."""
+        with self._lock:
+            return self._response_serial, tuple(text for serial, text in self._response_history
+                                                if cursor is not None and serial > cursor)
 
     def request(self, method, params=None):
         """Nonblocking RPC; Future resolves on completion, never on dispatch."""
