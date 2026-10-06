@@ -300,9 +300,20 @@ bulunur. Brightness içeride macro'nun 0–255 ölçeğine dönüştürülür.
 
 ### 12. Info
 
-<p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info ekranı"></p>
+<p align="center">
+  <img src="docs/assets/screens/info-overview.png" width="220" alt="Info genel görünüm">
+  <img src="docs/assets/screens/info-software.png" width="220" alt="Software ve MCU bilgileri">
+</p>
+<p align="center">
+  <img src="docs/assets/screens/info-mcu-overview.png" width="220" alt="MCU genel görünüm">
+  <img src="docs/assets/screens/info-mcu-details.png" width="220" alt="MCU telemetri detayları">
+</p>
 
-Info ekranı canlı bir sistem özeti sunar. Kurulu KlipperDWIN, Moonraker, Mainsail ve Klipper sürümlerini Raspberry Pi network durumu ve aktif IPv4 adresiyle birlikte gösterir. KlipperDWIN için mümkün olduğunda Moonraker Update Manager'ın tam Git sürüm metni (örneğin `v0.4.0-N-gXXXX`) kullanılır; böylece release tag'inden sonraki commit'ler de ayırt edilebilir. Panelde proje adresi olarak `github.com/sezgynus/KlipperDWIN` gösterilir.
+Info ekranı encoder ile dikey kaydırılabilen canlı bir sistem özeti sunar. Bilgiler renk kodlu Machine, Host, Software ve MCU bölümlerinde gruplanır. Ekranda yapılandırılmış makine ölçüleri, network durumu ve aktif IPv4 adresi; host CPU yükü ve sıcaklığı; kurulu KlipperDWIN, Klipper, Moonraker ve Mainsail sürümleri ile `github.com/sezgynus/KlipperDWIN` proje adresi gösterilir.
+
+Bağlı her Klipper MCU ayrı ayrı listelenir ve bağlantı durumu ile canlı MCU yükü gösterilir. Klipper ilgili denetleyici için bir `temperature_mcu` kaynağı sağlıyorsa MCU sıcaklığı da görüntülenir; sağlanmıyorsa değer `N/A` olarak gösterilir. Network durumu online iken yeşil, offline iken kırmızı vurgulanır. Uzun içerik, alttaki sabit yazıcı durum alanına taşmadan encoder ile dikey olarak gezilebilir.
+
+KlipperDWIN için mümkün olduğunda Moonraker Update Manager'ın tam Git sürüm metni (örneğin `v0.4.0-N-gXXXX`) kullanılır; böylece release tag'inden sonraki commit'ler de ayırt edilebilir.
 
 ## Dinamik capability algılama
 
