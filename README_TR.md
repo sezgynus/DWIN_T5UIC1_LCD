@@ -44,7 +44,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - Açık TESTZ adımları ve kontrollü SAVE_CONFIG akışına sahip probe kalibrasyon sihirbazı
 - PLA/ABS preset düzenleme ve kalıcı JSON saklama
 - M355 macro üzerinden opsiyonel case-light arayüzü
-- Ana ekranda Happy Hare MMU paneli
+- Ana ekranda Happy Hare MMU görselleştirmesi
 - Gate başına filament rengi ve MMU unit adı
 - Happy Hare exit LED renklerinden canlı lane göstergeleri
 - MMU gate başına Spoolman kalan filament yüzdesi
@@ -103,7 +103,7 @@ Aşağıdaki her bölüm mevcut ekran davranışını açıklar. Temsili görsel
 
 ### 1. Ana ekran
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Ana ekran temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN ana ekranı"></p>
 
 Ana ekran temel navigasyon merkezidir. Print, Prepare, Control ve keşfedilen yazıcı capability'lerine göre Leveling veya Info girişlerini sunar.
 
@@ -111,11 +111,9 @@ Menü alanının altında kalan kompakt canlı dashboard; mevcutsa hotend/bed du
 
 Happy Hare algılanmadığında normal logo alanı gösterilir. MMU bulunduğunda bu alan aşağıda açıklanan canlı MMU paneline dönüşür.
 
-### 2. Happy Hare MMU paneli
+### 2. Happy Hare MMU görselleştirmesi
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Happy Hare MMU paneli temsili görseli"></p>
-
-MMU paneli doğrudan ana ekrana entegredir. Bildirilen gate sayısına göre uyarlanır ve sabit dört spool varsaymak yerine Happy Hare state'ini kullanır.
+Şu anda ayrı bir MMU kontrol ekranı yoktur. Mevcut Happy Hare entegrasyonu doğrudan yukarıdaki Ana ekranda gösterilir. Bildirilen gate sayısına göre uyarlanır ve sabit dört spool varsaymak yerine Happy Hare state'ini kullanır.
 
 Her gate için şunları gösterebilir:
 
@@ -140,7 +138,7 @@ Mümkün olduğunda seçim liste yenilemeleri sırasında korunur. Dosyaların s
 
 ### 4. Baskı ekranı
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Baskı ekranı temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/printing.png" width="360" alt="Baskı ekranı"></p>
 
 Baskı ekranı şunları sunar:
 
@@ -156,7 +154,7 @@ Paused, tamamlandı, iptal edildi ve hata durumları ayrı ayrı ele alınır. T
 
 ### 5. Tune menüsü
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Tune menüsü temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/tune.png" width="360" alt="Tune menüsü"></p>
 
 Tune canlı baskı ayar menüsüdür. Satırlar yalnızca karşılık gelen yazıcı capability'si mevcutsa görünür. Makineye göre hotend hedefi, bed hedefi, fan, baskı hızı, runtime Z offset ve diğer aktif kontrolleri sunabilir.
 
@@ -164,13 +162,13 @@ Değerler Moonraker status ile senkron kalır. Açık bir editör kendi lokal he
 
 ### 6. Prepare menüsü
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Prepare menüsü temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/prepare.png" width="360" alt="Prepare menüsü"></p>
 
 Prepare; homing, hareket, cooldown/preheat ve runtime Z-offset erişimi gibi yazıcı hazırlık işlemlerini içerir. Girdiler, her yazıcının aynı heater, fan, probe veya leveling donanımına sahip olduğunu varsaymak yerine keşfedilen Klipper capability'lerinden oluşturulur.
 
 ### 7. Move / Live Jog
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Move ve Live Jog temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/move.png" width="360" alt="Move ve Live Jog ekranı"></p>
 
 Hareket ekranı canlı X/Y/Z konumlarını ve extruder mevcutsa E değerini gösterir.
 
@@ -187,13 +185,13 @@ Konum kaynağı Klipper'ın command-space `gcode_move.position` değeridir; böy
 
 ### 8. Control menüsü
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Control menüsü temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menüsü"></p>
 
 Control daha çok yapılandırma odaklı menüdür. Mevcut satırlar capability tabanlıdır ve temperature presetleri, motion kontrolleri, probe calibration, case light ve bilgi sayfalarına yönlendirebilir.
 
 ### 9. Temperature / presetler
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Temperature ve preset temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/temperature.png" width="360" alt="Temperature ve preset ekranı"></p>
 
 Temperature kontrolleri kurulu cihazlardan üretilir: hotend, heated bed ve part fan birbirinden bağımsız olarak opsiyoneldir.
 
@@ -215,7 +213,7 @@ veya:
 
 ### 10. Motion (runtime)
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Runtime motion menüsü temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/motion-runtime.png" width="360" alt="Runtime motion menüsü"></p>
 
 Motion ekranı `SET_VELOCITY_LIMIT` üzerinden Klipper runtime velocity limitlerini düzenler:
 
@@ -227,8 +225,6 @@ Motion ekranı `SET_VELOCITY_LIMIT` üzerinden Klipper runtime velocity limitler
 Desteklenmeyen alanlar gösterilmez. Bunlar runtime değişiklikleridir; ekran bunları otomatik olarak printer configuration içine kalıcı yazmaz.
 
 ### 11. Probe calibration sihirbazı
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Probe calibration temsili görseli"></p>
 
 Gerekli probe/manual-probe object'leri mevcut olduğunda Control menüsünde yönlendirmeli probe calibration ekranı görünür.
 
@@ -246,7 +242,7 @@ UI bir HTTP success yanıtının fiziksel/manual-probe state'inin zaten değişt
 
 ### 12. Case Light
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Case light temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/case-light.png" width="360" alt="Case Light ekranı"></p>
 
 `gcode_macro M355` capability'si algılanırsa Control menüsü case-light kontrolünü gösterebilir.
 
@@ -260,7 +256,7 @@ bulunur. Brightness içeride macro'nun 0–255 ölçeğine dönüştürülür.
 
 ### 13. Info
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Info ekranı temsili görseli"></p>
+<p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info ekranı"></p>
 
 Info ekranı algılanan machine/build bilgisini tanıdık DWIN düzeninde gösterir. Ana ekranın dördüncü slotunu özel one-step leveling girdisi kullanmıyorsa Info burada yer alır.
 
@@ -534,7 +530,6 @@ Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 ## Mevcut kapsam / bilinen sınırlar
 
 - Display UI mevcut 272×480 DWIN asset/layout ailesi etrafında tasarlanmıştır.
-- Bu README'deki gerçek ekran görüntüleri henüz eklenecek.
 - Canlı Happy Hare lane renkleri şu anda açıkça `unit0_mmu_exit_leds` adlı object'i kullanır.
 - Multi-unit MMU LED-source seçimi henüz genelleştirilmemiştir.
 - Case-light desteği uyumlu bir `M355` macro'ya bağlıdır.

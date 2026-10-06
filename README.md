@@ -19,9 +19,6 @@
   <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue">
 </p>
 
-> [!NOTE]
-> The screenshots in this README are temporary placeholders. Real panel captures will replace them after the UI photo set is prepared.
-
 ## What this project is
 
 This project turns the common 4.3-inch DWIN T5UIC1 rotary-encoder display used on printers such as the Ender 3 V2 into a local Klipper control panel.
@@ -44,7 +41,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Probe calibration wizard with explicit TESTZ steps and guarded SAVE_CONFIG flow
 - PLA/ABS preset editing and persistent JSON storage
 - Optional case-light UI through an M355 macro
-- Happy Hare MMU panel on the home screen
+- Happy Hare MMU visualization on the home screen
 - Per-gate filament colors and MMU unit name
 - Live lane indicators driven by Happy Hare exit-LED colors
 - Spoolman remaining-filament percentages per MMU gate
@@ -99,23 +96,21 @@ Existing wiring photos and diagrams are available in the [images](images/) direc
 
 ## UI tour
 
-Each section below describes the current screen behavior. The placeholder image will be replaced with a real LCD photograph/capture.
+Each section below describes the current screen behavior using captures from the current UI.
 
 ### 1. Home screen
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Home screen placeholder"></p>
+<p align="center"><img src="docs/assets/screens/home.png" width="360" alt="KlipperDWIN home screen"></p>
 
 The home screen is the main navigation hub. It exposes Print, Prepare, Control and either Leveling or Info depending on discovered printer capabilities.
 
 A compact live dashboard remains visible below the menu area and reports the current hotend/bed state when available, print-speed factor, fan, flow, runtime Z offset and live X/Y/Z coordinates.
 
-When Happy Hare is not detected, the normal logo area is shown. When an MMU is available, that area becomes the live MMU panel described below.
+When Happy Hare is not detected, the normal logo area is shown. When an MMU is available, that area becomes the live MMU visualization described below.
 
-### 2. Happy Hare MMU panel
+### 2. Happy Hare MMU visualization
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Happy Hare MMU panel placeholder"></p>
-
-The MMU panel is integrated directly into the home screen. It adapts to the reported gate count and uses Happy Hare state instead of a hard-coded four-spool model.
+There is no separate MMU control screen yet. The current Happy Hare integration is displayed directly on the Home screen shown above. It adapts to the reported gate count and uses Happy Hare state instead of a hard-coded four-spool model.
 
 For each gate it can show:
 
@@ -128,11 +123,11 @@ For each gate it can show:
 
 LED hue is normalized before RGB565 conversion, so deliberately dim physical LEDs remain visible on the LCD while keeping their color. Fully off LEDs remain black. Lane-number text automatically switches between black and white for contrast.
 
-The current implementation subscribes to `unit0_mmu_exit_leds` for live exit-LED colors. This is intentionally explicit today and can be generalized for multi-unit/alternative-segment setups later.
+The current Home-screen implementation subscribes to `unit0_mmu_exit_leds` for live exit-LED colors. This is intentionally explicit today and can be generalized for multi-unit/alternative-segment setups later.
 
 ### 3. Print file browser
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Print browser placeholder"></p>
+<p align="center"><img src="docs/assets/screens/print-file.png" width="360" alt="Print file browser"></p>
 
 The file browser uses Moonraker's file list and keeps a cached, sorted path snapshot for responsive encoder navigation.
 
@@ -140,7 +135,7 @@ Selection is preserved across list refreshes where possible. Deleting/reordering
 
 ### 4. Printing screen
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Printing screen placeholder"></p>
+<p align="center"><img src="docs/assets/screens/printing.png" width="360" alt="Printing screen"></p>
 
 The printing screen provides:
 
@@ -156,7 +151,7 @@ Paused, completed, cancelled and error states are handled explicitly. Completion
 
 ### 5. Tune menu
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Tune menu placeholder"></p>
+<p align="center"><img src="docs/assets/screens/tune.png" width="360" alt="Tune menu"></p>
 
 Tune is the live-print adjustment menu. Rows appear only when the matching printer capability exists. Depending on the machine, it can expose hotend target, bed target, fan, print speed, runtime Z offset and other active controls.
 
@@ -164,13 +159,13 @@ Values remain synchronized with Moonraker status. An editor keeps its local targ
 
 ### 6. Prepare menu
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Prepare menu placeholder"></p>
+<p align="center"><img src="docs/assets/screens/prepare.png" width="360" alt="Prepare menu"></p>
 
 Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
 
 ### 7. Move / Live Jog
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Move and Live Jog placeholder"></p>
+<p align="center"><img src="docs/assets/screens/move.png" width="360" alt="Move and Live Jog screen"></p>
 
 The movement screen displays live X/Y/Z positions and E when an extruder is available.
 
@@ -187,13 +182,13 @@ The position source is Klipper's command-space `gcode_move.position`, so the UI 
 
 ### 8. Control menu
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Control menu placeholder"></p>
+<p align="center"><img src="docs/assets/screens/control.png" width="360" alt="Control menu"></p>
 
 Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, probe calibration, case light and information pages.
 
 ### 9. Temperature / presets
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Temperature and presets placeholder"></p>
+<p align="center"><img src="docs/assets/screens/temperature.png" width="360" alt="Temperature and presets screen"></p>
 
 Temperature controls are generated from installed devices: hotend, heated bed and part fan are independently optional.
 
@@ -215,7 +210,7 @@ A custom path can be supplied with `--settings-file`.
 
 ### 10. Motion (runtime)
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Runtime motion menu placeholder"></p>
+<p align="center"><img src="docs/assets/screens/motion-runtime.png" width="360" alt="Runtime motion menu"></p>
 
 The Motion screen edits Klipper's runtime velocity limits through `SET_VELOCITY_LIMIT`:
 
@@ -227,8 +222,6 @@ The Motion screen edits Klipper's runtime velocity limits through `SET_VELOCITY_
 Unsupported fields are omitted. These are runtime changes; the screen does not automatically persist them into printer configuration.
 
 ### 11. Probe calibration wizard
-
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Probe calibration placeholder"></p>
 
 When the required probe/manual-probe objects are available, Control exposes a guided probe calibration screen.
 
@@ -246,7 +239,7 @@ The UI never assumes an HTTP success means the physical/manual-probe state alrea
 
 ### 12. Case Light
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Case light placeholder"></p>
+<p align="center"><img src="docs/assets/screens/case-light.png" width="360" alt="Case Light screen"></p>
 
 If a `gcode_macro M355` capability is detected, the Control menu can expose case-light control.
 
@@ -260,7 +253,7 @@ Brightness is converted to the macro's 0–255 scale internally.
 
 ### 13. Info
 
-<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Info screen placeholder"></p>
+<p align="center"><img src="docs/assets/screens/info.png" width="360" alt="Info screen"></p>
 
 The Info screen shows detected machine/build information in the familiar DWIN layout. It is used when a dedicated one-step leveling entry is not occupying the fourth home-screen slot.
 
