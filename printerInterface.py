@@ -93,14 +93,16 @@ class buzz_t:
 
 
 class material_preset_t:
-    def __init__(self, name, hotend_temp=0, bed_temp=0, fan_speed=0):
+    def __init__(self, name, hotend_temp=0, bed_temp=0, fan_speed=0, mainsail_id=None, mainsail_raw=None):
         self.name = str(name)
         self.hotend_temp = hotend_temp
         self.bed_temp = bed_temp
         self.fan_speed = fan_speed
+        self.mainsail_id = mainsail_id
+        self.mainsail_raw = copy.deepcopy(mainsail_raw) if mainsail_raw is not None else None
 
     @classmethod
-    def from_mainsail(cls, preset):
+    def from_mainsail(cls, preset, preset_id=None):
         if not isinstance(preset, Mapping) or not str(preset.get('name', '')).strip():
             raise ValueError('Invalid Mainsail preset')
         hotend = bed = fan = 0.0
@@ -126,7 +128,7 @@ class material_preset_t:
                 pwm = float(matches[-1])
                 if 0 <= pwm <= 255:
                     fan = pwm * 100 / 255
-        return cls(str(preset['name']).strip(), hotend, bed, fan)
+        return cls(str(preset['name']).strip(), hotend, bed, fan, preset_id, preset)
 
 
 class PrinterData:
@@ -230,7 +232,7 @@ class PrinterData:
 
     @staticmethod
     def _preset_signature(presets):
-        return tuple((item.name, item.hotend_temp, item.bed_temp, item.fan_speed)
+        return tuple((item.mainsail_id, item.name, item.hotend_temp, item.bed_temp, item.fan_speed)
                      for item in presets)
 
     def refresh_mainsail_presets(self, force=False):
@@ -243,7 +245,7 @@ class PrinterData:
             values = mainsail.get('result', {}).get('value', {})
             if not isinstance(values, Mapping):
                 raise ValueError('Invalid Mainsail preset database')
-            presets = [material_preset_t.from_mainsail(item) for item in values.values()]
+            presets = [material_preset_t.from_mainsail(item, preset_id) for preset_id, item in values.items()]
             if not presets:
                 return False
             changed = self._preset_signature(presets) != self._preset_signature(self.material_preset)
@@ -855,9 +857,38 @@ class PrinterData:
 
     def save_settings(self):
         if self.presets_from_mainsail:
-            self.settings_error = 'Mainsail presets are read-only on the LCD'
-            logging.warning(self.settings_error)
-            return False
+            try:
+                for preset in self.material_preset:
+                    if not preset.mainsail_id or not isinstance(preset.mainsail_raw, Mapping):
+                        raise ValueError('Mainsail preset metadata is unavailable')
+                    raw = copy.deepcopy(preset.mainsail_raw)
+                    raw['name'] = preset.name
+                    values = raw.setdefault('values', {})
+                    for device, target in (('extruder', preset.hotend_temp),
+                                           ('heater_bed', preset.bed_temp)):
+                        setting = values.get(device)
+                        if isinstance(setting, Mapping):
+                            setting = dict(setting)
+                            setting['value'] = target
+                            values[device] = setting
+                    gcode = raw.get('gcode', '')
+                    if isinstance(gcode, str) and re.search(r'(?im)^\s*M106\s+[^\n]*?S\d+(?:\.\d+)?', gcode):
+                        pwm = max(0, min(255, round(float(preset.fan_speed) * 255 / 100)))
+                        raw['gcode'] = re.sub(r'(?im)^(\s*M106\s+[^\n]*?S)\d+(?:\.\d+)?',
+                                              lambda match: match.group(1) + str(pwm), gcode)
+                    self.client.post('/server/database/item', {
+                        'namespace': 'mainsail',
+                        'key': 'presets.presets.' + preset.mainsail_id,
+                        'value': raw,
+                    }).result(timeout=self.client.timeout + 1)
+                    preset.mainsail_raw = raw
+                self.settings_error = None
+                self._preset_refresh_at = 0.0
+                return True
+            except (MoonrakerError, KeyError, ValueError, TypeError, TimeoutError) as error:
+                self.settings_error = str(error)
+                logging.error('Cannot save Mainsail presets: %s', error)
+                return False
         try:
             self.preset_store.save([vars(preset).copy() for preset in self.material_preset])
         except (OSError, ValueError, TypeError, UnicodeError) as error:

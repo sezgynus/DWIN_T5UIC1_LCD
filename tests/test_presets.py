@@ -109,11 +109,16 @@ class MainsailPresetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             printer.preheat_preset(99)
 
-    def test_mainsail_presets_are_read_only_locally(self):
+    def test_mainsail_presets_write_back_to_database(self):
         printer = self.printer()
         printer.presets_from_mainsail = True
         printer.material_preset = [backend.material_preset_t('PETG', 240, 85, 30)]
-        with patch.object(printer.preset_store, 'save') as save:
-            self.assertFalse(printer.save_settings())
-        save.assert_not_called()
-        self.assertIn('read-only', printer.settings_error)
+        printer.material_preset[0].mainsail_id = 'preset-id'
+        printer.material_preset[0].mainsail_raw = {'name':'PETG','gcode':'M106 S128','values':{'extruder':{'bool':True,'type':'heater','value':240},'heater_bed':{'bool':True,'type':'heater','value':85}}}
+        future = Mock()
+        future.result.return_value = {'result':'ok'}
+        with patch.object(printer.client, 'post', return_value=future) as post:
+            self.assertTrue(printer.save_settings())
+        payload = post.call_args.args[1]
+        self.assertEqual(payload['key'], 'presets.presets.preset-id')
+        self.assertEqual(payload['value']['values']['extruder']['value'], 240)
