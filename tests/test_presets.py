@@ -77,3 +77,22 @@ class PresetTests(unittest.TestCase):
     def test_default_path_honors_xdg_directory(self):
         with patch.dict('os.environ', {'XDG_CONFIG_HOME': self.directory.name}):
             self.assertEqual(PresetStore().path, Path(self.directory.name) / 'dwin-lcd/presets.json')
+
+
+class MainsailPresetTests(unittest.TestCase):
+    def test_maps_name_heaters_and_part_fan(self):
+        preset = backend.material_preset_t.from_mainsail({'name':'PETG Fast','gcode':'M106 S128','values':{'extruder':{'bool':True,'type':'heater','value':235},'heater_bed':{'bool':True,'type':'heater','value':80}}})
+        self.assertEqual((preset.name, preset.hotend_temp, preset.bed_temp), ('PETG Fast',235,80))
+        self.assertAlmostEqual(preset.fan_speed, 128 * 100 / 255)
+
+    def test_ignores_disabled_values(self):
+        preset = backend.material_preset_t.from_mainsail({'name':'ABS','gcode':'','values':{'extruder':{'bool':False,'type':'heater','value':260},'heater_bed':{'bool':True,'type':'heater','value':105}}})
+        self.assertEqual((preset.hotend_temp,preset.bed_temp,preset.fan_speed),(0,105,0))
+
+    def test_temperature_fan_value_is_preserved(self):
+        preset = backend.material_preset_t.from_mainsail({'name':'Chamber','gcode':'','values':{'temperature_fan chamber':{'bool':True,'type':'temperature_fan','value':45}}})
+        self.assertEqual(preset.fan_speed,45)
+
+    def test_invalid_preset_is_rejected(self):
+        with self.assertRaises(ValueError):
+            backend.material_preset_t.from_mainsail({'name':'','values':{}})

@@ -1,6 +1,7 @@
 import copy
 import logging
 import math
+import re
 import time
 import uuid
 from collections.abc import Mapping
@@ -92,11 +93,40 @@ class buzz_t:
 
 
 class material_preset_t:
-    def __init__(self, name, hotend_temp, bed_temp, fan_speed=100):
-        self.name = name
+    def __init__(self, name, hotend_temp=0, bed_temp=0, fan_speed=0):
+        self.name = str(name)
         self.hotend_temp = hotend_temp
         self.bed_temp = bed_temp
         self.fan_speed = fan_speed
+
+    @classmethod
+    def from_mainsail(cls, preset):
+        if not isinstance(preset, Mapping) or not str(preset.get('name', '')).strip():
+            raise ValueError('Invalid Mainsail preset')
+        hotend = bed = fan = 0.0
+        values = preset.get('values', {})
+        if not isinstance(values, Mapping):
+            raise ValueError('Invalid Mainsail preset values')
+        for device, setting in values.items():
+            if not isinstance(setting, Mapping) or not setting.get('bool', False):
+                continue
+            value = setting.get('value')
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise ValueError('Invalid Mainsail preset value')
+            if device == 'extruder':
+                hotend = value
+            elif device == 'heater_bed':
+                bed = value
+            elif setting.get('type') == 'temperature_fan':
+                fan = max(fan, value)
+        gcode = preset.get('gcode', '')
+        if isinstance(gcode, str):
+            matches = re.findall(r'(?im)^\\s*M106\\s+[^\\n]*?S(\\d+(?:\\.\\d+)?)', gcode)
+            if matches:
+                pwm = float(matches[-1])
+                if 0 <= pwm <= 255:
+                    fan = pwm * 100 / 255
+        return cls(str(preset['name']).strip(), hotend, bed, fan)
 
 
 class PrinterData:
@@ -175,9 +205,20 @@ class PrinterData:
         self.material_preset = copy.deepcopy(type(self).material_preset)
         self.preset_store = PresetStore(settings_path)
         self.settings_error = None
+        self.mainsail_presets_error = None
+        try:
+            mainsail = self.client.get('/server/database/item?namespace=mainsail&key=presets.presets')
+            values = mainsail.get('result', {}).get('value', {})
+            if isinstance(values, Mapping):
+                presets = [material_preset_t.from_mainsail(item) for item in values.values()]
+                if presets:
+                    self.material_preset = presets
+        except (MoonrakerError, ValueError, TypeError) as error:
+            self.mainsail_presets_error = str(error)
+            logging.warning('Cannot load Mainsail presets: %s', error)
         try:
             saved = self.preset_store.load()
-            if saved is not None:
+            if saved is not None and not self.material_preset:
                 self.material_preset = [material_preset_t(**item) for item in saved]
         except (OSError, ValueError, TypeError, UnicodeError) as error:
             self.settings_error = str(error)
