@@ -171,6 +171,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     ICON_PLAPreheat = 31
     ICON_ABSPreheat = 32
     ICON_Cool = 33
+    ICON_Language = 34
 
     ICON_MoveX = 35
     ICON_MoveY = 36
@@ -180,6 +181,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     ICON_Temperature = 40
     ICON_Motion = 41
     ICON_WriteEEPROM = 42
+    ICON_ReadEEPROM = 43
+    ICON_ResumeEEPROM = 44
     ICON_Info = 45
     ICON_CaseLight = ICON_Motion
 
@@ -196,6 +199,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     ICON_PrintSize = 55
     ICON_Version = 56
     ICON_Contact = 57
+    ICON_StockConfiguraton = 58
     ICON_MaxSpeedX = 59
     ICON_MaxSpeedY = 60
     ICON_MaxSpeedZ = 61
