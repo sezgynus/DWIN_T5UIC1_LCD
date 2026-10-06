@@ -491,27 +491,49 @@ class CapabilityMenuTests(unittest.TestCase):
         self.assertEqual(result._case_light_brightness, 100)
         self.assertFalse(result._case_light_query_pending)
 
-    def test_case_light_toggle_and_brightness_commands(self):
+    def test_case_light_toggle_waits_for_success_and_fresh_query(self):
         data = snapshot()
         data['objects'].append('gcode_macro M355')
         result = display(data)
         result._case_light_on = True
-        result._case_light_brightness = 50
         result.Draw_Case_Light_Menu = Mock()
+        result._restore_action_screen = Mock()
+        result.HMI_AudioFeedback = Mock()
+        result.pd.query_case_light = Mock()
+        future = Future()
+        future.set_result({'result': 'ok'})
+        result.pd.sendGCode = Mock(return_value=future)
 
         result.select_light.set(1)
         result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
         result.HMI_Case_Light()
+
         result.pd.sendGCode.assert_called_once_with('M355 S0')
+        self.assertTrue(result._case_light_on)
+        self.assertFalse(result._poll_action())
+        result.pd.query_case_light.assert_called_once_with()
+        self.assertTrue(result._case_light_on)
 
-        result.pd.sendGCode.reset_mock()
-        result.checkkey = result.CaseLightBrightness
+    def test_case_light_brightness_waits_for_success_and_fresh_query(self):
+        result = display(snapshot())
+        result._case_light_brightness = 25
         result._case_light_brightness_target = 50
+        result.checkkey = result.CaseLightBrightness
+        result._restore_action_screen = Mock()
+        result.HMI_AudioFeedback = Mock()
+        result.pd.query_case_light = Mock()
+        future = Future()
+        future.set_result({'result': 'ok'})
+        result.pd.sendGCode = Mock(return_value=future)
         result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_ENTER)
-        result.HMI_Case_Light_Brightness()
-        result.pd.sendGCode.assert_called_once_with('M355 P128')
-        self.assertEqual(result._case_light_brightness, 50)
 
+        result.HMI_Case_Light_Brightness()
+
+        result.pd.sendGCode.assert_called_once_with('M355 P128')
+        self.assertEqual(result._case_light_brightness, 25)
+        self.assertFalse(result._poll_action())
+        result.pd.query_case_light.assert_called_once_with()
+        self.assertEqual(result._case_light_brightness, 25)
     def test_case_light_brightness_response_converts_raw_to_percent(self):
         data = snapshot()
         data['objects'].append('gcode_macro M355')

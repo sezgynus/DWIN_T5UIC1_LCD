@@ -388,7 +388,8 @@ class DWIN_LCD:
             else:
                 raise
 
-    def _action(self, label, callback, expected=None, confirmation_timeout=300.0):
+    def _action(self, label, callback, expected=None, confirmation_timeout=300.0,
+                on_accept=None):
         if getattr(self, '_action_feedback', None) is not None:
             return None
         try:
@@ -400,12 +401,14 @@ class DWIN_LCD:
         if isinstance(future, Future):
             self._action_feedback = CommandFeedback(
                 future, label, self.pd.state.epoch, expected, confirmation_timeout)
+            self._action_on_accept = on_accept
         return future
 
     def _restore_action_screen(self):
         screens = {self.Prepare: self.Draw_Prepare_Menu, self.Control: self.Draw_Control_Menu,
                    self.TemperatureID: self.Draw_Temperature_Menu, self.Tune: self.Draw_Tune_Menu,
-                   self.Motion: self.Draw_Motion_Menu, self.AxisMove: self.Draw_Move_Menu}
+                   self.Motion: self.Draw_Motion_Menu, self.AxisMove: self.Draw_Move_Menu,
+                   self.CaseLight: self.Draw_Case_Light_Menu}
         if self.checkkey == self.Last_Prepare and self.pd.ishomed():
             self.CompletedHoming()
         elif self.checkkey in screens:
@@ -421,10 +424,15 @@ class DWIN_LCD:
         phase = feedback.update(self.pd.state, bool(self.pd.connection_error))
         if phase == 'accepted':
             self._action_feedback = None
+            on_accept = getattr(self, '_action_on_accept', None)
+            self._action_on_accept = None
+            if on_accept is not None:
+                on_accept()
             self.HMI_AudioFeedback(True)
             self._restore_action_screen()
             return False
         if phase == 'error':
+            self._action_on_accept = None
             self.pd.last_command_error = None
         self._show_message(feedback.message)
         return True
@@ -2050,6 +2058,12 @@ class DWIN_LCD:
                     self.lcd.UpdateLCD()
                 return True
 
+    def _refresh_case_light_state(self):
+        # Commit displayed light state only after a successful command and a
+        # fresh M355 query response; never optimistically change the UI.
+        self._case_light_query_pending = True
+        self.pd.query_case_light()
+
     def HMI_Case_Light(self):
         event = self.get_encoder_state()
         if event == self.ENCODER_DIFF_CW:
@@ -2064,9 +2078,11 @@ class DWIN_LCD:
                 self.select_control.set(self.CONTROL_CASE_LIGHT)
                 self.Draw_Control_Menu()
             elif self.select_light.now == 1:
-                self._case_light_on = not getattr(self, '_case_light_on', False)
-                self.pd.sendGCode('M355 S{}'.format(1 if self._case_light_on else 0))
-                self.Draw_Case_Light_Menu()
+                target = not getattr(self, '_case_light_on', False)
+                self._action(
+                    "Case light",
+                    lambda: self.pd.sendGCode('M355 S{}'.format(1 if target else 0)),
+                    on_accept=self._refresh_case_light_state)
             else:
                 self.checkkey = self.CaseLightBrightness
                 self._case_light_brightness_target = getattr(self, '_case_light_brightness', 0)
@@ -2078,11 +2094,13 @@ class DWIN_LCD:
     def HMI_Case_Light_Brightness(self):
         event = self.get_encoder_state()
         if event == self.ENCODER_DIFF_ENTER:
-            self._case_light_brightness = self._case_light_brightness_target
-            raw_brightness = int(round(self._case_light_brightness * 255.0 / 100.0))
-            self.pd.sendGCode('M355 P{}'.format(raw_brightness))
+            target = self._case_light_brightness_target
+            raw_brightness = int(round(target * 255.0 / 100.0))
             self.checkkey = self.CaseLight
-            self.Draw_Case_Light_Menu()
+            self._action(
+                "Case light brightness",
+                lambda: self.pd.sendGCode('M355 P{}'.format(raw_brightness)),
+                on_accept=self._refresh_case_light_state)
         elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             delta = self._encoder_move_value if event == self.ENCODER_DIFF_CW else -self._encoder_move_value
             self._case_light_brightness_target = max(0, min(100, self._case_light_brightness_target + delta))
