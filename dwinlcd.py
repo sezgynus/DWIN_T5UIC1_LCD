@@ -4,6 +4,8 @@ from concurrent.futures import Future
 from command_feedback import CommandFeedback
 from threading import Lock
 from ui_events import UIEventLoop, InputEvent
+from ui_case_light import CaseLightMixin
+from ui_mmu import MMUViewMixin
 
 from encoder import Encoder
 from gpiozero import Button, Device
@@ -13,13 +15,6 @@ from DWIN_Screen import T5UIC1_LCD
 
 def _MAX(lhs, rhs):
     if lhs > rhs:
-        return lhs
-    else:
-        return rhs
-
-
-def _MIN(lhs, rhs):
-    if lhs < rhs:
         return lhs
     else:
         return rhs
@@ -55,7 +50,7 @@ class select_t:
         return self.changed()
 
 
-class DWIN_LCD:
+class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     TROWS = 6
     MROWS = TROWS - 1  # Total rows, and other-than-Back
@@ -65,7 +60,6 @@ class DWIN_LCD:
     MENU_CHR_W = 8
     STAT_CHR_W = 10
 
-    dwin_abort_flag = False  # Flag to reset feedrate, return to Home
 
     MSG_STOP_PRINT = "Stop Print"
     MSG_PAUSE_PRINT = "Pausing..."
@@ -80,7 +74,6 @@ class DWIN_LCD:
     index_file = MROWS
     index_prepare = MROWS
     index_control = MROWS
-    index_leveling = MROWS
     index_tune = MROWS
 
     MainMenu = 0
@@ -96,21 +89,12 @@ class DWIN_LCD:
     Tune = 10
     PLAPreheat = 11
     ABSPreheat = 12
-    MaxSpeed = 13
-    MaxSpeed_value = 14
-    MaxAcceleration = 15
-    MaxAcceleration_value = 16
-    MaxJerk = 17
-    MaxJerk_value = 18
-    Step = 19
-    Step_value = 20
 
     # Last Process ID
     Last_Prepare = 21
 
     # Back Process ID
     Back_Main = 22
-    Back_Print = 23
 
     # Date variable ID
     Move_X = 24
@@ -124,7 +108,6 @@ class DWIN_LCD:
     PrintSpeed = 32
 
     Print_window = 33
-    Popup_Window = 34
     ProbeWizardID = 36
     MotionValue = 35
     CaseLight = 37
@@ -148,9 +131,7 @@ class DWIN_LCD:
     last_zoffset = 0.0
 
     # Picture ID
-    Start_Process = 0
     Language_English = 1
-    Language_Chinese = 2
 
     # ICON ID
     ICON = 0x09
@@ -190,7 +171,6 @@ class DWIN_LCD:
     ICON_PLAPreheat = 31
     ICON_ABSPreheat = 32
     ICON_Cool = 33
-    ICON_Language = 34
 
     ICON_MoveX = 35
     ICON_MoveY = 36
@@ -200,8 +180,6 @@ class DWIN_LCD:
     ICON_Temperature = 40
     ICON_Motion = 41
     ICON_WriteEEPROM = 42
-    ICON_ReadEEPROM = 43
-    ICON_ResumeEEPROM = 44
     ICON_Info = 45
     ICON_CaseLight = ICON_Motion
 
@@ -218,7 +196,6 @@ class DWIN_LCD:
     ICON_PrintSize = 55
     ICON_Version = 56
     ICON_Contact = 57
-    ICON_StockConfiguraton = 58
     ICON_MaxSpeedX = 59
     ICON_MaxSpeedY = 60
     ICON_MaxSpeedZ = 61
@@ -269,8 +246,7 @@ class DWIN_LCD:
     PREPARE_CASE_PLA = PREPARE_CASE_ZOFF + 1
     PREPARE_CASE_ABS = PREPARE_CASE_PLA + 1
     PREPARE_CASE_COOL = PREPARE_CASE_ABS + 1
-    PREPARE_CASE_LANG = PREPARE_CASE_COOL + 0
-    PREPARE_CASE_TOTAL = PREPARE_CASE_LANG
+    PREPARE_CASE_TOTAL = PREPARE_CASE_COOL
 
     CONTROL_CASE_TEMP = 1
     CONTROL_CASE_MOVE = 2
@@ -482,7 +458,7 @@ class DWIN_LCD:
         self._menus['control'].append(('INFO', 'Info', self.ICON_Info))
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
-        keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'PLA', 'ABS', 'COOL', 'LANG',
+        keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'PLA', 'ABS', 'COOL',
                 'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT')
         for menu, prefix in prefixes.items():
             for key in keys:
@@ -1024,9 +1000,6 @@ class DWIN_LCD:
             elif self.select_prepare.now == self.PREPARE_CASE_COOL:  # Cool
                 self._action('Cooldown', self.pd.cooldown)
 
-            elif self.select_prepare.now == self.PREPARE_CASE_LANG:  # Toggle Language
-                self.HMI_ToggleLanguage()
-                self.Draw_Prepare_Menu()
         self.lcd.UpdateLCD()
 
     def HMI_Control(self):
@@ -2023,93 +1996,6 @@ class DWIN_LCD:
     def Draw_Control_Menu(self):
         self._draw_capability_menu('control', self.select_control)
 
-    def Draw_Case_Light_Menu(self):
-        self.Clear_Main_Window()
-        self.Draw_Title('Case Light')
-        self.Draw_Back_First(self.select_light.now == 0)
-        self.Draw_Menu_Line(1, self.ICON_CaseLight, 'Light')
-        self.Draw_Menu_Line(2, self.ICON_CaseLight, 'Brightness')
-        if self.select_light.now:
-            self.Draw_Menu_Cursor(self.select_light.now)
-        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
-                             self.lcd.Color_Bg_Black, 224, self.MBASE(1),
-                             '[X]' if getattr(self, '_case_light_on', False) else '[ ]')
-        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
-                               self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                               3, 208, self.MBASE(2), getattr(self, '_case_light_brightness', 0))
-        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
-                             self.lcd.Color_Bg_Black, 232, self.MBASE(2), '%')
-
-    def _poll_case_light_query(self):
-        if not getattr(self, '_case_light_query_pending', False):
-            return False
-        import re
-        while True:
-            response = self.pd.pop_gcode_response()
-            if response is None:
-                return False
-            match = re.search(r'Light is (ON|OFF),\s*Brightness=(\d+)', response, re.IGNORECASE)
-            if match:
-                self._case_light_on = match.group(1).upper() == 'ON'
-                raw_brightness = max(0, min(255, int(match.group(2))))
-                self._case_light_brightness = int(round(raw_brightness * 100.0 / 255.0))
-                self._case_light_query_pending = False
-                if self.checkkey == self.CaseLight:
-                    self.Draw_Case_Light_Menu()
-                    self.lcd.UpdateLCD()
-                return True
-
-    def _refresh_case_light_state(self):
-        # Commit displayed light state only after a successful command and a
-        # fresh M355 query response; never optimistically change the UI.
-        self._case_light_query_pending = True
-        self.pd.query_case_light()
-
-    def HMI_Case_Light(self):
-        event = self.get_encoder_state()
-        if event == self.ENCODER_DIFF_CW:
-            self.select_light.inc(3)
-            self.Draw_Case_Light_Menu()
-        elif event == self.ENCODER_DIFF_CCW:
-            self.select_light.dec()
-            self.Draw_Case_Light_Menu()
-        elif event == self.ENCODER_DIFF_ENTER:
-            if self.select_light.now == 0:
-                self.checkkey = self.Control
-                self.select_control.set(self.CONTROL_CASE_LIGHT)
-                self.Draw_Control_Menu()
-            elif self.select_light.now == 1:
-                target = not getattr(self, '_case_light_on', False)
-                self._action(
-                    "Case light",
-                    lambda: self.pd.sendGCode('M355 S{}'.format(1 if target else 0)),
-                    on_accept=self._refresh_case_light_state)
-            else:
-                self.checkkey = self.CaseLightBrightness
-                self._case_light_brightness_target = getattr(self, '_case_light_brightness', 0)
-                self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
-                                       self.lcd.Color_White, self.lcd.Select_Color,
-                                       3, 208, self.MBASE(2), self._case_light_brightness_target)
-        self.lcd.UpdateLCD()
-
-    def HMI_Case_Light_Brightness(self):
-        event = self.get_encoder_state()
-        if event == self.ENCODER_DIFF_ENTER:
-            target = self._case_light_brightness_target
-            raw_brightness = int(round(target * 255.0 / 100.0))
-            self.checkkey = self.CaseLight
-            self._action(
-                "Case light brightness",
-                lambda: self.pd.sendGCode('M355 P{}'.format(raw_brightness)),
-                on_accept=self._refresh_case_light_state)
-        elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
-            delta = self._encoder_move_value if event == self.ENCODER_DIFF_CW else -self._encoder_move_value
-            self._case_light_brightness_target = max(0, min(100, self._case_light_brightness_target + delta))
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
-                                   self.lcd.Color_White, self.lcd.Select_Color,
-                                   3, 208, self.MBASE(2), self._case_light_brightness_target)
-        self.lcd.UpdateLCD()
-
     def _draw_info_text(self, value, y):
         text = T5UIC1_LCD._panel_text(value)[:self.lcd.DWIN_WIDTH // self.MENU_CHR_W]
         x = max(0, (self.lcd.DWIN_WIDTH - len(text) * self.MENU_CHR_W) // 2)
@@ -2221,116 +2107,6 @@ class DWIN_LCD:
             self.ICON_Leveling(self.select_page.now == 3)
         else:
             self.ICON_StartInfo(self.select_page.now == 3)
-
-    @staticmethod
-    def _rgb565(rgb):
-        r, g, b = (int(round(max(0.0, min(1.0, value)) * 31)) for value in rgb)
-        # Green has 6 bits in RGB565.
-        g = int(round(max(0.0, min(1.0, rgb[1])) * 63))
-        return (r << 11) | (g << 5) | b
-
-    def Draw_MMU_Status(self):
-        mmu = self.pd.mmu
-        if not mmu:
-            return
-        count = mmu['num_gates']
-        active = mmu['gate']
-        # Fill nearly the entire strip above the main menu icons.
-        left, top, width = 8, 39, 256
-        gap = 5 if count <= 4 else 2 if count <= 8 else 1
-        if count > 32:
-            gap = 0
-        slot = max(1, min(60, (width - gap * (count - 1)) // count))
-        total = slot * count + gap * (count - 1)
-        start = left + max(0, (width - total) // 2)
-        title = str(mmu.get('name') or 'MMU')[:22]
-        title_x = max(4, (self.lcd.DWIN_WIDTH - 6 * len(title)) // 2)
-        self.lcd.Draw_String(False, True, self.lcd.font6x12,
-                             self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                             title_x, 32, title)
-
-        percentages = mmu.get('remaining_percent', ())
-        for gate in range(count):
-            x = start + gate * (slot + gap)
-            status = mmu['gate_status'][gate]
-            color = self._rgb565(mmu['gate_color_rgb'][gate]) if status > 0 else 0x8410
-            cx = x + slot // 2
-            flange = 0x9B46
-            flange_edge = 0xD58A
-            # Keep lane spacing unchanged, but narrow the reel itself so its
-            # height-to-width ratio resembles a physical filament spool.
-            reel_w = min(max(8, int(slot * 0.70)), max(1, slot - 2))
-            reel_x = x + (slot - reel_w) // 2
-            flange_w = max(1, min(max(2, reel_w // 9), max(1, (reel_w - 2) // 2)))
-            body_left = reel_x + flange_w
-            body_right = reel_x + reel_w - flange_w - 1
-            y0, y1 = top + 13, top + 52
-
-            # Warm cardboard/wood flanges stand out against the black UI.
-            self.lcd.Draw_Rectangle(1, flange, reel_x + 1, top + 7,
-                                    reel_x + flange_w, top + 58)
-            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + 1, top + 7,
-                                    reel_x + flange_w, top + 58)
-            self.lcd.Draw_Rectangle(1, flange, reel_x + reel_w - flange_w - 1, top + 7,
-                                    reel_x + reel_w - 2, top + 58)
-            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + reel_w - flange_w - 1, top + 7,
-                                    reel_x + reel_w - 2, top + 58)
-            self.lcd.Draw_Rectangle(1, color, body_left, y0, body_right, y1)
-
-            winding = self.lcd.Color_White if sum(mmu['gate_color_rgb'][gate]) < 0.7 else flange
-            for line_x in range(body_left + 5, body_right, 7):
-                self.lcd.Draw_Line(winding, line_x, y0, line_x, y1)
-
-            percent = percentages[gate] if gate < len(percentages) else None
-            # Percent text needs enough horizontal room. Compact high-gate
-            # layouts prioritize distinct lanes over overlapping text.
-            if slot >= 28:
-                pct = '--' if percent is None else '%d%%' % percent
-                # Black backing keeps the percentage readable on white/yellow filament.
-                pct_w = 6 * len(pct) + 4
-                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black,
-                                        cx - pct_w // 2, top + 27,
-                                        cx + pct_w // 2, top + 41)
-                self.lcd.Draw_String(False, True, self.lcd.font6x12,
-                                     self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                                     cx - 3 * len(pct), top + 28, pct)
-
-            label = str(gate + 1)
-            label_w = max(1, min(38, slot - 2 if slot > 2 else slot))
-            lx0, lx1 = cx - label_w // 2, cx + label_w // 2
-            exit_leds = mmu.get('exit_led_rgb', ())
-            led_color = None
-            if gate < len(exit_leds):
-                rgb = exit_leds[gate]
-                peak = max(rgb)
-                # Mirror the LED hue, not its physical brightness.  Happy Hare
-                # may deliberately drive a color at low intensity (e.g. red
-                # at 0.1), which is too dark on the LCD if copied literally.
-                normalized_rgb = (tuple(channel / peak for channel in rgb)
-                                  if peak > 0 else rgb)
-                led_color = self._rgb565(normalized_rgb)
-            active_green = 0x07E0
-            indicator = led_color if led_color is not None else (
-                active_green if gate == active else self.lcd.Line_Color)
-            # Every lane mirrors its live Happy Hare exit LED continuously.
-            # Black/off LEDs therefore render as black rather than falling back.
-            label_bg = indicator
-            border = indicator
-            self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
-            self.lcd.Draw_Rectangle(0, border, lx0, top + 64, lx1, top + 78)
-            # Choose black or white text for maximum contrast against
-            # the live lane color.  This keeps bright green/yellow/cyan lane
-            # numbers readable without sacrificing dark-color visibility.
-            r5 = (label_bg >> 11) & 0x1F
-            g6 = (label_bg >> 5) & 0x3F
-            b5 = label_bg & 0x1F
-            luminance = (299 * r5 * 255 // 31 +
-                         587 * g6 * 255 // 63 +
-                         114 * b5 * 255 // 31) // 1000
-            label_fg = 0x0000 if luminance >= 140 else self.lcd.Color_White
-            self.lcd.Draw_String(False, True, self.lcd.font6x12,
-                                 label_fg, label_bg,
-                                 cx - 3 * len(label), top + 65, label)
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
