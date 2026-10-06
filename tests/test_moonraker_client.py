@@ -95,6 +95,18 @@ class TransportTests(unittest.TestCase):
             client.post('/printer/print/start').result()
         opener.open.assert_not_called()
 
+    def test_silent_immediate_rejection_does_not_report_command_error(self):
+        opener = Mock()
+        client = self.client(opener)
+        client.close()
+
+        future = client.post('/server/spoolman/proxy', {}, report_error=False)
+
+        with self.assertRaisesRegex(MoonrakerError, 'closed'):
+            future.result()
+        self.assertTrue(client.command_results.empty())
+        opener.open.assert_not_called()
+
     def test_invalid_configuration(self):
         for url in ('file:///tmp/socket', 'http://user:key@localhost', 'http://localhost?key=secret'):
             with self.assertRaises(ValueError):

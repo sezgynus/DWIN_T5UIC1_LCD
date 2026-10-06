@@ -84,7 +84,7 @@ class MoonrakerClient:
                     self._queue.put_nowait((future, path, payload, guard, cleanup, report_error))
                 except Full:
                     future.set_exception(MoonrakerError('Command queue is full'))
-        if future.done():
+        if future.done() and report_error:
             self.command_results.put((path, future))
         return future
 
