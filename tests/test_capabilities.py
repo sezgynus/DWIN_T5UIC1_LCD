@@ -221,6 +221,31 @@ class CapabilityTests(unittest.TestCase):
         result = printer(data)
         self.assertEqual(result.mmu['name'], 'OpenEYE MMU')
 
+    def test_selected_mmu_unit_uses_matching_exit_led_object(self):
+        data = snapshot()
+        data['objects'] += ['mmu', 'mmu_machine', 'unit0_mmu_exit_leds',
+                            'unit1_mmu_exit_leds']
+        data['status']['mmu'] = {
+            'num_gates': 2, 'gate': 1, 'unit_selected': 1,
+            'gate_status': [1, 1],
+            'gate_color_rgb': [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        }
+        data['status']['mmu_machine'] = {
+            'unit_1': {'name': 'second', 'display_name': 'Second MMU'},
+        }
+        data['status']['unit0_mmu_exit_leds'] = {
+            'color_data': [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]]
+        }
+        data['status']['unit1_mmu_exit_leds'] = {
+            'color_data': [[0.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
+        }
+
+        result = printer(data)
+
+        self.assertEqual(result.mmu['name'], 'Second MMU')
+        self.assertEqual(result.mmu['exit_led_rgb'],
+                         ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0)))
+
     def test_home_uses_mmu_visual_when_available(self):
         data = snapshot()
         data['objects'].append('mmu')

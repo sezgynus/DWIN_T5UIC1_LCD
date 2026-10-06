@@ -110,6 +110,22 @@ class SubscriptionTests(unittest.TestCase):
         self.assertTrue(all(r['method'] not in ('printer.gcode.script', 'printer.print.start')
                             for r in connection.sent))
 
+    def test_bootstrap_subscribes_dynamic_mmu_exit_led_units(self):
+        snapshot_data = {
+            'toolhead': {'position': [0, 0, 1, 0]},
+            'gcode_move': {},
+            'print_stats': {'state': 'paused'},
+            'virtual_sdcard': {'progress': 0.5},
+            'webhooks': {'state': 'ready'},
+            'unit1_mmu_exit_leds': {'color_data': [[0.0, 1.0, 0.0, 0.0]]},
+        }
+        client = self.subscription()
+        connection = FakeSocket(snapshot_data)
+        client._socket = connection
+        client._bootstrap()
+        subscribed = connection.sent[-1]['params']['objects']
+        self.assertIn('unit1_mmu_exit_leds', subscribed)
+
     def test_no_empty_auth_sent(self):
         client = self.subscription()
         client._socket = FakeSocket()

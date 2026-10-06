@@ -425,7 +425,8 @@ class PrinterData:
                     if isinstance(unit_info, Mapping):
                         unit_name = str(unit_info.get('display_name') or
                                         unit_info.get('name') or 'MMU')
-                    exit_led_data = data.get('unit0_mmu_exit_leds', {}).get('color_data', ())
+                    exit_led_object = 'unit%d_mmu_exit_leds' % unit_index
+                    exit_led_data = data.get(exit_led_object, {}).get('color_data', ())
                     exit_led_rgb = ()
                     if len(exit_led_data) >= num_gates:
                         normalized_leds = []

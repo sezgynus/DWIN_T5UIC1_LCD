@@ -6,6 +6,7 @@ is decoupled from physical completion. Completion is confirmed from subscribed p
 import copy
 import json
 import math
+import re
 import socket
 import time
 from concurrent.futures import Future
@@ -247,7 +248,8 @@ class MoonrakerSubscription:
         names = objects['objects']
         if not all(isinstance(name, str) for name in names) or 'configfile' not in names:
             raise MoonrakerError('Configuration object is unavailable')
-        available = [name for name in names if name in OBJECTS or name in ('mmu', 'mmu_machine', 'unit0_mmu_exit_leds') or
+        available = [name for name in names if name in OBJECTS or name in ('mmu', 'mmu_machine') or
+                     re.fullmatch(r'unit\d+_mmu_exit_leds', name) or
                      (name.startswith('extruder') and name[8:].isdigit())]
         config = self._rpc('printer.objects.query', {'objects': {'configfile': ['settings']}})
         try:
