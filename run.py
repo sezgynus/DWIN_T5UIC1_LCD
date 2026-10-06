@@ -15,7 +15,10 @@ def build_parser():
     parser.add_argument('--button-pin', type=int, default=os.environ.get('DWIN_BUTTON_PIN', '13'))
     parser.add_argument('--settings-file', default=os.environ.get('DWIN_SETTINGS_FILE'), help='Local preset JSON path')
     parser.add_argument('--power-device', default=os.environ.get('DWIN_POWER_DEVICE', 'Printer'),
-                        help='Moonraker power device enabled by a 3-second encoder-button hold')
+                        help='Moonraker power device controlled by the encoder button')
+    parser.add_argument('--power-on-hold-ms', type=int,
+                        default=os.environ.get('DWIN_POWER_ON_HOLD_MS', '2000'),
+                        help='Encoder-button hold time for power-on in milliseconds; 0 powers on immediately')
     return parser
 
 
@@ -33,6 +36,8 @@ def parse_args(argv=None):
             raise ValueError('Serial port must not be empty')
         if not args.power_device.strip():
             raise ValueError('Power device must not be empty')
+        if args.power_on_hold_ms < 0:
+            raise ValueError('Power-on hold time must be zero or greater')
     except (TypeError, ValueError) as error:
         parser.error(str(error))
     return args
@@ -45,7 +50,8 @@ def main():
     display = DWIN_LCD(args.serial_port, tuple(args.encoder_pins), args.button_pin,
              os.environ.get('MOONRAKER_API_KEY', ''),
              moonraker_url=args.moonraker_url, request_timeout=args.request_timeout,
-             settings_path=args.settings_file, power_device=args.power_device)
+             settings_path=args.settings_file, power_device=args.power_device,
+             power_on_hold_ms=args.power_on_hold_ms)
     signal.signal(signal.SIGTERM, lambda *_: display.lcdExit())
     try:
         display.wait()

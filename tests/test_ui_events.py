@@ -146,6 +146,7 @@ class InputRoutingTests(unittest.TestCase):
         display._input_lock = Lock()
         display._producer_value = 0
         display._last_press = float('-inf')
+        display.power_on_hold_ms = 2000
         display._encoder_event = display.ENCODER_DIFF_NO
         display._loop = Mock()
         display.pd = Mock(connection_error=None)
@@ -163,7 +164,7 @@ class InputRoutingTests(unittest.TestCase):
         self.assertEqual(display._loop.post.call_args_list[1].args[0], InputEvent('press', 1, 1))
         display._dispatch_input.assert_not_called()
 
-    def test_two_second_hold_routes_power_even_when_printer_and_uart_are_offline(self):
+    def test_configured_hold_routes_power_even_when_printer_and_uart_are_offline(self):
         display = self.display()
         display._uart_online = False
         display.pd.subscription.snapshot.return_value = {'state': 'disconnected', 'epoch': 2}
@@ -173,6 +174,23 @@ class InputRoutingTests(unittest.TestCase):
         display._process_input(event)
         display.pd.power_on_if_off.assert_called_once_with()
         display._dispatch_input.assert_not_called()
+
+    def test_zero_hold_time_requests_power_on_immediately_on_press(self):
+        display = self.display()
+        display.power_on_hold_ms = 0
+        display._uart_online = False
+        display.pd.subscription.snapshot.return_value = {'state': 'disconnected', 'epoch': 2}
+        display._button_pressed()
+        events = [call.args[0] for call in display._loop.post.call_args_list]
+        self.assertEqual(events[0].kind, 'power_on')
+        display._process_input(events[0])
+        display.pd.power_on_if_off.assert_called_once_with()
+
+    def test_zero_hold_time_ignores_gpio_held_callback(self):
+        display = self.display()
+        display.power_on_hold_ms = 0
+        display._button_held()
+        display._loop.post.assert_not_called()
 
     def test_each_rotation_step_is_preserved(self):
         display = self.display()

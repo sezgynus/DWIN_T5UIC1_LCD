@@ -39,6 +39,11 @@ encoder_a="$(prompt_value "Encoder A GPIO (BCM)" "$encoder_a")"
 encoder_b="$(prompt_value "Encoder B GPIO (BCM)" "$encoder_b")"
 button_pin="$(prompt_value "Encoder button GPIO (BCM)" "$(read_value DWIN_BUTTON_PIN 20)")"
 power_device="$(prompt_value "Moonraker power device" "$(read_value DWIN_POWER_DEVICE Printer)")"
+power_on_hold_ms="$(prompt_value "Power-on button hold time (ms, 0 = immediate)" "$(read_value DWIN_POWER_ON_HOLD_MS 2000)")"
+if ! [[ "$power_on_hold_ms" =~ ^[0-9]+$ ]]; then
+    echo "Power-on button hold time must be zero or a positive integer." >&2
+    exit 1
+fi
 request_timeout="$(read_value DWIN_REQUEST_TIMEOUT 5)"
 api_key="$(read_value MOONRAKER_API_KEY "")"
 settings_file="$CONFIG_DIR/presets.json"
@@ -54,6 +59,7 @@ DWIN_ENCODER_PINS="$encoder_a $encoder_b"
 DWIN_BUTTON_PIN=$button_pin
 DWIN_SETTINGS_FILE=$settings_file
 DWIN_POWER_DEVICE=$power_device
+DWIN_POWER_ON_HOLD_MS=$power_on_hold_ms
 EOF
 
 chown "$INSTALL_USER:$INSTALL_USER" "$ENV_FILE"
