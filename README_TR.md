@@ -38,6 +38,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - Opsiyonel Live Jog modu
 - Max velocity, max acceleration, square-corner velocity ve minimum cruise ratio için runtime motion ayarı
 - Runtime Z-offset kontrolü
+- Klipper yön ve dönüş miktarlarını gösteren dört köşe vida ayarı
 - Açık TESTZ adımları ve kontrollü SAVE_CONFIG akışına sahip probe kalibrasyon sihirbazı
 - Otomatik Mainsail temperature-preset keşfi, LCD üzerinden düzenleme ve Mainsail'e geri kaydetme
 - M355 macro üzerinden opsiyonel case-light arayüzü
@@ -238,6 +239,10 @@ Prepare; homing, hareket, cooldown/preheat ve runtime Z-offset erişimi gibi yaz
 
 
 #### Screws Tilt Adjust
+
+<p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerans sağlandı"></p>
+
+Başarı mesajları yeşil, ayar gereken durumdaki talimatlar nötr beyazdır.
 
 `[screws_tilt_adjust]` tanımlıysa **Prepare → Screws Tilt Adjust → Calculate**, Klipper'ın `SCREWS_TILT_CALCULATE` komutunu başlatır. Bu ekran dört ayrı köşe vidası ve yapılandırılmış probe ile çalışır. Vidalar numaralarından bağımsız olarak yapılandırılmış XY koordinatlarına göre yerleştirilir. Eksenlerin homing'i eksikse önce `G28` çalışır; baskı, duraklatma, başka bir manual-probe oturumu veya çözülmemiş jog recovery sırasında hesaplama başlatılmaz.
 

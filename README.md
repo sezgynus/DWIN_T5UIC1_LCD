@@ -38,6 +38,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Optional Live Jog mode
 - Runtime motion tuning for max velocity, max acceleration, square-corner velocity and minimum cruise ratio
 - Runtime Z-offset control
+- Four-corner screws tilt calibration with Klipper turn-direction guidance
 - Automatic Mainsail temperature-preset discovery, editing and write-back
 - Optional case-light UI through an M355 macro
 - Happy Hare MMU visualization on the home screen
@@ -237,6 +238,10 @@ Prepare contains printer setup actions such as homing, movement, cooldown/prehea
 
 
 #### Screws Tilt Adjust
+
+<p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerance achieved"></p>
+
+Success instructions are green; required-adjustment instructions are neutral white.
 
 When `[screws_tilt_adjust]` is configured, **Prepare → Screws Tilt Adjust → Calculate** starts Klipper's `SCREWS_TILT_CALCULATE`. This view supports four distinct corner screws and a configured probe. It places screws from their configured XY coordinates, independently of their numbering. Missing homed axes trigger `G28` first; calculation is blocked during printing, pause, another manual-probe session, or unresolved jog recovery.
 
