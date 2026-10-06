@@ -73,7 +73,8 @@ class ThumbnailTests(unittest.TestCase):
         view._loop.set_interval.assert_called_with(2.0)
 
     def test_draw_is_bounded_incremental_and_reconnect_restarts_cached_runs(self):
-        view=self.make();view._preview_future.set_result(tuple((0xF800,0,y,79,y) for y in range(80)))
+        view=self.make();view._preview_runs=tuple((0xF800,0,y,79,y) for y in range(80))
+        view.Draw_File_Preview();view.lcd.reset_mock()
         view._poll_file_preview();self.assertEqual(view._preview_index,64)
         for call in view.lcd.Draw_Rectangle.call_args_list:
             _,color,x0,y0,x1,y1=call.args
