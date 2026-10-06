@@ -115,3 +115,19 @@ class AuditRenderingTests(unittest.TestCase):
         result.Draw_Move_Menu()
         self.assertEqual(result.lcd.Draw_FloatValue.call_count, 3)
         result.lcd.Draw_Signed_Float.assert_not_called()
+
+
+def test_user_visible_labels_do_not_depend_on_frame_copy_assets():
+    source = Path(__file__).resolve().parents[1].joinpath('dwinlcd.py').read_text()
+    legacy_text_fragments = (
+        'Frame_TitleCopy(',
+        'Frame_AreaCopy(1, 226, 179, 256, 189',  # Back
+        'Frame_AreaCopy(1, 69, 61, 102, 71',     # Move
+        'Frame_AreaCopy(1, 1, 451, 31, 463',     # Print
+        'Frame_AreaCopy(1, 33, 451, 82, 466',    # Prepare
+        'Frame_AreaCopy(1, 85, 451, 132, 463',   # Control
+        'Frame_AreaCopy(1, 132, 451, 159, 466',  # Info
+        'Frame_AreaCopy(1, 103, 59, 200, 74',    # Disable steppers
+        'Frame_AreaCopy(1, 202, 61, 271, 71',    # Auto home
+    )
+    assert not any(fragment in source for fragment in legacy_text_fragments)

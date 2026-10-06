@@ -1037,7 +1037,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                     self.Draw_More_Icon(self.CONTROL_CASE_MOVE + self.MROWS - self.index_control)  # Motion >
                     if (self.index_control > self.MROWS):
                         self.Draw_More_Icon(self.CONTROL_CASE_INFO + self.MROWS - self.index_control)  # Info >
-                        self.lcd.Frame_AreaCopy(1, 0, 104, 24, 114, self.LBLX, self.MBASE(self.CONTROL_CASE_INFO - 1))
+                        self._draw_menu_text('Info', self.LBLX, self.MBASE(self.CONTROL_CASE_INFO - 1))
                 else:
                     self.Move_Highlight(1, self.select_control.now + self.MROWS - self.index_control)
         elif (encoder_diffState == self.ENCODER_DIFF_CCW):
@@ -1930,7 +1930,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     # The "Back" label is always on the first line
     def Draw_Back_Label(self):
-        self.lcd.Frame_AreaCopy(1, 226, 179, 256, 189, self.LBLX, self.MBASE(0))
+        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                             self.lcd.Color_Bg_Black, self.LBLX, self.MBASE(0), 'Back')
 
     # Draw "Back" line at the top
     def Draw_Back_First(self, is_sel=True):
@@ -1939,24 +1940,27 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         if (is_sel):
             self.Draw_Menu_Cursor(0)
 
+    def _draw_menu_text(self, text, x, y):
+        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                             self.lcd.Color_Bg_Black, x, y, text)
+
     def draw_move_en(self, line):
-        self.lcd.Frame_AreaCopy(1, 69, 61, 102, 71, self.LBLX, line)  # "Move"
+        self._draw_menu_text('Move', self.LBLX, line)
 
     def draw_max_en(self, line):
-        self.lcd.Frame_AreaCopy(1, 245, 119, 269, 129, self.LBLX, line)  # "Max"
+        self._draw_menu_text('Max', self.LBLX, line)
 
     def draw_max_accel_en(self, line):
-        self.draw_max_en(line)
-        self.lcd.Frame_AreaCopy(1, 1, 135, 79, 145, self.LBLX + 27, line)  # "Acceleration"
+        self._draw_menu_text('Max Acceleration', self.LBLX, line)
 
     def draw_speed_en(self, inset, line):
-        self.lcd.Frame_AreaCopy(1, 184, 119, 224, 132, self.LBLX + inset, line)  # "Speed"
+        self._draw_menu_text('Speed', self.LBLX + inset, line)
 
     def draw_jerk_en(self, line):
-        self.lcd.Frame_AreaCopy(1, 64, 119, 106, 129, self.LBLX + 27, line)  # "Jerk"
+        self._draw_menu_text('Jerk', self.LBLX + 27, line)
 
     def draw_steps_per_mm(self, line):
-        self.lcd.Frame_AreaCopy(1, 1, 151, 101, 161, self.LBLX, line)  # "Steps-per-mm"
+        self._draw_menu_text('Steps-per-mm', self.LBLX, line)
 
     # Display an SD item
     def Draw_SDItem(self, item, row=0):
@@ -1980,9 +1984,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Window, 14, 60, 258, 330)
 
     def Draw_Printing_Screen(self):
-        self.lcd.Frame_AreaCopy(1, 40, 2, 92, 14, 14, 9)  # Tune
-        self.lcd.Frame_AreaCopy(1, 0, 44, 96, 58, 41, 188)  # Pause
-        self.lcd.Frame_AreaCopy(1, 98, 44, 152, 58, 176, 188)  # Stop
+        self.Draw_Title('Tune')
+        self._draw_menu_text('Pause', 41, 188)
+        self._draw_menu_text('Stop', 176, 188)
 
     def Draw_Print_ProgressBar(self, Percentrecord=None):
         if Percentrecord is None:
@@ -2007,7 +2011,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     def Draw_Print_File_Menu(self):
         self.Clear_Title_Bar()
-        self.lcd.Frame_TitleCopy(1, 52, 31, 137, 41)  # "Print file"
+        self.Draw_Title('Print file')
         self.Redraw_SD_List()
 
     def Draw_Prepare_Menu(self):
@@ -2027,7 +2031,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
         self._draw_info_text(self.pd.MACHINE_SIZE, 122)
         self._draw_info_text(self.pd.SHORT_BUILD_VERSION, 195)
-        self.lcd.Frame_TitleCopy(1, 190, 16, 215, 26)  # "Info"
+        self.Draw_Title('Info')
         self.lcd.Frame_AreaCopy(1, 120, 150, 146, 161, 124, 102)
         self.lcd.Frame_AreaCopy(1, 146, 151, 254, 161, 82, 175)
         self.lcd.Frame_AreaCopy(1, 0, 165, 94, 175, 89, 248)
@@ -2068,7 +2072,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     def Draw_Move_Menu(self):
         self.Clear_Main_Window()
-        self.lcd.Frame_TitleCopy(1, 231, 2, 265, 12)  # "Move"
+        self.Draw_Title('Move')
         self.draw_move_en(self.MBASE(1))
         self.say_x(36, self.MBASE(1))  # "Move X"
         self.draw_move_en(self.MBASE(2))
@@ -2076,7 +2080,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self.draw_move_en(self.MBASE(3))
         self.say_z(36, self.MBASE(3))  # "Move Z"
         if self.pd.HAS_HOTEND:
-            self.lcd.Frame_AreaCopy(1, 123, 192, 176, 202, self.LBLX, self.MBASE(4))  # "Extruder"
+            self._draw_menu_text('Extruder', self.LBLX, self.MBASE(4))
 
         live_row = 4 + int(self.pd.HAS_HOTEND)
         self.Draw_Menu_Line(live_row, self.ICON_Axis, 'Live jog')
@@ -2271,16 +2275,16 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             self.Goto_MainMenu()
 
     def say_x(self, inset, line):
-        self.lcd.Frame_AreaCopy(1, 95, 104, 102, 114, self.LBLX + inset, line)  # "X"
+        self._draw_menu_text('X', self.LBLX + inset, line)
 
     def say_y(self, inset, line):
-        self.lcd.Frame_AreaCopy(1, 104, 104, 110, 114, self.LBLX + inset, line)  # "Y"
+        self._draw_menu_text('Y', self.LBLX + inset, line)
 
     def say_z(self, inset, line):
-        self.lcd.Frame_AreaCopy(1, 112, 104, 120, 114, self.LBLX + inset, line)  # "Z"
+        self._draw_menu_text('Z', self.LBLX + inset, line)
 
     def say_e(self, inset, line):
-        self.lcd.Frame_AreaCopy(1, 237, 119, 244, 129, self.LBLX + inset, line)  # "E"
+        self._draw_menu_text('E', self.LBLX + inset, line)
 
     # --------------------------------------------------------------#
     # --------------------------------------------------------------#
@@ -2289,82 +2293,82 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         if self.select_page.now == 0:
             self.lcd.ICON_Show(self.ICON, self.ICON_Print_1, 17, 130)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 17, 130, 126, 229)
-            self.lcd.Frame_AreaCopy(1, 1, 451, 31, 463, 57, 201)
+            self._draw_menu_text('Print', 57, 201)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Print_0, 17, 130)
-            self.lcd.Frame_AreaCopy(1, 1, 423, 31, 435, 57, 201)
+            self._draw_menu_text('Print', 57, 201)
 
     def ICON_Prepare(self):
         if self.select_page.now == 1:
             self.lcd.ICON_Show(self.ICON, self.ICON_Prepare_1, 145, 130)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 145, 130, 254, 229)
-            self.lcd.Frame_AreaCopy(1, 33, 451, 82, 466, 175, 201)
+            self._draw_menu_text('Prepare', 175, 201)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Prepare_0, 145, 130)
-            self.lcd.Frame_AreaCopy(1, 33, 423, 82, 438, 175, 201)
+            self._draw_menu_text('Prepare', 175, 201)
 
     def ICON_Control(self):
         if self.select_page.now == 2:
             self.lcd.ICON_Show(self.ICON, self.ICON_Control_1, 17, 246)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 17, 246, 126, 345)
-            self.lcd.Frame_AreaCopy(1, 85, 451, 132, 463, 48, 318)
+            self._draw_menu_text('Control', 48, 318)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Control_0, 17, 246)
-            self.lcd.Frame_AreaCopy(1, 85, 423, 132, 434, 48, 318)
+            self._draw_menu_text('Control', 48, 318)
 
     def ICON_Leveling(self, show):
         if show:
             self.lcd.ICON_Show(self.ICON, self.ICON_Leveling_1, 145, 246)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 145, 246, 254, 345)
-            self.lcd.Frame_AreaCopy(1, 84, 437, 120, 449, 182, 318)
+            self._draw_menu_text('Leveling', 182, 318)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Leveling_0, 145, 246)
-            self.lcd.Frame_AreaCopy(1, 84, 465, 120, 478, 182, 318)
+            self._draw_menu_text('Leveling', 182, 318)
 
     def ICON_StartInfo(self, show):
         if show:
             self.lcd.ICON_Show(self.ICON, self.ICON_Info_1, 145, 246)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 145, 246, 254, 345)
-            self.lcd.Frame_AreaCopy(1, 132, 451, 159, 466, 186, 318)
+            self._draw_menu_text('Info', 186, 318)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Info_0, 145, 246)
-            self.lcd.Frame_AreaCopy(1, 132, 423, 159, 435, 186, 318)
+            self._draw_menu_text('Info', 186, 318)
 
     def ICON_Tune(self):
         if (self.select_print.now == 0):
             self.lcd.ICON_Show(self.ICON, self.ICON_Setup_1, 8, 252)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 8, 252, 87, 351)
-            self.lcd.Frame_AreaCopy(1, 0, 466, 34, 476, 31, 325)
+            self._draw_menu_text('Tune', 31, 325)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Setup_0, 8, 252)
-            self.lcd.Frame_AreaCopy(1, 0, 438, 32, 448, 31, 325)
+            self._draw_menu_text('Tune', 31, 325)
 
     def ICON_Continue(self):
         if (self.select_print.now == 1):
             self.lcd.ICON_Show(self.ICON, self.ICON_Continue_1, 96, 252)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 96, 252, 175, 351)
-            self.lcd.Frame_AreaCopy(1, 1, 452, 32, 464, 121, 325)
+            self._draw_menu_text('Continue', 121, 325)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Continue_0, 96, 252)
-            self.lcd.Frame_AreaCopy(1, 1, 424, 31, 434, 121, 325)
+            self._draw_menu_text('Continue', 121, 325)
 
     def ICON_Pause(self):
         if (self.select_print.now == 1):
             self.lcd.ICON_Show(self.ICON, self.ICON_Pause_1, 96, 252)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 96, 252, 175, 351)
-            self.lcd.Frame_AreaCopy(1, 177, 451, 216, 462, 116, 325)
+            self._draw_menu_text('Pause', 116, 325)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Pause_0, 96, 252)
-            self.lcd.Frame_AreaCopy(1, 177, 423, 215, 433, 116, 325)
+            self._draw_menu_text('Pause', 116, 325)
 
     def ICON_Stop(self):
         if (self.select_print.now == 2):
             self.lcd.ICON_Show(self.ICON, self.ICON_Stop_1, 184, 252)
             self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 184, 252, 263, 351)
-            self.lcd.Frame_AreaCopy(1, 218, 452, 249, 466, 209, 325)
+            self._draw_menu_text('Stop', 209, 325)
         else:
             self.lcd.ICON_Show(self.ICON, self.ICON_Stop_0, 184, 252)
-            self.lcd.Frame_AreaCopy(1, 218, 423, 247, 436, 209, 325)
+            self._draw_menu_text('Stop', 209, 325)
 
     def Item_Prepare_Move(self, row):
         self.draw_move_en(self.MBASE(row))  # "Move >"
@@ -2372,33 +2376,31 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self.Draw_More_Icon(row)
 
     def Item_Prepare_Disable(self, row):
-        self.lcd.Frame_AreaCopy(1, 103, 59, 200, 74, self.LBLX, self.MBASE(row))  # Disable Stepper"
+        self._draw_menu_text('Disable steppers', self.LBLX, self.MBASE(row))  # Disable Stepper"
         self.Draw_Menu_Line(row, self.ICON_CloseMotor)
 
     def Item_Prepare_Home(self, row):
-        self.lcd.Frame_AreaCopy(1, 202, 61, 271, 71, self.LBLX, self.MBASE(row))  # Auto Home"
+        self._draw_menu_text('Auto home', self.LBLX, self.MBASE(row))  # Auto Home"
         self.Draw_Menu_Line(row, self.ICON_Homing)
 
     def Item_Prepare_Offset(self, row):
         if self.pd.HAS_BED_PROBE:
-            self.lcd.Frame_AreaCopy(1, 93, 179, 141, 189, self.LBLX, self.MBASE(row))  # "Z-Offset"
+            self._draw_menu_text('Z offset', self.LBLX, self.MBASE(row))  # "Z-Offset"
             self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black, 2, 2, 202, self.MBASE(row), self.pd.BABY_Z_VAR * 100)
         else:
-            self.lcd.Frame_AreaCopy(1, 1, 76, 106, 86, self.LBLX, self.MBASE(row))  # "..."
+            self._draw_menu_text('Set home', self.LBLX, self.MBASE(row))  # "..."
         self.Draw_Menu_Line(row, self.ICON_SetHome)
 
     def Item_Prepare_PLA(self, row):
-        self.lcd.Frame_AreaCopy(1, 107, 76, 156, 86, self.LBLX, self.MBASE(row))  # Preheat"
-        self.lcd.Frame_AreaCopy(1, 157, 76, 181, 86, self.LBLX + 52, self.MBASE(row))  # PLA"
+        self._draw_menu_text('Preheat PLA', self.LBLX, self.MBASE(row))
         self.Draw_Menu_Line(row, self.ICON_PLAPreheat)
 
     def Item_Prepare_ABS(self, row):
-        self.lcd.Frame_AreaCopy(1, 107, 76, 156, 86, self.LBLX, self.MBASE(row))  # "Preheat"
-        self.lcd.Frame_AreaCopy(1, 172, 76, 198, 86, self.LBLX + 52, self.MBASE(row))  # "ABS"
+        self._draw_menu_text('Preheat ABS', self.LBLX, self.MBASE(row))
         self.Draw_Menu_Line(row, self.ICON_ABSPreheat)
 
     def Item_Prepare_Cool(self, row):
-        self.lcd.Frame_AreaCopy(1, 200, 76, 264, 86, self.LBLX, self.MBASE(row))  # "Cooldown"
+        self._draw_menu_text('Cooldown', self.LBLX, self.MBASE(row))  # "Cooldown"
         self.Draw_Menu_Line(row, self.ICON_Cool)
 
     # --------------------------------------------------------------#
