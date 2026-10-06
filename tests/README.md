@@ -109,3 +109,16 @@ and input-owner flush for early-returning editors. A01–A09 regressions cover G
 error acknowledgement, isolated offset editing, epoch/cache invalidation, jog
 recovery, atomic packet validation and bounded numeric rendering. The limits of
 these isolated fixtures are listed in docs/source-audit.md.
+
+Screws tilt coverage checks optional Prepare menu discovery, geometry-based corner
+placement, conditional homing, print/manual-probe/recovery rejection, completed
+WebSocket RPCs followed by fresh result queries, identical repeated measurements,
+malformed/incomplete results, largest-turn recommendation, 0.05 mm peak-to-peak
+tolerance, minute rollover, epoch/disconnect/timeout failures, encoder locking,
+Continue/back navigation and corner label bounds. Completion RPC tests also check
+notification merging, response IDs, command errors, disconnect and cancelled queues.
+
+Physical check: open Prepare → Screws Tilt Adjust → Calculate, compare Base and
+every direction/amount with the Moonraker console, turn the indicated screw and
+repeat. Check input is ignored while probing, Continue returns to Calculate,
+missing homing runs first, and all labels fit on the actual panel.
