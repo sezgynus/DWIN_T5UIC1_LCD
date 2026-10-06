@@ -538,16 +538,24 @@ class CapabilityMenuTests(unittest.TestCase):
             'mainsail': 'v2.14.0',
             'network': 'Online',
             'ip': '192.168.1.50',
+            'host_cpu': 37.2,
+            'host_temp': 48.5,
+            'mcus': (('mcu', 'Connected'), ('mmu', 'Connected')),
         }
         result.pd.SHORT_BUILD_VERSION = 'v0.13.0-123'
-        result._draw_menu_text = Mock()
-        result._draw_info_text = Mock()
+        result.pd.MACHINE_SIZE = '220x220x250'
+        result._draw_info_row = Mock()
+        result._draw_info_section = Mock()
         result.Draw_Info_Menu()
-        labels = [call.args[0] for call in result._draw_menu_text.call_args_list]
-        self.assertEqual(labels, ['KlipperDWIN', 'Moonraker', 'Mainsail',
-                                  'Klipper', 'Network', 'IP'])
-        result._draw_info_text.assert_called_once_with(
-            'github.com/sezgynus/KlipperDWIN', 360)
+        sections = [call.args[0] for call in result._draw_info_section.call_args_list]
+        self.assertEqual(sections, ['Machine', 'Host', 'Software', 'MCU'])
+        rows = [(call.args[0], call.args[1]) for call in result._draw_info_row.call_args_list]
+        self.assertEqual(rows, [
+            ('Size', '220x220x250'), ('Network', 'Online'), ('IP', '192.168.1.50'),
+            ('CPU', '37%'), ('CPU temp', '48.5 C'),
+            ('KlipperDWIN', 'v0.4.0-2-g1234abcd'), ('Klipper', 'v0.13.0-123'),
+            ('Moonraker', 'v0.9.3-1-gabcd'), ('Mainsail', 'v2.14.0'),
+            ('mcu', 'Connected'), ('mmu', 'Connected')])
 
     def test_case_light_uses_dedicated_light_icon_alias(self):
         data = snapshot()
