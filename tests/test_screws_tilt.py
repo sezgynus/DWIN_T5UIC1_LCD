@@ -163,6 +163,15 @@ class ViewTests(unittest.TestCase):
         view.HMI_Screws_Tilt()
         self.assertEqual(view.checkkey, view.Prepare)
 
+    def test_tramming_menu_uses_marlin_small_stock_icons(self):
+        view = self.make()
+        row = next(row for row in view._menus['prepare'] if row[0] == 'SCREWS')
+        self.assertEqual(row[2], view.ICON_SetEndTemp)
+        self.assertEqual(row[2], 46)
+        view.Draw_Menu_Line = Mock()
+        view.Draw_Screws_Menu()
+        view.Draw_Menu_Line.assert_any_call(1, view.ICON_SetEndTemp, 'Calculate')
+
     def test_long_turn_labels_remain_inside_display(self):
         view = self.make()
         session = view.pd.screws_tilt

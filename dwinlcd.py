@@ -458,7 +458,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin):
                 self._menus[menu].append(('FAN', 'Fan speed', self.ICON_FanSpeed))
         self._menus['tune'].append(('ZOFF', 'Runtime Z offset', self.ICON_Zoffset))
         if caps.screws_tilt_adjust:
-            self._menus['prepare'].append(('SCREWS', 'Screws Tilt Adjust', self.ICON_AutoLeveling))
+            self._menus['prepare'].append(('SCREWS', 'Screws Tilt Adjust', self.ICON_SetEndTemp))
         if heat:
             for index, preset in enumerate(self.pd.material_preset):
                 key = 'PRESET:' + str(index)

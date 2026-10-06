@@ -6,7 +6,7 @@ class ScrewsTiltMixin:
         self.Clear_Main_Window()
         self.Draw_Title('Screws Tilt Adjust')
         self.Draw_Menu_Line(0, self.ICON_Back, 'Back')
-        self.Draw_Menu_Line(1, self.ICON_AutoLeveling, 'Calculate')
+        self.Draw_Menu_Line(1, self.ICON_SetEndTemp, 'Calculate')
         self.Draw_Menu_Cursor(getattr(self, '_screws_selection', 0))
         self.lcd.UpdateLCD()
 
