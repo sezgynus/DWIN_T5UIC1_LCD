@@ -2066,7 +2066,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             ('row', 'Klipper', self.pd.SHORT_BUILD_VERSION),
             ('row', 'Moonraker', info.get('moonraker', 'Unavailable')),
             ('row', 'Mainsail', info.get('mainsail', 'Unavailable')),
-            ('row', 'Project', 'github.com/sezgynus/KlipperDWIN'),
+            ('wide', '', 'github.com/sezgynus/KlipperDWIN'),
         ]
         mcus = info.get('mcus') or ()
         if not mcus:
@@ -2096,6 +2096,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         for kind, label, value in items[self._info_scroll:self._info_scroll + visible_count]:
             if kind == 'section':
                 self._draw_info_section(label, y)
+            elif kind == 'wide':
+                text = T5UIC1_LCD._panel_text(value)[:42]
+                self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
+                                     self.lcd.Color_Bg_Black, 16, y + 2, text)
             else:
                 self._draw_info_row(label, value, y)
             y += 24
