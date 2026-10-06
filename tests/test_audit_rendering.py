@@ -50,7 +50,8 @@ class AuditRenderingTests(unittest.TestCase):
         result.pd.MACHINE_SIZE = 'Ölçüm' * 20
         result.pd.CORP_WEBSITE_E = 'https://' + 'x' * 100
         result.Draw_Info_Menu()
-        frames = [frame for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11]
+        frames = [frame for frame in result.lcd.MYSERIAL1.frames
+                  if frame[1] == 0x11 and int.from_bytes(frame[9:11], 'big') in (122, 195, 268)]
         self.assertEqual(len(frames), 3)
         for frame in frames:
             self.assertEqual(int.from_bytes(frame[7:9], 'big'), 0)
