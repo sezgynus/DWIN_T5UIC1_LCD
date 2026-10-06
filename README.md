@@ -1,390 +1,535 @@
-# DWIN_T5UIC1_LCD
+# DWIN T5UIC1 LCD — Klipper / Moonraker UI
 
-Python UI for the Ender 3 V2 DWIN T5UIC1 panel, using
-[Klipper](https://www.klipper3d.org/) and
-[Moonraker](https://github.com/Arksine/moonraker).
+<p align="center">
+  <strong>A standalone Python UI for DWIN T5UIC1-based 3D-printer displays, built around Klipper and Moonraker.</strong>
+</p>
 
-### UART preparation
+<p align="center">
+  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/Language-English-0969da"></a>
+  <a href="README_TR.md"><img alt="Türkçe" src="https://img.shields.io/badge/Dil-T%C3%BCrk%C3%A7e-d73a49"></a>
+</p>
 
-In `sudo raspi-config`, disable the serial login console and enable serial
-hardware, then reboot. Select the UART routed to the display's GPIO14/15 pins
-for your Pi model; do not assume ttyAMA0 or serial0 always uses those pins.
-See the [official Raspberry Pi UART documentation](https://www.raspberrypi.com/documentation/computers/configuration.html#configuring-uarts).
-Bluetooth overlays and boot configuration paths are model/OS dependent; this
-project does not require one universal overlay.
+<p align="center">
+  <img alt="Klipper" src="https://img.shields.io/badge/Klipper-supported-7d3cff">
+  <img alt="Moonraker" src="https://img.shields.io/badge/Moonraker-native-1f6feb">
+  <img alt="Happy Hare" src="https://img.shields.io/badge/Happy%20Hare-MMU-2ea043">
+  <img alt="Spoolman" src="https://img.shields.io/badge/Spoolman-aware-f0883e">
+  <img alt="Raspberry Pi" src="https://img.shields.io/badge/Raspberry%20Pi-ready-c51a4a">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11%2B-3776ab?logo=python&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue">
+</p>
 
-### Moonraker connection (refactor branch)
+> [!NOTE]
+> The screenshots in this README are temporary placeholders. Real panel captures will replace them after the UI photo set is prepared.
 
-The LCD connects to Moonraker over HTTP and WebSocket; no direct Klipper socket path or
-OctoPrint compatibility endpoint is required. The default URL is
-`http://127.0.0.1:7125`. If using a reverse proxy, set its URL explicitly:
+## What this project is
 
-```sh
-python3 run.py --moonraker-url http://127.0.0.1:80 --request-timeout 5
+This project turns the common 4.3-inch DWIN T5UIC1 rotary-encoder display used on printers such as the Ender 3 V2 into a local Klipper control panel.
+
+The application runs on a Raspberry Pi, talks to the display over UART, reads the encoder through GPIO, and communicates with the printer through Moonraker HTTP/WebSocket APIs. It does not require an OctoPrint compatibility layer or a direct Klipper Unix-socket integration.
+
+It has grown beyond a small compatibility patch: the current codebase includes a dedicated Moonraker client/subscription layer, capability-driven menus, command/result tracking, safe input routing, runtime motion controls, live jogging, probe calibration, persistent presets, Happy Hare MMU visualization, Spoolman remaining-filament data, case-light control, UART recovery, and a regression-test suite.
+
+## Highlights
+
+- Native Moonraker HTTP + WebSocket integration
+- Automatic discovery of available Klipper objects and capabilities
+- Main-screen live dashboard for temperatures, fan, speed, flow, Z offset and XYZ
+- File browser and print start flow with confirmation tracking
+- Print screen with progress, elapsed/remaining time, pause/resume, stop and tune
+- X/Y/Z/E movement with machine-limit validation
+- Optional Live Jog mode
+- Runtime motion tuning for max velocity, max acceleration, square-corner velocity and minimum cruise ratio
+- Runtime Z-offset control
+- Probe calibration wizard with explicit TESTZ steps and guarded SAVE_CONFIG flow
+- PLA/ABS preset editing and persistent JSON storage
+- Optional case-light UI through an M355 macro
+- Happy Hare MMU panel on the home screen
+- Per-gate filament colors and MMU unit name
+- Live lane indicators driven by Happy Hare exit-LED colors
+- Spoolman remaining-filament percentages per MMU gate
+- Automatic black/white lane-number contrast for readable LED colors
+- Resilient UART handshake and reconnect behavior
+- Dedicated command worker and connection-epoch protection
+- Encoder acceleration with event-queue based input routing
+- systemd service example
+- Python unit/regression tests
+
+## Architecture
+
+```mermaid
+flowchart LR
+    ENC[Rotary encoder / button] -->|GPIO events| UI[Python UI owner thread]
+    UI -->|draw commands| DWIN[DWIN T5UIC1 LCD]
+    DWIN -->|UART| UI
+    UI --> PD[PrinterData / capability model]
+    PD --> SUB[Moonraker WebSocket subscription]
+    UI --> CMD[Moonraker command worker]
+    SUB <--> MR[Moonraker]
+    CMD -->|HTTP / JSON-RPC| MR
+    MR <--> KL[Klipper]
+    MR <--> SM[Spoolman]
+    KL <--> HH[Happy Hare]
 ```
 
-`MOONRAKER_URL` can supply the URL. For installations requiring an API key,
-provide `MOONRAKER_API_KEY` in the process environment. Empty keys are not sent.
-Do not commit credentials or disable Moonraker authorization.
+The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; commands are serialized separately so UI rendering does not depend on blocking HTTP requests.
 
-`--serial-port`, `--encoder-pins A B`, and `--button-pin` configure hardware.
-The current pin defaults preserve the existing run.py wiring (21/19 and 13);
-set 26/19 explicitly if following the older wiring diagram below.
+## Supported hardware
 
-Commands execute on a dedicated serial worker and expose their result through
-Futures. HTTP failures, invalid JSON and timeouts are checked. Failed commands
-are never replayed; pending dependent commands are discarded. The LCD displays
-a generic failure message and logs the error. The WebSocket subscriber reconnects after
-connection failure without restarting the application; offline input is ignored.
-A timed-out command may already have executed: inspect printer state before
-issuing it again.
+The current UI targets the DWIN T5UIC1 panel family used by the Ender 3 V2 layout and its rotary encoder.
 
-Status uses JSON-RPC at `/websocket`: client identification, printer object
-list discovery and subscriptions. Only existing objects are subscribed. Partial
-notifications merge into the initial snapshot; older notifications cannot replace
-newer data. Klipper shutdown/restart/disconnect discards the old snapshot and
-triggers a new discovery/subscription. Ping/pong checks detect silent disconnects.
-Queued HTTP commands retain their connection epoch and are rejected if the
-printer reconnects before execution. Already executing commands cannot be undone.
+Typical wiring:
 
-Install the refactor dependencies in a virtual environment:
+| Display | Raspberry Pi |
+|---|---|
+| RX | GPIO14 / UART TX |
+| TX | GPIO15 / UART RX |
+| Encoder A | GPIO21 by default |
+| Encoder B | GPIO19 by default |
+| Encoder Enter | GPIO13 by default |
+| VCC | 5 V |
+| GND | GND |
 
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python run.py --moonraker-url http://127.0.0.1:7125
+BCM numbering is used. Encoder/button pins and the serial device are configurable, so the defaults are not a requirement.
+
+> [!IMPORTANT]
+> Raspberry Pi UART routing varies by Pi model and OS configuration. Verify which device is actually routed to GPIO14/15 instead of assuming that `/dev/ttyAMA0` or `/dev/serial0` is always correct.
+
+Existing wiring photos and diagrams are available in the [images](images/) directory.
+
+## UI tour
+
+Each section below describes the current screen behavior. The placeholder image will be replaced with a real LCD photograph/capture.
+
+### 1. Home screen
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Home screen placeholder"></p>
+
+The home screen is the main navigation hub. It exposes Print, Prepare, Control and either Leveling or Info depending on discovered printer capabilities.
+
+A compact live dashboard remains visible below the menu area and reports the current hotend/bed state when available, print-speed factor, fan, flow, runtime Z offset and live X/Y/Z coordinates.
+
+When Happy Hare is not detected, the normal logo area is shown. When an MMU is available, that area becomes the live MMU panel described below.
+
+### 2. Happy Hare MMU panel
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Happy Hare MMU panel placeholder"></p>
+
+The MMU panel is integrated directly into the home screen. It adapts to the reported gate count and uses Happy Hare state instead of a hard-coded four-spool model.
+
+For each gate it can show:
+
+- a compact side-view spool graphic
+- filament color from Happy Hare gate metadata
+- remaining percentage fetched from the gate's Spoolman spool ID
+- lane number
+- live lane-indicator color from the Happy Hare exit LED chain
+- MMU unit display name when exposed by `mmu_machine`
+
+LED hue is normalized before RGB565 conversion, so deliberately dim physical LEDs remain visible on the LCD while keeping their color. Fully off LEDs remain black. Lane-number text automatically switches between black and white for contrast.
+
+The current implementation subscribes to `unit0_mmu_exit_leds` for live exit-LED colors. This is intentionally explicit today and can be generalized for multi-unit/alternative-segment setups later.
+
+### 3. Print file browser
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Print browser placeholder"></p>
+
+The file browser uses Moonraker's file list and keeps a cached, sorted path snapshot for responsive encoder navigation.
+
+Selection is preserved across list refreshes where possible. Deleting/reordering files cannot silently move the cursor to an unrelated entry. Print start is guarded against duplicate presses and waits for both command acceptance and subscribed print-state confirmation before opening the print screen.
+
+### 4. Printing screen
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Printing screen placeholder"></p>
+
+The printing screen provides:
+
+- file name
+- progress bar and percentage
+- elapsed print time
+- estimated remaining time
+- Tune
+- Pause / Resume
+- Stop
+
+Paused, completed, cancelled and error states are handled explicitly. Completion follows Klipper's `print_stats.state`; a rounded 100% value alone does not mark a running print as finished.
+
+### 5. Tune menu
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Tune menu placeholder"></p>
+
+Tune is the live-print adjustment menu. Rows appear only when the matching printer capability exists. Depending on the machine, it can expose hotend target, bed target, fan, print speed, runtime Z offset and other active controls.
+
+Values remain synchronized with Moonraker status. An editor keeps its local target while open, then returns to subscribed state after confirmation.
+
+### 6. Prepare menu
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Prepare menu placeholder"></p>
+
+Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
+
+### 7. Move / Live Jog
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Move and Live Jog placeholder"></p>
+
+The movement screen displays live X/Y/Z positions and E when an extruder is available.
+
+Normal edit mode changes a local target and submits a guarded move. Live Jog can apply encoder movement immediately for responsive positioning. Jog commands:
+
+- require the selected axis to be homed
+- respect discovered physical travel limits
+- reject movement while printing/paused
+- validate extrusion against `can_extrude` and the configured extrusion distance
+- save and restore Klipper G-code state around relative movement
+- block further motion if state restoration cannot be confirmed
+
+The position source is Klipper's command-space `gcode_move.position`, so the UI remains consistent with runtime transforms and offsets.
+
+### 8. Control menu
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Control menu placeholder"></p>
+
+Control is the configuration-oriented menu. Available rows are capability-driven and can lead to temperature presets, motion controls, probe calibration, case light and information pages.
+
+### 9. Temperature / presets
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Temperature and presets placeholder"></p>
+
+Temperature controls are generated from installed devices: hotend, heated bed and part fan are independently optional.
+
+PLA and ABS profiles can be edited locally and saved to a versioned JSON file. Applying a profile validates every available target first, then sends one script for the installed devices. Saving a preset does not heat the printer.
+
+Default storage:
+
+```text
+$XDG_CONFIG_HOME/dwin-lcd/presets.json
 ```
 
-UI initialization, menu handlers, periodic rendering and cleanup now run on
-one owner thread. GPIO callbacks enqueue immutable rotation/press events; they
-never write to the display. Presses use edge events and capture-time debounce;
-rotation counts are preserved rather than sampled and dropped by a rate limiter.
-The bounded queue rejects overload and logs dropped input. Events from a previous
-printer connection are discarded.
+or:
 
-`PrinterData.state` is the immutable authoritative status snapshot. Existing HMI
-edit values remain separate compatibility fields; editing them cannot change the
-snapshot. Menu selection objects belong to each display instance.
+```text
+~/.config/dwin-lcd/presets.json
+```
 
-`run.py` waits for the UI owner and handles SIGTERM/KeyboardInterrupt cleanup.
-When constructing `DWIN_LCD` directly, call `display.wait()` to keep the process
-running and `display.lcdExit()` to stop it.
+A custom path can be supplied with `--settings-file`.
 
-Device menus now follow Klipper's discovered objects. Hotend, heated bed and part
-fan rows are independently optional; heater fans do not count as part fans.
-Effective `configfile.settings` supplies heater and extrusion limits, including
-Klipper defaults. Toolhead status supplies physical axis limits and the active
-extruder; temperature commands address that heater by name. Missing or invalid
-required configuration blocks readiness rather than inventing limits.
-Zero temperature means off; nonzero targets must fit the configured range.
-Preheat validates all installed heater targets before submitting a script.
-Fan edits use percentages and convert to Klipper's M106 scale.
+### 10. Motion (runtime)
 
-Probe and bed mesh availability are detected. Runtime Z-offset and the Control
-menu's probe calibration wizard are separate; the runtime menu only changes
-G-code offset.
-Temperature and Tune confirmations now submit the corresponding live heater
-target; preset editors only change preset values. Paused and terminal jobs retain
-progress and elapsed print duration. Completion follows `print_stats.state`,
-so a rounded progress value cannot mark a running job complete.
-File selection uses a sorted, cached path snapshot, refreshed after file-list
-notifications. Inserting/reordering files preserves the selected path; deletion
-returns the cursor to Back. An empty list is cached too. List-fetch errors keep
-the old view but block starts until a valid refresh succeeds.
-Print start sends the selected path, blocks duplicate presses, and waits for both
-the HTTP result and subscribed print state before opening the print screen.
-Failure, cancellation, connection-epoch changes or an unconfirmed start after
-30 seconds show an acknowledgement message; start commands are never retried
-automatically. A late successful start can still occur after a timeout: check
-printer state before submitting again. File listing remains a bounded HTTP GET
-on menu entry/notification refresh; rendering and encoder navigation use only
-the cached snapshot.
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Runtime motion menu placeholder"></p>
 
-Print screen selection handles paused startup, completion, cancellation and
-print errors explicitly. Completion stays on the print screen until Enter;
-acknowledging it does not reset the printer's speed. Print error messages remain
-visible until Enter. A new print clears the old completion prompt.
-The displayed speed percentage follows subscribed `gcode_move.speed_factor`,
-including edits from other clients; an open speed editor keeps its local target.
-M220 submission does not change the reported value until status confirms it.
+The Motion screen edits Klipper's runtime velocity limits through `SET_VELOCITY_LIMIT`:
 
-The Save row persists both PLA/ABS profiles (heater targets and fan percentage)
-to `$XDG_CONFIG_HOME/dwin-lcd/presets.json`, or `~/.config/dwin-lcd/presets.json`
-when XDG_CONFIG_HOME is unset. Use `--settings-file /absolute/path/presets.json`
-to override it, including in a systemd unit. The service user must be able to write
-the parent directory. Edits remain in memory until Save is selected.
-The versioned file is validated before loading; missing files use defaults and
-invalid files are logged and preserved. Writes use a flushed temporary file and
-atomic replacement; failed saves return failure to the menu's audio feedback.
-Loading presets never sends heater commands. Applying a profile validates all
-installed heater targets and the available part fan's percentage before sending
-one script. The script sets the bed, active hotend and preset fan speed; absent
-devices are skipped. Validation prevents partial submission, but the script is
-not a transaction if Klipper rejects a command while executing it.
+- max velocity
+- max acceleration
+- square-corner velocity
+- minimum cruise ratio, when supported
 
-Jog targets use `gcode_move.position` (command space before transforms), not
-G-code coordinates shifted by G92 or runtime offsets. Each jog saves Klipper's
-G-code state, performs a relative displacement with explicit extrusion/feed
-factors, then restores state with `MOVE=0`. It does not reset the work origin or
-move back to the starting point. XYZ requires the selected axis to be homed and
-its target inside discovered bounds. Extrusion requires `can_extrude` and the
-configured maximum extrusion distance. Jogging during printing/paused jobs is
-rejected; feed is capped by toolhead velocity and configured Z velocity.
-Encoder edits remain local until confirmation; position follows status updates.
+Unsupported fields are omitted. These are runtime changes; the screen does not automatically persist them into printer configuration.
 
-The movement sequence is not a transaction. Its failure triggers a separate
-non-moving restore as described below; unconfirmed restoration blocks further
-motion. Bed mesh and other transforms remain under Klipper's checks.
-The save/restore semantics were checked against [Klipper gcode_move.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/gcode_move.py).
+### 11. Probe calibration wizard
 
-The Motion menu edits Klipper runtime `max_velocity`, `max_accel`,
-`square_corner_velocity` and `minimum_cruise_ratio` using `SET_VELOCITY_LIMIT`.
-Values come from subscribed toolhead status; unsupported or invalid fields are
-omitted. Encoder increments are 1 mm/s, 10 mm/s², 0.1 mm/s and 0.01 respectively.
-Edits stay local until Enter; reported values change only when status confirms
-them. Numeric domains follow [Klipper toolhead.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/toolhead.py).
-SCV is not Marlin jerk. These values are runtime changes; the menu does not send
-SAVE_CONFIG or promise persistence. Steps/mm and rotation-distance calibration
-are outside this menu; it does not create per-axis Marlin-style limits.
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Probe calibration placeholder"></p>
 
-UART startup now sends the first handshake with the AA header and frame tail.
-The incremental ACK reader accepts the existing `AA 00 O K` signature across
-split reads and discards noise without an unbounded buffer. The default is three
-handshake attempts of one second each; failure closes the port and raises an
-error rather than blocking startup forever. The driver constructor accepts
-`handshake_timeout` and `handshake_attempts` overrides.
-Frames are sent in one serial write with a write timeout. Short writes/errors
-close the port and are not automatically retried. `Read` uses UART; backlight
-accepts the complete byte range including zero.
-These tests verify the existing packet contract, not every panel firmware's
-instruction set. The UI tolerates a missing panel at startup and keeps updating printer status.
-It retries UART on the UI owner after at least five seconds (on the next tick),
-using one bounded handshake attempt. On reconnect it reloads language assets and
-redraws the current print/main/error screen; local editors are exited. Inputs
-captured before the UART connection change are discarded. Reconnection only
-restores display state and never replays printer commands. Physical panel
-validation remains outstanding.
+When the required probe/manual-probe objects are available, Control exposes a guided probe calibration screen.
 
-### Install on Raspberry Pi OS
+The wizard deliberately separates each step:
 
-Use Python 3.11 or newer. The systemd unit below uses `/opt/dwin-lcd`.
+- start `PROBE_CALIBRATE`
+- Raise / Lower by 0.1 mm
+- Raise / Lower by 0.01 mm
+- Accept
+- Abort
+- Save and restart Klipper only when the expected probe offset is the pending configuration change
+- leave unsaved
 
-```sh
+The UI never assumes an HTTP success means the physical/manual-probe state already changed; it waits for subscribed state confirmation.
+
+### 12. Case Light
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Case light placeholder"></p>
+
+If a `gcode_macro M355` capability is detected, the Control menu can expose case-light control.
+
+The page provides:
+
+- on/off state
+- 0–100% brightness editor
+- synchronization from the macro's reported state
+
+Brightness is converted to the macro's 0–255 scale internally.
+
+### 13. Info
+
+<p align="center"><img src="docs/assets/screen-placeholder.svg" width="620" alt="Info screen placeholder"></p>
+
+The Info screen shows detected machine/build information in the familiar DWIN layout. It is used when a dedicated one-step leveling entry is not occupying the fourth home-screen slot.
+
+## Dynamic capability detection
+
+Menus are not built from a fixed printer template. At startup/reconnect the application discovers Moonraker/Klipper objects and derives capabilities from the actual machine.
+
+Examples include:
+
+- hotend present or absent
+- heated bed present or absent
+- part-cooling fan present or absent
+- probe/manual-probe support
+- bed-mesh/leveling support
+- motion fields supported by the active Klipper version
+- case-light macro availability
+- Happy Hare MMU objects
+- MMU unit metadata and exit LEDs
+
+This allows the same UI code to avoid showing controls that cannot work on the connected printer.
+
+## Moonraker connection model
+
+Default endpoint:
+
+```text
+http://127.0.0.1:7125
+```
+
+The application uses:
+
+- HTTP for commands and bounded request/response operations
+- Moonraker WebSocket JSON-RPC for printer object discovery and live subscriptions
+- connection epochs so queued commands from an old connection cannot run after reconnect
+- automatic WebSocket reconnect
+- ping/pong checks for silent disconnect detection
+- immutable merged printer-state snapshots
+- command futures and retained error acknowledgement instead of blind retries
+
+Optional API-key authentication is supported through `MOONRAKER_API_KEY`. Empty keys are not sent.
+
+## Installation
+
+### Requirements
+
+- Raspberry Pi or compatible Linux SBC with accessible UART + GPIO
+- Python 3.11+
+- Klipper
+- Moonraker
+- DWIN T5UIC1-compatible display/asset set
+
+Install system packages:
+
+```bash
 sudo apt update
 sudo apt install git python3-venv python3-dev build-essential
-sudo git clone --branch refactor/modern-klipper-moonraker https://github.com/sezgynus/DWIN_T5UIC1_LCD.git /opt/dwin-lcd
+```
+
+Clone this development branch:
+
+```bash
+sudo git clone --branch refactor/modern-klipper-moonraker \
+  https://github.com/sezgynus/DWIN_T5UIC1_LCD.git /opt/dwin-lcd
+
 sudo python3 -m venv /opt/dwin-lcd/.venv
 sudo /opt/dwin-lcd/.venv/bin/python -m pip install -r /opt/dwin-lcd/requirements.txt
 ```
 
-The manifest includes GPIOZero, lgpio, pyserial and websocket-client. HTTP uses
-the Python standard library. Installation needs access to the Python package
-index; actual GPIO/UART operation requires a supported Pi and device permissions.
+The Python dependencies include GPIOZero, lgpio, pyserial and websocket-client. HTTP uses the Python standard library.
 
-### Wire the display 
-  * Display <-> Raspberry Pi GPIO BCM
-  * Rx  =   GPIO14  (Tx)
-  * Tx  =   GPIO15  (Rx)
-  * Ent =   GPIO13
-  * Encoder A/B = GPIO21 / GPIO19 by default (`--encoder-pins 21 19`)
-  * Older GPIO26/19 wiring: use `--encoder-pins 26 19`; reverse the pair if needed
-  * Vcc =   2   (5v)
-  * Gnd =   6   (GND)
+## UART preparation
 
-Here's a diagram based on my color selection:
+Use `raspi-config` to disable the serial login console and enable serial hardware, then reboot.
 
-<img src ="images/GPIO.png?raw=true" width="325" height="75">
-<img src ="images/panel.png?raw=true" width="325" height="180">
-
-I tried to take some images to help out with this: You don't have to use the color of wiring that I used:
-
-<img src ="images/wire1.png?raw=true" width="200" height="400"> <img src ="images/wire2.png?raw=true" width="200" height="400">
-
-<img src ="images/wire3.png?raw=true" width="400" height="200">
-
-<img src ="images/wire4.png?raw=true" width="400" height="300">
-
-### Run manually
-
-Use the existing `run.py`; no source edit or embedded API key is needed:
-
-```sh
-cd /opt/dwin-lcd
-.venv/bin/python run.py --serial-port /dev/ttyAMA0 --encoder-pins 21 19 --button-pin 13
+```bash
+sudo raspi-config
 ```
 
-Verify the port and BCM pin numbers for your wiring. The invoking user needs
-access to the UART and gpiochip devices. Default presets are stored under that
-user's XDG configuration directory. `--help` works without importing GPIO code.
+Verify the UART assigned to the physical pins for your Pi model. Bluetooth overlays and boot configuration paths differ across Raspberry Pi generations and OS releases, so this project does not prescribe one universal overlay.
 
-### Run at boot
+## Run manually
 
-The supplied service uses a dedicated account and the install path above:
+Example matching the repository defaults:
 
-```sh
-id -u dwinlcd >/dev/null 2>&1 || sudo useradd --system --user-group --home-dir /var/lib/dwin-lcd --no-create-home --shell /usr/sbin/nologin dwinlcd
-getent group dialout gpio
+```bash
+cd /opt/dwin-lcd
+
+sudo .venv/bin/python run.py \
+  --serial-port /dev/ttyAMA0 \
+  --encoder-pins 21 19 \
+  --button-pin 13 \
+  --moonraker-url http://127.0.0.1:7125
+```
+
+Use the actual UART and GPIO pins for your installation.
+
+Available configuration:
+
+| Environment | CLI | Default |
+|---|---|---|
+| `MOONRAKER_URL` | `--moonraker-url` | `http://127.0.0.1:7125` |
+| `MOONRAKER_API_KEY` | environment only | empty |
+| `DWIN_REQUEST_TIMEOUT` | `--request-timeout` | 5 s |
+| `DWIN_SERIAL_PORT` | `--serial-port` | `/dev/ttyAMA0` |
+| `DWIN_ENCODER_PINS` | `--encoder-pins A B` | `21 19` |
+| `DWIN_BUTTON_PIN` | `--button-pin` | `13` |
+| `DWIN_SETTINGS_FILE` | `--settings-file` | user XDG path |
+
+## Run at boot with systemd
+
+A sample unit and environment file are included.
+
+```bash
+id -u dwinlcd >/dev/null 2>&1 || \
+  sudo useradd --system --user-group \
+  --home-dir /var/lib/dwin-lcd --no-create-home \
+  --shell /usr/sbin/nologin dwinlcd
+
 sudo install -m 0600 /opt/dwin-lcd/dwin-lcd.env.example /etc/default/dwin-lcd
 sudoedit /etc/default/dwin-lcd
-sudo install -m 0644 /opt/dwin-lcd/simpleLCD.service /etc/systemd/system/simpleLCD.service
+
+sudo install -m 0644 /opt/dwin-lcd/simpleLCD.service \
+  /etc/systemd/system/simpleLCD.service
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now simpleLCD.service
 sudo journalctl -u simpleLCD.service -f
 ```
 
-The `dialout` and `gpio` groups must exist and grant access to your actual UART
-and gpiochip devices. Adapt `SupplementaryGroups` to the installed OS if needed.
-`StateDirectory=dwin-lcd` creates `/var/lib/dwin-lcd` owned by the service user.
-The root-owned environment file can hold an optional API key; do not commit it.
-CLI arguments override environment defaults:
+The service uses a dedicated account, restarts on failure, stores presets in `/var/lib/dwin-lcd`, and logs to journald. Confirm that the service user has access to the actual UART and gpiochip devices on your OS.
 
-| Environment variable | CLI option | Default |
-|---|---|---|
-| MOONRAKER_URL | --moonraker-url | http://127.0.0.1:7125 |
-| MOONRAKER_API_KEY | Environment only | Empty |
-| DWIN_REQUEST_TIMEOUT | --request-timeout | 5 seconds |
-| DWIN_SERIAL_PORT | --serial-port | /dev/ttyAMA0 |
-| DWIN_ENCODER_PINS | --encoder-pins A B | 21 19 (BCM) |
-| DWIN_BUTTON_PIN | --button-pin | 13 (BCM) |
-| DWIN_SETTINGS_FILE | --settings-file | User XDG path; service uses /var/lib/dwin-lcd/presets.json |
+## Happy Hare integration
 
-Restart after environment-file edits. The unit starts without a fixed sleep or
-hard dependency on a local Moonraker service; application reconnect handles
-late startup. `Restart=on-failure` handles crashes with a five-second delay and
-rate limit. An intentional stop stays stopped. SIGTERM uses application cleanup;
-systemd enforces a 15-second stop limit. Logs go to journald.
+Happy Hare support is automatic when the required Klipper objects are present.
 
-```sh
-sudo systemctl restart simpleLCD.service
-sudo systemctl stop simpleLCD.service
-sudo systemctl status simpleLCD.service
+The UI currently consumes:
+
+- `mmu` — gate count, selected gate, gate status, gate colors, spool IDs and filament state
+- `mmu_machine` — unit name/display metadata
+- `unit0_mmu_exit_leds` — live per-gate exit LED colors
+
+No MMU-specific screen is required to obtain the home-screen visualization; it appears when the state is available.
+
+## Spoolman integration
+
+Happy Hare supplies each gate's `gate_spool_id`. The application uses Moonraker's Spoolman proxy to retrieve the corresponding spool and calculate remaining percentage from weight data.
+
+This keeps percentages gate-specific instead of relying on a single globally active Spoolman spool.
+
+If Spoolman data is unavailable, the rest of the MMU panel continues to work.
+
+## Case-light macro contract
+
+Case-light support is optional and appears when `gcode_macro M355` exists.
+
+The UI sends:
+
+```text
+M355 S0/1
+M355 P0..255
 ```
 
-### Validation and remaining work
+For state synchronization it expects a query response containing the equivalent of:
 
-```sh
+```text
+Light is ON, Brightness=128
+```
+
+Adapt your macro to that contract if you want bidirectional case-light status.
+
+## Reliability and safety behavior
+
+The project intentionally avoids optimistic UI state for printer-changing actions.
+
+- Commands are serialized on a dedicated worker.
+- Failed commands are not replayed automatically.
+- Connection changes invalidate queued commands from the old epoch.
+- Offline/old input events are discarded.
+- Movement validates homing, bounds and printer state.
+- Jogging preserves/restores G-code state.
+- An unconfirmed jog-state restore blocks additional motion.
+- Print start waits for both command result and subscribed print state.
+- Pause/resume/cancel wait for the corresponding subscribed state.
+- Probe calibration waits for manual-probe state changes.
+- UART writes fail closed on short writes/errors.
+- Panel reconnect redraws state but never replays printer commands.
+
+A timeout can still mean that a command reached the printer while its response was lost. Always inspect actual printer state before repeating an uncertain action.
+
+## UART/display layer
+
+The DWIN transport implements bounded startup handshakes, incremental ACK parsing, full-frame writes and reconnect attempts.
+
+Rendering includes:
+
+- text sanitation/transliteration for stock ASCII fonts
+- bounded string payloads
+- signed/fractional numeric formatting
+- overflow markers instead of silently truncating values
+- icon/frame copy helpers
+- RGB565 colors
+- backlight control
+- update coalescing to avoid unnecessary UART traffic
+
+See [LCD asset notes](docs/lcd-assets.md) and [source audit](docs/source-audit.md) for low-level details.
+
+## Tests
+
+Run the full isolated test suite with:
+
+```bash
 cd /opt/dwin-lcd
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-The isolated tests do not prove physical motion or panel compatibility. Full panel instruction-set verification and final hardware validation remain
-outstanding. The supplied systemd service must still be
-validated with start/stop/restart and device permissions on the target Pi.
+The tests cover the Moonraker client/subscription layer, printer-state normalization, capability detection, menu behavior, input routing, command handling, movement safety, UART framing/render helpers, MMU data and other regressions.
 
-### Probe calibration wizard
+Unit tests do not replace physical validation on a printer.
 
-Control → Probe calibration is available when probe and manual-probe status
-are discovered. Home XYZ first and place the nozzle/probe at a suitable bed
-point. Prepare the printer as described in [Klipper probe calibration](https://www.klipper3d.org/Probe_Calibrate.html).
-Starting sends only PROBE_CALIBRATE: no automatic G28 or G1 Z0.
-An existing manual session, active print or pending configuration changes block
-start. The UI waits for HTTP success and `manual_probe.is_active`.
+## Current scope / known limitations
 
-Select explicit Raise/Lower 0.1 or 0.01 mm actions; turning the encoder only
-selects an action. Enter sends one TESTZ and blocks further commands until its
-result arrives. Accept waits for the manual session to close and a pending
-probe z_offset; HTTP success alone does not prove acceptance. Abort closes the
-session without saving. The separate **Save: restart Klipper** action sends
-SAVE_CONFIG only when the pending items contain the accepted probe offset and
-no unrelated changes. Leave unsaved exits without persisting it.
+- The display UI is designed around the existing 272×480 DWIN asset/layout family.
+- Real screenshots in this README are still pending.
+- Live Happy Hare lane colors currently use the explicitly named `unit0_mmu_exit_leds` object.
+- Multi-unit MMU LED-source selection is not generalized yet.
+- Case-light support depends on a compatible `M355` macro.
+- Runtime Motion values are not automatically persisted to printer configuration.
+- Hardware compatibility outside the tested DWIN/encoder wiring should be validated before relying on motion controls.
 
-A failed/unconfirmed command or changed connection stops the wizard; nothing is
-replayed or automatically aborted. Check the printer and use another client
-if a manual session remains active. This client cannot lock out another client:
-avoid concurrent calibration/configuration edits. SAVE_CONFIG restarts Klipper;
-a disconnect can leave its outcome uncertain until the printer reconnects.
-The session/state and acceptance checks follow [manual_probe.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/manual_probe.py)
-and [probe.py](https://github.com/Klipper3d/klipper/blob/461c4e3722c3a897fba1c6b3f0780a5315043842/klippy/extras/probe.py).
-Physical calibration has not been validated by the isolated tests.
+## Project history and credits
 
-### Command feedback
+This repository retains its open-source lineage and Git history.
 
-Temperature/fan targets, preheat/cooldown, jog, homing, runtime offset, motion
-limits, print speed and pause/resume/cancel use a common waiting/error flow.
-While a command is pending, new input is ignored. HTTP failure, cancellation,
-connection change or an unconfirmed result after 30 seconds produces a retained
-error message; Enter dismisses it without retrying the command. A timeout can
-still leave a running command's outcome uncertain.
+The project originated from the DWIN T5UIC1 LCD work in:
 
-Successful HTTP acceptance restores the current menu and plays the acceptance
-sound. Pause/resume/cancel additionally wait for subscribed print state; homing
-waits for homed axes. For other G-code actions the sound means command acceptance,
-not that motion/temperature has physically reached its goal. Displayed printer
-values remain based on subscription data. Cooldown submits installed heaters
-and part-fan shutdown in one script. Print start and probe calibration retain
-their dedicated result/state flows.
+- [odwdinc/DWIN_T5UIC1_LCD](https://github.com/odwdinc/DWIN_T5UIC1_LCD)
+- [bustedlogic/DWIN_T5UIC1_LCD](https://github.com/bustedlogic/DWIN_T5UIC1_LCD)
 
-### LCD firmware reference
+The current project has since been substantially reworked around Klipper/Moonraker, a new state/command architecture, dynamic capabilities, safer input handling, expanded controls, MMU/Spoolman support and regression testing.
 
-The primary reference is [mriscoc Ender3V2S1, commit 05903a80](https://github.com/mriscoc/Ender3V2S1/tree/05903a80d6e15cc91b0bc690b35e08fd440a21e9),
-DWIN common API and ProUI. This pinned source is not a claim about the exact
-historical binary installed on a user's display.
+Independence does not erase attribution: original copyright notices, commit history and GPL obligations remain applicable.
 
-Like ProUI, numbers are formatted as padded text and sent with command 0x11.
-Existing Draw_FloatValue / Draw_Signed_Float callers still pass values scaled by
-10**fNum. Scaled fractional input is rounded to the nearest integer, ties away
-from zero, before placing the decimal point. Decimal fields reserve a sign
-column one font width left of the supplied x coordinate, and replace the whole
-field on each background-enabled draw. Legacy zeroFill / zeroMode arguments are
-accepted but padding uses spaces, as in ProUI. Finite values exceeding the declared field show # markers across the whole
-field; non-finite inputs are rejected before writing a packet. Native 0x14 numeric
-rendering is no longer used. Actual panel and asset compatibility needs hardware
-validation.
+Additional projects used or integrated by this software include:
 
-ICON_Show and Frame_AreaCopy default to ProUI's transparent enhanced filtering
-(IBD=0, BIR=0, BFI=1). Keyword arguments background, restore and enhanced expose
-those bits explicitly; library/cache identifiers occupy the lower five bits.
-Transparent filtering requires a pure black asset background. Use background=True,
-enhanced=False for opaque assets.
+- [Klipper](https://github.com/Klipper3d/klipper)
+- [Moonraker](https://github.com/Arksine/moonraker)
+- [Happy Hare](https://github.com/moggieuk/Happy-Hare)
+- [Spoolman](https://github.com/Donkie/Spoolman)
 
-Backlight_SetLuminance sends the full 0–255 range unchanged. Zero turns the
-backlight off, following the reference brightness API.
+## Contributing
 
-LCD initialization waits 750 ms for wakeup, performs a bounded handshake, sets
-direction 1, and updates the display. It does not display JPG 0 implicitly; the
-UI initializes its own cache and redraws its current screen on reconnect.
+Issues and pull requests are welcome. For UI changes, include the printer capability/setup involved and, where possible, add or update a regression test in the same change.
 
-UpdateLCD sends 0x3D only when a packet has been sent since the previous
-successful update. Multiple draw calls can share one update; redundant UI calls
-produce no UART traffic. Short-write handling remains fail-closed.
+For hardware/UI bugs, useful reports include:
 
-Text drawing uses printable ASCII for the selected stock fonts. Turkish letters
-are transliterated (e.g. ölçüm → olcum), combining accents are removed, and other
-unsupported/control characters become ?. Text is bounded by the remaining screen
-width for the selected font and a 90-byte payload cap. This is an explicit glyph
-policy, not a claim that all panel firmware rejects Unicode. QR data retains its
-separate UTF-8 encoding and is not processed as visible text.
+- Raspberry Pi model and OS
+- UART device
+- encoder/button BCM pins
+- Klipper + Moonraker versions
+- relevant optional component (probe, MMU, Spoolman, M355, etc.)
+- log excerpt
+- panel photo when the problem is visual
 
-### Source audit status
+## License
 
-The first ten LCD reference tasks are recorded in [source-audit.md](docs/source-audit.md).
-All nine findings (A01–A09) are fixed in source and covered by regression tests;
-passing isolated tests is not a release-readiness claim.
-See [lcd-assets.md](docs/lcd-assets.md) for verified reference assets. No hardware
-or live-printer tests were performed in this source adaptation pass.
+GNU General Public License v3.0. See [LICENSE](LICENSE).
 
-### Jog error recovery
+---
 
-Each jog first confirms SAVE_GCODE_STATE in a separate serialized request.
-Only then are G91/M83, normalized speed/flow, G1 and RESTORE MOVE=0 submitted.
-A failed SAVE never sends the movement. A failed movement request attempts only
-the saved-state RESTORE, without replaying G1, if its connection epoch is still
-valid. The original failure remains visible even when restoration succeeds.
-
-Unconfirmed restoration blocks motion commands, print start and resume. Heater
-and part-fan control remains available. Control → Restore jog state explicitly
-retries the non-moving restoration; it does not clear the block without a
-successful response. Disconnect/reconnect alone does not clear it. The saved
-slot is unique to the client instance and reused after successful restoration,
-so Klipper's saved-state dictionary does not grow with every jog. This guard
-covers this LCD client's commands; other clients can still submit commands.
-
-All high-level UART commands build and validate their complete payload before
-replacing the scratch buffer. Invalid fields leave the next packet intact.
-QR data is separately encoded as UTF-8 and must contain 1–94 bytes; oversized
-payloads are rejected without truncating a URL or splitting a character.
-
-Numeric fields display # markers when a finite value does not fit. This only
-changes rendering: the authoritative value and pending command target are never
-clamped or truncated. Motion values use complete scientific notation when
-necessary and pad the entire field so shorter values erase older characters.
+<p align="center">
+  <strong>Klipper on the printer. Moonraker on the network. DWIN at your fingertips.</strong>
+</p>
