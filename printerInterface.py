@@ -538,6 +538,8 @@ class PrinterData:
                         name = item[name_key]
                         if not isinstance(name, str) or not name or '/' in name or name in ('.', '..'):
                             raise ValueError('Invalid directory entry')
+                        if name.startswith('.') or (not is_dir and not name.lower().endswith('.gcode')):
+                            continue
                         path = (directory + '/' if directory else '') + name
                         entries.append(dict(item, path=path + ('/' if is_dir else ''), isDirectory=is_dir))
                 if len({item['path'] for item in entries}) != len(entries):

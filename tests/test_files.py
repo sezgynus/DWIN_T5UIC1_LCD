@@ -223,6 +223,26 @@ class MainsailFileSortTests(unittest.TestCase):
         self.assertEqual(result.file_sort_revision,revision)
 
 class DirectoryBrowserTests(unittest.TestCase):
+    def test_hidden_entries_and_non_gcode_files_are_filtered_at_every_level(self):
+        view,tree=self.make()
+        for directory in ('','parts'):
+            tree[directory]['dirs'].extend([{'dirname':'.thumbnails'}, {'dirname':'.thumbnail'},
+                                           {'dirname':'normal folder'}])
+            tree[directory]['files'].extend([{'filename':'preview.png'}, {'filename':'notes.txt'},
+                                            {'filename':'model.gcode.backup'}, {'filename':'.hidden.gcode'},
+                                            {'filename':'UPPER.GCODE'}])
+        view.pd._directory_cache.clear()
+        for directory in ('','parts'):
+            prefix=directory+'/' if directory else ''
+            paths=view.pd.GetDirectory(directory)
+            self.assertIn(prefix+'normal folder/',paths)
+            self.assertIn(prefix+'UPPER.GCODE',paths)
+            for hidden in ('.thumbnails/','.thumbnail/','preview.png','notes.txt','model.gcode.backup','.hidden.gcode'):
+                self.assertNotIn(prefix+hidden,paths)
+            # Cached resorting must preserve the filter.
+            view.pd.file_sort=('filename',False)
+            self.assertEqual(set(paths),set(view.pd.GetDirectory(directory)))
+
     def make(self):
         result=printer(snapshot())
         result.client.get=Mock(return_value={'result':{'value':{}}})
