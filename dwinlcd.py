@@ -772,7 +772,8 @@ class DWIN_LCD:
         finally:
             self._encoder_event = self.ENCODER_DIFF_NO
             self._encoder_move_value = 1
-            if lcd is not None:
+            if (lcd is not None and self.lcd is lcd
+                    and not getattr(lcd, '_closed', False)):
                 lcd._defer_updates = False
                 lcd.UpdateLCD()
 

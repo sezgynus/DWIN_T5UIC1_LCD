@@ -65,6 +65,25 @@ class UARTReconnectTests(unittest.TestCase):
         result._process_input(InputEvent('press', 1, 1, 2))
         result._dispatch_input.assert_not_called()
 
+    def test_input_uart_failure_does_not_flush_closed_driver(self):
+        result = self.display()
+        result._uart_online = True
+        old = result.lcd
+        old._closed = False
+        result._sync_input_state = Mock(return_value=True)
+
+        def fail_during_draw():
+            old._closed = True
+            raise OSError('write failed')
+
+        result._dispatch_input = Mock(side_effect=fail_during_draw)
+        result._process_input(InputEvent('press', 1, 1, result._uart_epoch))
+
+        self.assertFalse(result._uart_online)
+        self.assertIsNone(result.lcd)
+        old.close.assert_called_once()
+        old.UpdateLCD.assert_not_called()
+
     def test_closed_display_does_not_reopen_port(self):
         result = self.display()
         result._closed = True
