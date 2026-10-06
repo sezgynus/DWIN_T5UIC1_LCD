@@ -1,6 +1,6 @@
 import unittest
 
-import dwinlcd
+from test_regressions import ui as dwinlcd
 from ui_case_light import CaseLightMixin
 from ui_mmu import MMUViewMixin
 
