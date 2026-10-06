@@ -257,18 +257,22 @@ class PrinterData:
         current['host_temp'] = temperature
         mcus = []
         if self.state.ready:
-            temperatures = {}
+            temperatures = []
             for object_name, value in self.state.status.items():
-                if not object_name.startswith('temperature_sensor ') or not isinstance(value, Mapping):
+                if (not (object_name.startswith('temperature_sensor ') or
+                         object_name.startswith('temperature_fan ')) or
+                        not isinstance(value, Mapping)):
                     continue
                 setting = self.state.settings.get(object_name, {})
                 if not isinstance(setting, Mapping) or setting.get('sensor_type') != 'temperature_mcu':
                     continue
-                mcu_name = str(setting.get('sensor_mcu') or 'mcu')
+                sensor_mcu = setting.get('sensor_mcu')
+                if not isinstance(sensor_mcu, str):
+                    continue
                 try:
                     temperature = float(value.get('temperature'))
                     if math.isfinite(temperature):
-                        temperatures[mcu_name] = temperature
+                        temperatures.append((sensor_mcu, temperature))
                 except (TypeError, ValueError):
                     pass
             for object_name, value in self.state.status.items():
@@ -276,19 +280,25 @@ class PrinterData:
                     continue
                 if not isinstance(value, Mapping):
                     continue
-                name = object_name[4:] if object_name.startswith('mcu ') else 'mcu'
                 stats = value.get('last_stats', {})
                 load = None
                 if isinstance(stats, Mapping):
                     try:
-                        awake = float(stats.get('mcu_awake'))
-                        if math.isfinite(awake) and awake >= 0:
-                            # Klipper's MCU statistics window is five seconds.
-                            load = max(0.0, min(100.0, awake * 20.0))
+                        task_avg = float(stats.get('mcu_task_avg'))
+                        task_stddev = float(stats.get('mcu_task_stddev'))
+                        if math.isfinite(task_avg) and math.isfinite(task_stddev):
+                            # Match Mainsail's MCU load calculation exactly.
+                            ratio = task_avg + (3.0 * task_stddev) / 0.0025
+                            load = max(0.0, min(100.0, ratio * 100.0))
                     except (TypeError, ValueError):
                         pass
-                mcus.append({'name': name, 'load': load,
-                             'temperature': temperatures.get(name),
+                temperature = None
+                for sensor_mcu, sensor_temperature in temperatures:
+                    if object_name.endswith(sensor_mcu):
+                        temperature = sensor_temperature
+                        break
+                mcus.append({'name': object_name, 'load': load,
+                             'temperature': temperature,
                              'version': str(value.get('mcu_version') or '')})
             current['mcus'] = tuple(mcus)
         try:
