@@ -19,9 +19,6 @@
   <img alt="Lisans" src="https://img.shields.io/badge/License-GPL--3.0-blue">
 </p>
 
-> [!NOTE]
-> Bu README'deki ekran görselleri şimdilik temsili yer tutuculardır. Gerçek panel fotoğrafları/görüntüleri hazırlandığında bunların yerini alacaktır.
-
 ## Bu proje nedir?
 
 Bu proje, Ender 3 V2 gibi yazıcılarda kullanılan yaygın 4.3 inç DWIN T5UIC1 rotary-encoder ekranını yerel bir Klipper kontrol paneline dönüştürür.
