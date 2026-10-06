@@ -536,4 +536,4 @@ GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 ### Encoder power-on
 
-When Moonraker has a `[power Printer]` device, holding the encoder button for 3 seconds while that device is off turns it on. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. This path does not depend on Klipper being ready or on the LCD UART being connected.
+When Moonraker has a `[power Printer]` device, holding the encoder button for 2 seconds while that device is off turns it on. The device name defaults to `Printer` and can be changed with `DWIN_POWER_DEVICE`. This path does not depend on Klipper being ready or on the LCD UART being connected.
