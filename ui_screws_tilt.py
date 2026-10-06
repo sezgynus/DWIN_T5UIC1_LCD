@@ -30,10 +30,13 @@ class ScrewsTiltMixin:
             for dy in range(-radius, radius + 1):
                 dx = int((radius * radius - dy * dy) ** .5)
                 self.lcd.Draw_Rectangle(1, color, x - dx, y + dy, x + dx, y + dy)
-            label = '...' if value is None else 'Base' if value['is_base'] else value['sign'] + ' ' + value['adjust']
-            tx = max(2, min(270 - len(label) * 6, x - len(label) * 3))
-            self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
-                                 self.lcd.Color_Bg_Black, tx, y - 6, label)
+            labels = ('...',) if value is None else ('Base',) if value['is_base'] else (value['sign'], value['adjust'])
+            ty = 62 if y < 166 else 235
+            for line, label in enumerate(labels):
+                # Place labels inwards on black; leave the maximum circle radius clear.
+                tx = 52 if x < 136 else 220 - len(label) * 8
+                self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                                     self.lcd.Color_Bg_Black, tx, ty + line * 20, label)
         if session.pending:
             self._screws_text(session.message, 140)
         elif session.phase != 'complete':
@@ -42,12 +45,11 @@ class ScrewsTiltMixin:
             self._screws_text('Corners leveled', 140)
             self._screws_text('Tolerance achieved!', 160)
         else:
-            self._screws_text('Corners not leveled', 120)
-            self._screws_text('Knob adjustment required', 140)
             value = session.results[session.recommendation]
-            self._screws_text(value['sign'] + ' ' + value['adjust'], 160, color=0x07E0)
             name = next(c[3] for c in session.corners if c[0] == session.recommendation)
-            self._screws_text(name, 180, color=0x07E0)
+            self._screws_text('Adjust ' + name, 140)
+            self._screws_text(value['sign'] + ' ' + value['adjust'], 166,
+                              color=0x07E0, font=self.lcd.font10x20, width=10)
         if not session.pending:
             self.lcd.Draw_Rectangle(1, 0x03B5, 86, 305, 186, 343)
             self._screws_text('Continue', 316)

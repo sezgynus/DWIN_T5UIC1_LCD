@@ -154,7 +154,7 @@ class ViewTests(unittest.TestCase):
         view._poll_screws_tilt()
         labels = [c.args[-1] for c in view.lcd.Draw_String.call_args_list]
         self.assertIn('CCW 00:14', labels)
-        self.assertIn('Front Right', labels)
+        self.assertIn('Adjust Front Right', labels)
         self.assertIn('Base', labels)
         self.assertIn('Continue', labels)
         view.HMI_Screws_Tilt()
@@ -183,8 +183,16 @@ class ViewTests(unittest.TestCase):
         session.results['screw2']['adjust'] = '120:59'
         view.lcd.reset_mock()
         view.Draw_Screws_Result()
+        corners = []
         for c in view.lcd.Draw_String.call_args_list:
-            if c.args[2] == view.lcd.font6x12:
-                self.assertGreaterEqual(c.args[5], 0)
-                self.assertLessEqual(c.args[5] + len(c.args[-1]) * 6, 272)
-
+            width = 10 if c.args[2] == view.lcd.font10x20 else 8
+            self.assertGreaterEqual(c.args[5], 0)
+            self.assertLessEqual(c.args[5] + len(c.args[-1]) * width, 272)
+            if c.args[6] in (62, 82, 235, 255):
+                corners.append(c.args)
+                self.assertEqual(c.args[2], view.lcd.font8x16)
+                self.assertGreaterEqual(c.args[5], 52)
+                self.assertLessEqual(c.args[5] + len(c.args[-1]) * 8, 220)
+        self.assertEqual(len(corners), 7)
+        self.assertIn('120:59', [args[-1] for args in corners])
+        self.assertIn('CCW', [args[-1] for args in corners])
