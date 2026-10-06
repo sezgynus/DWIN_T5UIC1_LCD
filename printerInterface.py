@@ -14,7 +14,7 @@ from probe_wizard import ProbeWizard
 from preset_store import PresetStore
 from printer_state import PrinterState
 from printer_capabilities import PrinterCapabilities
-from system_info import network_info, updater_version
+from system_info import host_metrics, network_info, updater_version
 
 class xyze_t:
     x = 0.0
@@ -215,6 +215,9 @@ class PrinterData:
             'mainsail': 'Unavailable',
             'network': 'Unknown',
             'ip': 'Unavailable',
+            'host_cpu': None,
+            'host_temp': None,
+            'mcus': (),
         }
         self._system_info_refresh_at = 0.0
         self._system_info_refresh_interval = 5.0
@@ -249,6 +252,17 @@ class PrinterData:
         current = dict(previous)
         current['network'] = status
         current['ip'] = address
+        cpu, temperature = host_metrics()
+        current['host_cpu'] = cpu
+        current['host_temp'] = temperature
+        mcus = []
+        if self.state.ready:
+            for name, value in self.state.status.items():
+                if name == 'mcu' or name.startswith('mcu '):
+                    if isinstance(value, Mapping):
+                        mcus.append((name[4:] if name.startswith('mcu ') else 'mcu',
+                                     str(value.get('mcu_version') or value.get('last_stats') or 'Connected')))
+            current['mcus'] = tuple(mcus)
         try:
             response = self.client.get('/machine/update/status')
             versions = response.get('result', {}).get('version_info', {})
