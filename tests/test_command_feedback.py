@@ -44,16 +44,26 @@ class FeedbackTests(unittest.TestCase):
             self.assertEqual(result.update(PrinterState.from_snapshot(snapshot())), 'error')
         self.assertTrue(future.cancelled())
 
-    def test_state_observed_command_has_no_fixed_completion_timeout(self):
+    def test_state_observed_command_has_bounded_confirmation_timeout(self):
         future = Future()
         future.set_result(None)
         confirmed = Mock(return_value=False)
-        result = CommandFeedback(future, 'Home', 1, confirmed)
+        result = CommandFeedback(future, 'Home', 1, confirmed, confirmation_timeout=300)
         state = PrinterState.from_snapshot(snapshot())
-        with patch.object(command_feedback.time, 'monotonic', return_value=result.started + 3600):
+        with patch.object(command_feedback.time, 'monotonic', return_value=result.started + 299):
             self.assertEqual(result.update(state), 'waiting')
-        confirmed.return_value = True
-        self.assertEqual(result.update(state), 'accepted')
+        with patch.object(command_feedback.time, 'monotonic', return_value=result.started + 301):
+            self.assertEqual(result.update(state), 'error')
+        self.assertEqual(result.message, 'State unconfirmed; check printer')
+
+    def test_state_observed_command_accepts_before_confirmation_timeout(self):
+        future = Future()
+        future.set_result(None)
+        confirmed = Mock(return_value=True)
+        result = CommandFeedback(future, 'Home', 1, confirmed, confirmation_timeout=300)
+        state = PrinterState.from_snapshot(snapshot())
+        with patch.object(command_feedback.time, 'monotonic', return_value=result.started + 299):
+            self.assertEqual(result.update(state), 'accepted')
 
     def display(self):
         result = display(snapshot())

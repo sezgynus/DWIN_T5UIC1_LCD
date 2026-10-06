@@ -388,7 +388,7 @@ class DWIN_LCD:
             else:
                 raise
 
-    def _action(self, label, callback, expected=None):
+    def _action(self, label, callback, expected=None, confirmation_timeout=300.0):
         if getattr(self, '_action_feedback', None) is not None:
             return None
         try:
@@ -398,7 +398,8 @@ class DWIN_LCD:
             future = Future()
             future.set_exception(error)
         if isinstance(future, Future):
-            self._action_feedback = CommandFeedback(future, label, self.pd.state.epoch, expected)
+            self._action_feedback = CommandFeedback(
+                future, label, self.pd.state.epoch, expected, confirmation_timeout)
         return future
 
     def _restore_action_screen(self):
@@ -1000,7 +1001,8 @@ class DWIN_LCD:
                 self.pd.current_position.homing()
                 self.pd.HMI_flag.home_flag = True
                 self.Popup_Window_Home()
-                self._action("Home", lambda: self.pd.sendGCodeObserved("G28"), self.pd.ishomed)
+                self._action("Home", lambda: self.pd.sendGCodeObserved("G28"),
+                             self.pd.ishomed, confirmation_timeout=600)
             elif self.select_prepare.now == self.PREPARE_CASE_ZOFF:  # Z-offset
                 self._open_zoffset(-4, self.PREPARE_CASE_ZOFF + self.MROWS - self.index_prepare)
 
@@ -1146,7 +1148,9 @@ class DWIN_LCD:
                 self.Draw_Tune_Menu()
             elif self.select_print.now == 1:  # Pause
                 if (self.pd.HMI_flag.pause_flag):
-                    self._action("Resume", self.pd.resume_job, lambda: self.pd.status == "printing")
+                    self._action("Resume", self.pd.resume_job,
+                             lambda: self.pd.status == "printing",
+                             confirmation_timeout=60)
                 else:
                     self.pd.HMI_flag.select_flag = True
                     self.checkkey = self.Print_window
@@ -1170,11 +1174,14 @@ class DWIN_LCD:
             if (self.select_print.now == 1):  # pause window
                 if (self.pd.HMI_flag.select_flag):
                     self.pd.HMI_flag.pause_action = True
-                    self._action("Pause", self.pd.pause_job, self.pd.printingIsPaused)
+                    self._action("Pause", self.pd.pause_job, self.pd.printingIsPaused,
+                                 confirmation_timeout=60)
                 self.Goto_PrintProcess()
             elif (self.select_print.now == 2):  # stop window
                 if (self.pd.HMI_flag.select_flag):
-                    self._action("Cancel", self.pd.cancel_job, lambda: self.pd.status == "cancelled")
+                    self._action("Cancel", self.pd.cancel_job,
+                                 lambda: self.pd.status == "cancelled",
+                                 confirmation_timeout=60)
                 else:
                     self.Goto_PrintProcess()  # cancel stop
         self.lcd.UpdateLCD()
