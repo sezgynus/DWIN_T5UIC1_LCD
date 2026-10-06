@@ -369,8 +369,7 @@ class PrinterData:
         self.HAS_BED_PROBE = caps.probe
         self.HAS_PREHEAT = caps.has_heaters
         self.HAS_ZOFFSET_ITEM = True
-        # Discovery does not enable the not-yet-implemented leveling wizard.
-        self.HAS_ONESTEP_LEVELING = False
+        self.HAS_ONESTEP_LEVELING = caps.bed_mesh and caps.probe
         self.PREVENT_COLD_EXTRUSION = True
         hotend = caps.active_hotend
         self.EXTRUDE_MINTEMP = hotend.min_extrude_temp if hotend else 0

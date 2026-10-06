@@ -1,4 +1,5 @@
 """Completion-tracked bed calibration and read-only profile snapshots."""
+import copy
 from dataclasses import dataclass
 import math
 import re
@@ -71,6 +72,7 @@ class BedMeshSession:
         self.status = {}
         self.revision = 0
         self._cursor = 0
+        self._calibrated_mesh = None
 
     def _guard(self, motion=False):
         p = self.printer
@@ -141,7 +143,9 @@ class BedMeshSession:
     def start(self):
         self._guard(motion=True)
         config = self.printer.state.status.get('configfile', {})
-        if config.get('save_config_pending') or config.get('save_config_pending_items'):
+        has_pending = config.get('save_config_pending') or config.get('save_config_pending_items')
+        if has_pending and (self.epoch != self.printer.state.epoch
+                or not self._owned_pending(config, self._calibrated_mesh)):
             raise ValueError('Resolve existing config changes first')
         try:
             self.layout = self._configured_layout()
@@ -152,7 +156,8 @@ class BedMeshSession:
         index = 1
         while 'lcd_mesh_' + str(index) in profiles:
             index += 1
-        self.profile_name = 'lcd_mesh_' + str(index)
+        if not has_pending:
+            self.profile_name = 'lcd_mesh_' + str(index)
         self.mesh, self.status, self.progress = None, {}, {}
         self._cursor, _ = self.printer.subscription.responses_since(None)
         homed = self.printer.state.status['toolhead'].get('homed_axes', '')
@@ -165,7 +170,9 @@ class BedMeshSession:
             raise ValueError('No measurement to stop')
         # G-code cancellation is queued behind probing. Emergency RPC is immediate.
         p = self.printer
-        if p.state.epoch != self.epoch or not p.state.ready or p.connection_error:
+        snapshot = p.subscription.snapshot()
+        if (p.state.epoch != self.epoch or not p.state.ready or p.connection_error
+                or snapshot['state'] != 'ready' or snapshot['epoch'] != self.epoch):
             raise ValueError('Printer connection changed')
         self.pending.cancel()
         self.mesh, self.progress = None, {}
@@ -178,6 +185,34 @@ class BedMeshSession:
         self._submit('save_check', 'printer.objects.query',
                      {'objects': {'bed_mesh': None, 'configfile': ['save_config_pending', 'save_config_pending_items']}},
                      'Checking profile before save...')
+
+    def _owned_pending(self, config, mesh):
+        """SAVE_CONFIG must contain only the exact profile measured here."""
+        if mesh is None or mesh.name != self.profile_name or not config.get('save_config_pending'):
+            return False
+        try:
+            items = config['save_config_pending_items']
+            if set(items) != {'bed_mesh ' + self.profile_name}:
+                return False
+            fields = items['bed_mesh ' + self.profile_name]
+            profile = self.status['profiles'][self.profile_name]
+            expected_keys = {'version', 'points'} | set(profile['mesh_params'])
+            if set(fields) != expected_keys or int(fields['version']) != 1:
+                return False
+            points = tuple(tuple(finite(z) for z in line.strip().rstrip(',').split(','))
+                           for line in fields['points'].strip().splitlines() if line.strip())
+            if len(points) != len(mesh.points) or any(len(a) != len(b) for a,b in zip(points,mesh.points)):
+                return False
+            if any(abs(a-b) > .000001 for row, measured in zip(points,mesh.points) for a,b in zip(row,measured)):
+                return False
+            for key, value in profile['mesh_params'].items():
+                if isinstance(value, str):
+                    if fields[key] != value: return False
+                elif abs(finite(fields[key])-finite(value)) > .000001:
+                    return False
+            return True
+        except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
+            return False
 
     def _progress(self):
         self._cursor, responses = self.printer.subscription.responses_since(self._cursor)
@@ -217,7 +252,7 @@ class BedMeshSession:
             if self.phase == 'saving':
                 self._fail('Save requested; check after restart', 'interrupted')
             elif self.phase == 'stopping':
-                self._fail('Stopped; Klipper shutdown', 'interrupted')
+                self._fail('Stop unconfirmed; check printer', 'interrupted')
             elif self.phase != 'interrupted':
                 self._fail('Connection changed; check printer', 'interrupted')
             return
@@ -227,7 +262,11 @@ class BedMeshSession:
             self._fail('Timed out; check printer')
             return
         if self.phase == 'measuring':
-            self._progress()
+            try:
+                self._progress()
+            except (TypeError, ValueError, OverflowError):
+                self._fail('Invalid probe progress; check config')
+                return
         if not self.pending.done():
             return
         try:
@@ -241,12 +280,12 @@ class BedMeshSession:
                 status = result['status']['bed_mesh']
                 if not isinstance(status.get('profiles', {}), Mapping) or any(not isinstance(n, str) for n in status.get('profiles', {})):
                     raise ValueError('Invalid profiles')
-                self.status = status
+                self.status = copy.deepcopy(status)
                 if phase == 'reading':
                     mesh = MeshData.current(status)
                     if mesh.name != self.profile_name or MeshData.profile(self.profile_name, status) != mesh:
                         raise ValueError('Unconfirmed calibration')
-                    self.mesh = mesh
+                    self.mesh = self._calibrated_mesh = mesh
                     self.phase, self.message = 'complete', ''
                 else:
                     self.phase, self.message = 'listed', ''
@@ -255,11 +294,7 @@ class BedMeshSession:
                 current = MeshData.current(status['bed_mesh'])
                 profile = MeshData.profile(self.profile_name, status['bed_mesh'])
                 config = status['configfile']
-                items = config['save_config_pending_items']
-                section = 'bed_mesh ' + self.profile_name
-                if (current != self.mesh or profile != self.mesh or not config['save_config_pending']
-                        or set(items) != {section} or not items[section]
-                        or not set(items[section]) <= {'version', 'points', 'min_x', 'max_x', 'min_y', 'max_y', 'x_count', 'y_count', 'mesh_x_pps', 'mesh_y_pps', 'algo', 'tension'}):
+                if current != self.mesh or profile != self.mesh or not self._owned_pending(config, self.mesh):
                     raise ValueError('Resolve other config changes first')
                 self._submit('saving', 'printer.gcode.script', {'script': 'SAVE_CONFIG'}, 'Saving; Klipper restarts')
                 return
@@ -270,4 +305,7 @@ class BedMeshSession:
                 return
             self.revision += 1
         except Exception:
-            self._fail('Mesh operation failed; check log')
+            message = ('Save unconfirmed; check after restart' if self.phase == 'saving'
+                       else 'Stop unconfirmed; check printer' if self.phase == 'stopping'
+                       else 'Mesh operation failed; check log')
+            self._fail(message)
