@@ -25,7 +25,7 @@ Bu proje, Ender 3 V2 gibi yazıcılarda kullanılan yaygın 4.3 inç DWIN T5UIC1
 
 Uygulama Raspberry Pi üzerinde çalışır; ekranla UART üzerinden, encoder ile GPIO üzerinden, yazıcıyla ise Moonraker HTTP/WebSocket API'leri üzerinden haberleşir. OctoPrint uyumluluk katmanına veya doğrudan Klipper Unix socket entegrasyonuna ihtiyaç duymaz.
 
-Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod tabanı özel Moonraker istemci/subscription katmanı, capability tabanlı menüler, komut/sonuç takibi, güvenli input yönlendirme, runtime motion kontrolleri, live jog, probe kalibrasyonu, kalıcı presetler, Happy Hare MMU görselleştirmesi, Spoolman kalan filament verisi, case-light kontrolü, UART recovery ve regression test altyapısı içerir.
+Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod tabanı özel Moonraker istemci/subscription katmanı, capability tabanlı menüler, komut/sonuç takibi, güvenli input yönlendirme, runtime motion kontrolleri, live jog, probe kalibrasyonu, Mainsail ile senkronize sıcaklık presetleri, Happy Hare MMU görselleştirmesi, Spoolman kalan filament verisi, case-light kontrolü, UART recovery ve regression test altyapısı içerir.
 
 ## Öne çıkan özellikler
 
@@ -50,7 +50,7 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - Dayanıklı UART handshake ve reconnect davranışı
 - Ayrı komut worker'ı ve connection-epoch koruması
 - Event queue tabanlı input yönlendirme ile encoder acceleration
-- systemd servis örneği
+- Installer tarafından yapılandırılan `KlipperDWIN.service` servisi
 - Python unit/regression testleri
 
 ## Proje durumu
@@ -66,9 +66,9 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 - ✅ **Encoder ile power-on** — Moonraker power device üzerinden yazıcıyı açma.
 - ✅ **Kurulum & güncelleme** — interaktif yapılandırma, systemd servisi ve Moonraker Update Manager entegrasyonu.
 - ✅ **Güvenilirlik** — UART recovery, kontrollü komut yürütme ve regression testleri.
-- 🛠️ **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.
+- ✅ **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.
+- ✅ **Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.
 - 🛠️ **Bed Mesh Visualization & Control** — grafiksel `bed_mesh` gösterimi, ölçülen Z değerlerinin görselleştirilmesi, aktif mesh/profile bilgisi ve Bed Mesh işlemlerine LCD üzerinden erişim.
-- 🛠️ **Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.
 - 🛠️ **Happy Hare MMU Control** — mevcut Home-screen görselleştirmesine ek olarak ayrı MMU kontrol menüsü.
 - 🛠️ **Happy Hare Multi-Unit Support** — mevcut sabit `unit0_mmu_exit_leds` kaynağı yerine dinamik MMU unit ve LED-source keşfi.
 - 🛠️ **Hardware Validation** — fiziksel testlerin ek DWIN T5UIC1 ve Klipper konfigürasyonlarında genişletilmesi.
@@ -237,7 +237,6 @@ Değerler Moonraker status ile senkron kalır. Açık bir editör kendi lokal he
 
 Prepare; homing, hareket, cooldown/preheat ve runtime Z-offset erişimi gibi yazıcı hazırlık işlemlerini içerir. Girdiler, her yazıcının aynı heater, fan, probe veya leveling donanımına sahip olduğunu varsaymak yerine keşfedilen Klipper capability'lerinden oluşturulur.
 
-
 #### Screws Tilt Adjust
 
 <p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerans sağlandı"></p>
@@ -249,7 +248,6 @@ Başarı mesajları yeşil, ayar gereken durumdaki talimatlar nötr beyazdır.
 Sonuç ekranı mriscoc ProUI'ın dört köşe düzenini kullanır: her köşede renkli bir gösterge ve yanında siyah zeminde büyük yazılar görünür: **Base** veya üst satırda **CW/CCW**, alt satırda **tur:dakika**. `01:20`, bir tam tur ve turun 20/60'ı anlamına gelir. Ortadaki talimat, referans dışındaki en büyük dönüşü isteyen vidayı seçerek köşesini, yönünü ve dönüş miktarını gösterir. Yön ve miktar doğrudan Klipper'dan alınır; vida adımı UI'da yeniden hesaplanmaz. Referans UI'daki gibi, ölçülen en yüksek ve en düşük köşe arasındaki fark **0,05 mm'nin altındaysa** **Corners leveled / Tolerance achieved!** gösterilir; aksi durumda ayar talimatı görünür. Klipper'ın yuvarlayarak verdiği `00:60`, ekranda `01:00` olarak gösterilir.
 
 Hesaplama sırasında enkoder girişi kilitlenir. **Continue** alt menüye döner; **Calculate** ile yeniden ölçüm yapılabilir. Sonuçlar komutun tamamlandığı doğrulandıktan sonra sorgulanır; aynı değerleri veren tekrar ölçümleri de günceldir. Hata, bağlantı kaybı veya doğrulanamayan ölçümde önceki sonuç başarı olarak gösterilmez; komutlar otomatik tekrarlanmaz. `SAVE_CONFIG` veya otomatik vida ayarı yapılmaz. Üç, beş veya daha fazla vidalı yapılandırmalar dört köşe görünümüne zorlanmak yerine reddedilir.
-
 
 ### 7. Move / Live Jog
 
@@ -341,6 +339,7 @@ Menüler sabit bir yazıcı şablonundan oluşturulmaz. Uygulama startup/reconne
 - part-cooling fan var/yok
 - probe/manual-probe desteği
 - bed-mesh/leveling desteği
+- `screws_tilt_adjust` yapılandırması
 - aktif Klipper sürümünün desteklediği motion alanları
 - case-light macro varlığı
 - Happy Hare MMU object'leri
@@ -411,7 +410,7 @@ flowchart LR
     KL <--> HH[Happy Hare]
 ```
 
-Rendering ve menü state'inin sahibi display thread'idir. GPIO callback'leri yalnızca immutable input eventlerini kuyruğa ekler. Yazıcı state'i birleştirilmiş ve immutable Moonraker subscription snapshot'ından gelir; komutlar ayrı seri worker üzerinden yürütüldüğü için UI rendering blocking HTTP isteklerine bağlı değildir.
+Rendering ve menü state'inin sahibi display thread'idir. GPIO callback'leri yalnızca immutable input eventlerini kuyruğa ekler. Yazıcı state'i birleştirilmiş ve immutable Moonraker subscription snapshot'ından gelir; HTTP komutları ayrı seri worker üzerinde yürütülür. Screws Tilt gibi uzun işlemler, telemetriyi ve UI rendering'i engellemeyen, tamamlanması takip edilen WebSocket RPC istekleri kullanır.
 
 </details>
 
@@ -429,7 +428,7 @@ http://127.0.0.1:7125
 Uygulama şunları kullanır:
 
 - komutlar ve bounded request/response işlemleri için HTTP
-- printer object discovery ve canlı subscription için Moonraker WebSocket JSON-RPC
+- printer object discovery, canlı subscription ve uzun Screws Tilt komutlarının tamamlanma takibi için Moonraker WebSocket JSON-RPC
 - eski connection'dan kalan queued komutların reconnect sonrası çalışmasını engelleyen connection epoch'ları
 - otomatik WebSocket reconnect
 - sessiz bağlantı kopmalarını algılayan ping/pong kontrolleri
@@ -495,26 +494,17 @@ Mevcut ayarlar:
 <details>
 <summary><strong>systemd kurulumunu göster</strong></summary>
 
-Örnek unit ve environment dosyası repo içinde bulunur.
+`./install.sh`, repodaki `simpleLCD.service` şablonunu kurulum kullanıcısı ve home diziniyle doldurup `/etc/systemd/system/KlipperDWIN.service` olarak kurar ve etkinleştirir. Şablonu doğrudan kopyalamayın; servisi oluşturmak veya güncellemek için installer'ı çalıştırın:
 
 ```bash
-id -u dwinlcd >/dev/null 2>&1 || \
-  sudo useradd --system --user-group \
-  --home-dir /var/lib/dwin-lcd --no-create-home \
-  --shell /usr/sbin/nologin dwinlcd
-
-sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
-sudoedit /etc/default/dwin-lcd
-
-sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
-  /etc/systemd/system/simpleLCD.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now simpleLCD.service
-sudo journalctl -u simpleLCD.service -f
+cd ~/KlipperDWIN
+./install.sh
+sudo systemctl status KlipperDWIN.service --no-pager
+sudo systemctl restart KlipperDWIN.service
+sudo journalctl -u KlipperDWIN.service -f
 ```
 
-Servis ayrı bir kullanıcı kullanır, hata durumunda yeniden başlar, presetleri `/var/lib/dwin-lcd` altında saklar ve journald'a log yazar. Servis kullanıcısının işletim sisteminizde gerçek UART ve gpiochip cihazlarına erişebildiğini doğrulayın.
+Servis kurulum kullanıcısıyla, `~/klipperdwin-env` sanal ortamında çalışır; ayarları `~/.config/KlipperDWIN/KlipperDWIN.env` dosyasından okur, hata durumunda yeniden başlar ve journald'a log yazar. Ayar değişiklikleri için `./configure.sh` kullanın. Installer mevcut `dialout`/`gpio` gruplarını servise ekler; kullanıcının gerçek UART ve gpiochip cihazlarına erişebildiğini doğrulayın.
 
 </details>
 
@@ -525,7 +515,7 @@ Servis ayrı bir kullanıcı kullanır, hata durumunda yeniden başlar, presetle
 
 Proje yazıcıyı değiştiren işlemlerde bilinçli olarak optimistic UI state kullanmaz.
 
-- Komutlar ayrı worker üzerinde seri yürütülür.
+- HTTP komutları ayrı worker üzerinde seri yürütülür; uzun Screws Tilt RPC istekleri telemetriyi engellemez.
 - Başarısız komutlar otomatik tekrar gönderilmez.
 - Connection değişimi eski epoch'tan kalan queued komutları geçersiz kılar.
 - Offline/eski input eventleri atılır.
@@ -535,6 +525,7 @@ Proje yazıcıyı değiştiren işlemlerde bilinçli olarak optimistic UI state 
 - Print start hem command result hem subscribed print state bekler.
 - Pause/resume/cancel karşılık gelen subscribed state'i bekler.
 - Probe calibration manual-probe state değişimlerini bekler.
+- Screws Tilt, komutun doğrulanmış tamamlanmasını ve ardından güncel sonuç sorgusunu bekler.
 - UART short-write/hatalarda fail-closed davranır.
 - Panel reconnect state'i yeniden çizer fakat printer komutlarını tekrar oynatmaz.
 
@@ -580,6 +571,8 @@ cd ~/KlipperDWIN
 
 Testler Moonraker client/subscription katmanını, printer-state normalization'ı, capability detection'ı, menü davranışlarını, input routing'i, command handling'i, movement safety'yi, UART framing/render helper'larını, MMU verisini ve diğer regression alanlarını kapsar.
 
+Screws Tilt regresyonları; WebSocket RPC tamamlanmasını, güncel ve aynı değerli tekrar sonuçlarını, köşe yerleşimini, toleransı, talimat renklerini ve hata/bağlantı kaybı akışlarını kapsar.
+
 Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 
 </details>
@@ -594,6 +587,7 @@ Unit testler fiziksel yazıcı doğrulamasının yerine geçmez.
 - Multi-unit MMU LED-source seçimi henüz genelleştirilmemiştir.
 - Case-light desteği uyumlu bir `M355` macro'ya bağlıdır.
 - Runtime Motion değerleri otomatik olarak printer configuration'a kalıcı yazılmaz.
+- Screws Tilt görünümü dört ayrı köşe vidası gerektirir; başarı eşiği sabit 0,05 mm peak-to-peak yükseklik farkıdır.
 - Test edilen DWIN/encoder bağlantısı dışındaki donanım uyumluluğu motion kontrollerine güvenmeden önce doğrulanmalıdır.
 
 </details>

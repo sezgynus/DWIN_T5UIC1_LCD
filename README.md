@@ -39,6 +39,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Runtime motion tuning for max velocity, max acceleration, square-corner velocity and minimum cruise ratio
 - Runtime Z-offset control
 - Four-corner screws tilt calibration with Klipper turn-direction guidance
+- Probe calibration wizard with explicit TESTZ steps and guarded SAVE_CONFIG
 - Automatic Mainsail temperature-preset discovery, editing and write-back
 - Optional case-light UI through an M355 macro
 - Happy Hare MMU visualization on the home screen
@@ -49,7 +50,7 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - Resilient UART handshake and reconnect behavior
 - Dedicated command worker and connection-epoch protection
 - Encoder acceleration with event-queue based input routing
-- systemd service example
+- Installer-configured `KlipperDWIN.service` service
 - Python unit/regression tests
 
 ## Project status
@@ -65,9 +66,9 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 - ✅ **Encoder power-on** — printer power-on through a Moonraker power device.
 - ✅ **Installation & updates** — interactive configuration, systemd service and Moonraker Update Manager integration.
 - ✅ **Reliability** — UART recovery, guarded command execution and regression tests.
-- 🛠️ **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.
+- ✅ **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.
+- ✅ **Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.
 - 🛠️ **Bed Mesh Visualization & Control** — graphical `bed_mesh` display, probed Z-value visualization, active mesh/profile information and LCD access to Bed Mesh operations.
-- 🛠️ **Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.
 - 🛠️ **Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.
 - 🛠️ **Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.
 - 🛠️ **Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations.
@@ -236,7 +237,6 @@ Values remain synchronized with Moonraker status. An editor keeps its local targ
 
 Prepare contains printer setup actions such as homing, movement, cooldown/preheat and runtime Z-offset access. Entries are built from discovered Klipper capabilities rather than assuming every printer has the same heaters, fan, probe or leveling hardware.
 
-
 #### Screws Tilt Adjust
 
 <p align="center"><img src="docs/assets/screens/screws-tilt-success.png" width="360" alt="Screws Tilt Adjust: tolerance achieved"></p>
@@ -248,7 +248,6 @@ When `[screws_tilt_adjust]` is configured, **Prepare → Screws Tilt Adjust → 
 The result follows the mriscoc ProUI four-corner layout: each corner has a colored marker with large labels beside it on the black background: **Base**, or **CW/CCW** above **turns:minutes**. `01:20` means one full turn plus 20/60 of a turn. The central instruction selects the non-reference screw with the largest required rotation and displays its corner, direction and amount. Directions and amounts come directly from Klipper; the UI does not recalculate thread pitch. As in the reference UI, **Corners leveled / Tolerance achieved!** requires a peak-to-peak measured height difference below **0.05 mm**. Otherwise an adjustment is shown. Turn values rounded to `00:60` by Klipper are displayed as `01:00`.
 
 Encoder input is locked during calculation. **Continue** returns to the submenu, where **Calculate** can run another measurement. Results are queried after confirmed command completion, so identical repeated measurements are still fresh. Failed, disconnected or unconfirmed measurements never display the previous result as success; commands are never replayed automatically. No `SAVE_CONFIG` or automatic screw adjustment is performed. Configurations with three, five or more screws are rejected rather than forced into the four-corner view.
-
 
 ### 7. Move / Live Jog
 
@@ -340,6 +339,7 @@ Examples include:
 - part-cooling fan present or absent
 - probe/manual-probe support
 - bed-mesh/leveling support
+- `screws_tilt_adjust` configuration
 - motion fields supported by the active Klipper version
 - case-light macro availability
 - Happy Hare MMU objects
@@ -410,7 +410,7 @@ flowchart LR
     KL <--> HH[Happy Hare]
 ```
 
-The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; commands are serialized separately so UI rendering does not depend on blocking HTTP requests.
+The display thread owns rendering and menu state. GPIO callbacks only enqueue immutable input events. Printer state comes from a merged, immutable Moonraker subscription snapshot; HTTP commands run on a separate serialized worker. Long operations such as Screws Tilt use completion-tracked WebSocket RPC requests without blocking telemetry or UI rendering.
 
 </details>
 
@@ -428,7 +428,7 @@ http://127.0.0.1:7125
 The application uses:
 
 - HTTP for commands and bounded request/response operations
-- Moonraker WebSocket JSON-RPC for printer object discovery and live subscriptions
+- Moonraker WebSocket JSON-RPC for printer object discovery, live subscriptions and completion tracking of long Screws Tilt commands
 - connection epochs so queued commands from an old connection cannot run after reconnect
 - automatic WebSocket reconnect
 - ping/pong checks for silent disconnect detection
@@ -494,26 +494,17 @@ Available configuration:
 <details>
 <summary><strong>Show systemd setup</strong></summary>
 
-A sample unit and environment file are included.
+`./install.sh` fills the repository's `simpleLCD.service` template with the installation user and home directory, installs it as `/etc/systemd/system/KlipperDWIN.service`, and enables it. Run the installer to create or update the service rather than copying the template directly:
 
 ```bash
-id -u dwinlcd >/dev/null 2>&1 || \
-  sudo useradd --system --user-group \
-  --home-dir /var/lib/dwin-lcd --no-create-home \
-  --shell /usr/sbin/nologin dwinlcd
-
-sudo install -m 0600 ~/KlipperDWIN/dwin-lcd.env.example /etc/default/dwin-lcd
-sudoedit /etc/default/dwin-lcd
-
-sudo install -m 0644 ~/KlipperDWIN/simpleLCD.service \
-  /etc/systemd/system/simpleLCD.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now simpleLCD.service
-sudo journalctl -u simpleLCD.service -f
+cd ~/KlipperDWIN
+./install.sh
+sudo systemctl status KlipperDWIN.service --no-pager
+sudo systemctl restart KlipperDWIN.service
+sudo journalctl -u KlipperDWIN.service -f
 ```
 
-The service uses a dedicated account, restarts on failure, stores presets in `/var/lib/dwin-lcd`, and logs to journald. Confirm that the service user has access to the actual UART and gpiochip devices on your OS.
+The service runs as the installation user with the `~/klipperdwin-env` virtual environment, reads settings from `~/.config/KlipperDWIN/KlipperDWIN.env`, restarts on failure and logs to journald. Use `./configure.sh` to change settings. The installer adds existing `dialout`/`gpio` groups to the service; confirm that the user can access the actual UART and gpiochip devices.
 
 </details>
 
@@ -524,7 +515,7 @@ The service uses a dedicated account, restarts on failure, stores presets in `/v
 
 The project intentionally avoids optimistic UI state for printer-changing actions.
 
-- Commands are serialized on a dedicated worker.
+- HTTP commands are serialized on a dedicated worker; long Screws Tilt RPC requests do not block telemetry.
 - Failed commands are not replayed automatically.
 - Connection changes invalidate queued commands from the old epoch.
 - Offline/old input events are discarded.
@@ -534,6 +525,7 @@ The project intentionally avoids optimistic UI state for printer-changing action
 - Print start waits for both command result and subscribed print state.
 - Pause/resume/cancel wait for the corresponding subscribed state.
 - Probe calibration waits for manual-probe state changes.
+- Screws Tilt waits for confirmed command completion followed by a fresh result query.
 - UART writes fail closed on short writes/errors.
 - Panel reconnect redraws state but never replays printer commands.
 
@@ -577,6 +569,8 @@ cd ~/KlipperDWIN
 
 The tests cover the Moonraker client/subscription layer, printer-state normalization, capability detection, menu behavior, input routing, command handling, movement safety, UART framing/render helpers, MMU data and other regressions.
 
+Screws Tilt regressions cover WebSocket RPC completion, fresh and identical repeated results, corner placement, tolerance, instruction colors and error/disconnect flows.
+
 Unit tests do not replace physical validation on a printer.
 
 </details>
@@ -587,11 +581,11 @@ Unit tests do not replace physical validation on a printer.
 <summary><strong>Show known limitations</strong></summary>
 
 - The display UI is designed around the existing 272×480 DWIN asset/layout family.
-- Real screenshots in this README are still pending.
 - Live Happy Hare lane colors currently use the explicitly named `unit0_mmu_exit_leds` object.
 - Multi-unit MMU LED-source selection is not generalized yet.
 - Case-light support depends on a compatible `M355` macro.
 - Runtime Motion values are not automatically persisted to printer configuration.
+- The Screws Tilt view requires four distinct corner screws; its success threshold is a fixed 0.05 mm peak-to-peak height difference.
 - Hardware compatibility outside the tested DWIN/encoder wiring should be validated before relying on motion controls.
 
 </details>
