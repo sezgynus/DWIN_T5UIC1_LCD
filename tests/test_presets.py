@@ -9,8 +9,8 @@ from test_regressions import backend
 
 
 def defaults():
-    return [dict(name='PLA', hotend_temp=200, bed_temp=60, fan_speed=100),
-            dict(name='ABS', hotend_temp=210, bed_temp=100, fan_speed=30)]
+    return [dict(name='PLA', hotend_temp=200, bed_temp=60),
+            dict(name='ABS', hotend_temp=210, bed_temp=100)]
 
 
 class PresetTests(unittest.TestCase):
@@ -27,11 +27,10 @@ class PresetTests(unittest.TestCase):
         first = self.printer()
         first.material_preset[0].hotend_temp = 225
         first.material_preset[0].bed_temp = 70
-        first.material_preset[0].fan_speed = 40
         self.assertTrue(first.save_settings())
         second = self.printer()
         self.assertEqual(vars(second.material_preset[0]),
-                         dict(name='PLA', hotend_temp=225, bed_temp=70, fan_speed=40))
+                         dict(name='PLA', hotend_temp=225, bed_temp=70))
         second.material_preset[0].hotend_temp = 230
         self.assertEqual(first.material_preset[0].hotend_temp, 225)
 
@@ -59,7 +58,7 @@ class PresetTests(unittest.TestCase):
 
     def test_invalid_documents_are_rejected_before_writing(self):
         store = PresetStore(self.path)
-        for key, value in (('fan_speed', 101), ('hotend_temp', float('nan')),
+        for key, value in (('hotend_temp', float('nan')),
                            ('bed_temp', -1), ('hotend_temp', True)):
             data = defaults()
             data[0][key] = value
@@ -72,7 +71,6 @@ class PresetTests(unittest.TestCase):
         self.path.write_text(json.dumps(dict(version=2, presets=defaults())))
         with self.assertLogs(level='WARNING'):
             printer = self.printer()
-        self.assertEqual(printer.material_preset[1].fan_speed, 100)
 
     def test_default_path_honors_xdg_directory(self):
         with patch.dict('os.environ', {'XDG_CONFIG_HOME': self.directory.name}):
@@ -83,11 +81,10 @@ class MainsailPresetTests(unittest.TestCase):
     def test_maps_name_heaters_and_part_fan(self):
         preset = backend.material_preset_t.from_mainsail({'name':'PETG Fast','gcode':'M106 S128','values':{'extruder':{'bool':True,'type':'heater','value':235},'heater_bed':{'bool':True,'type':'heater','value':80}}})
         self.assertEqual((preset.name, preset.hotend_temp, preset.bed_temp), ('PETG Fast',235,80))
-        self.assertAlmostEqual(preset.fan_speed, 128 * 100 / 255)
 
     def test_ignores_disabled_values(self):
         preset = backend.material_preset_t.from_mainsail({'name':'ABS','gcode':'','values':{'extruder':{'bool':False,'type':'heater','value':260},'heater_bed':{'bool':True,'type':'heater','value':105}}})
-        self.assertEqual((preset.hotend_temp,preset.bed_temp,preset.fan_speed),(0,105,0))
+        self.assertEqual((preset.hotend_temp,preset.bed_temp),(0,105))
 
     def test_temperature_fan_value_is_preserved(self):
         preset = backend.material_preset_t.from_mainsail({'name':'Chamber','gcode':'','values':{'temperature_fan chamber':{'bool':True,'type':'temperature_fan','value':45}}})
@@ -102,7 +99,7 @@ class MainsailPresetTests(unittest.TestCase):
         printer.material_preset = [backend.material_preset_t('PETG', 240, 85, 30)]
         with patch.object(printer, 'preHeat') as preheat:
             printer.preheat_preset(0)
-        preheat.assert_called_once_with(85, 240, fan_speed=30)
+        preheat.assert_called_once_with(85, 240)
 
     def test_preheat_preset_rejects_invalid_index(self):
         printer = self.printer()

@@ -93,11 +93,10 @@ class buzz_t:
 
 
 class material_preset_t:
-    def __init__(self, name, hotend_temp=0, bed_temp=0, fan_speed=0, mainsail_id=None, mainsail_raw=None):
+    def __init__(self, name, hotend_temp=0, bed_temp=0, mainsail_id=None, mainsail_raw=None):
         self.name = str(name)
         self.hotend_temp = hotend_temp
         self.bed_temp = bed_temp
-        self.fan_speed = fan_speed
         self.mainsail_id = mainsail_id
         self.mainsail_raw = copy.deepcopy(mainsail_raw) if mainsail_raw is not None else None
 
@@ -105,7 +104,7 @@ class material_preset_t:
     def from_mainsail(cls, preset, preset_id=None):
         if not isinstance(preset, Mapping) or not str(preset.get('name', '')).strip():
             raise ValueError('Invalid Mainsail preset')
-        hotend = bed = fan = 0.0
+        hotend = bed = 0.0
         values = preset.get('values', {})
         if not isinstance(values, Mapping):
             raise ValueError('Invalid Mainsail preset values')
@@ -119,16 +118,7 @@ class material_preset_t:
                 hotend = value
             elif device == 'heater_bed':
                 bed = value
-            elif setting.get('type') == 'temperature_fan':
-                fan = max(fan, value)
-        gcode = preset.get('gcode', '')
-        if isinstance(gcode, str):
-            matches = re.findall(r'(?im)^\\s*M106\\s+[^\\n]*?S(\\d+(?:\\.\\d+)?)', gcode)
-            if matches:
-                pwm = float(matches[-1])
-                if 0 <= pwm <= 255:
-                    fan = pwm * 100 / 255
-        return cls(str(preset['name']).strip(), hotend, bed, fan, preset_id, preset)
+        return cls(str(preset['name']).strip(), hotend, bed, preset_id, preset)
 
 
 class PrinterData:
@@ -232,7 +222,7 @@ class PrinterData:
 
     @staticmethod
     def _preset_signature(presets):
-        return tuple((item.mainsail_id, item.name, item.hotend_temp, item.bed_temp, item.fan_speed)
+        return tuple((item.mainsail_id, item.name, item.hotend_temp, item.bed_temp)
                      for item in presets)
 
     def refresh_mainsail_presets(self, force=False):
@@ -847,7 +837,7 @@ class PrinterData:
         preset = next((item for item in self.material_preset if item.name == profile), None)
         if preset is None:
             raise ValueError('Unknown preheat profile')
-        return self.preHeat(preset.bed_temp, preset.hotend_temp, fan_speed=preset.fan_speed)
+        return self.preHeat(preset.bed_temp, preset.hotend_temp)
 
     def preheat_preset(self, index):
         if not isinstance(index, int) or not 0 <= index < len(self.material_preset):
@@ -871,11 +861,6 @@ class PrinterData:
                             setting = dict(setting)
                             setting['value'] = target
                             values[device] = setting
-                    gcode = raw.get('gcode', '')
-                    if isinstance(gcode, str) and re.search(r'(?im)^\s*M106\s+[^\n]*?S\d+(?:\.\d+)?', gcode):
-                        pwm = max(0, min(255, round(float(preset.fan_speed) * 255 / 100)))
-                        raw['gcode'] = re.sub(r'(?im)^(\s*M106\s+[^\n]*?S)\d+(?:\.\d+)?',
-                                              lambda match: match.group(1) + str(pwm), gcode)
                     self.client.post('/server/database/item', {
                         'namespace': 'mainsail',
                         'key': 'presets.presets.' + preset.mainsail_id,

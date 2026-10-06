@@ -273,8 +273,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     PREHEAT_CASE_TEMP = (0 + 1)
     PREHEAT_CASE_BED = (PREHEAT_CASE_TEMP + 1)
-    PREHEAT_CASE_FAN = (PREHEAT_CASE_BED + 0)
-    PREHEAT_CASE_SAVE = (PREHEAT_CASE_FAN + 1)
+    PREHEAT_CASE_SAVE = (PREHEAT_CASE_BED + 1)
     PREHEAT_CASE_TOTAL = PREHEAT_CASE_SAVE
 
     # Dwen serial screen initialization
@@ -446,7 +445,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 self._menus[menu].append(('TEMP', 'Hotend temp', self.ICON_HotendTemp))
             if self.pd.HAS_HEATED_BED:
                 self._menus[menu].append(('BED', 'Bed temp', self.ICON_BedTemp))
-            if self.pd.HAS_FAN:
+            if self.pd.HAS_FAN and menu != 'preheat':
                 self._menus[menu].append(('FAN', 'Fan speed', self.ICON_FanSpeed))
         self._menus['tune'].append(('ZOFF', 'Runtime Z offset', self.ICON_Zoffset))
         if heat:
@@ -521,7 +520,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 elif key == 'BED':
                     value = preset.bed_temp if preset else self.pd.thermalManager['temp_bed']['target']
                 elif key == 'FAN':
-                    value = preset.fan_speed if preset else self.pd.thermalManager['fan_speed'][0]
+                    value = self.pd.thermalManager['fan_speed'][0]
                 elif key == 'SPEED':
                     value = self.pd.feedrate_percentage
                 elif key == 'ZOFF':
@@ -545,7 +544,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             value = values.Bed_Temp
         else:
             self.checkkey = self.FanSpeed
-            values.Fan_speed = preset.fan_speed if preset else self.pd.thermalManager['fan_speed'][0]
+            values.Fan_speed = self.pd.thermalManager['fan_speed'][0]
             value = values.Fan_speed
         self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
                                self.lcd.Color_White, self.lcd.Select_Color,
@@ -1515,20 +1514,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     def HMI_FanSpeed(self):
         event = self.get_encoder_state()
         mode = self.pd.HMI_ValueStruct.show_mode
-        if mode == -2:
-            row = self.PREHEAT_CASE_FAN
-        elif mode == -1:
+        if mode == -1:
             row = self.TEMP_CASE_FAN
         else:
             row = self.TUNE_CASE_FAN + self.MROWS - self.index_tune
         if event == self.ENCODER_DIFF_ENTER:
             value = self.pd.HMI_ValueStruct.Fan_speed
-            if mode == -2:
-                profile = getattr(self, '_active_preset', 0)
-                self.pd.material_preset[profile].fan_speed = value
-                self.checkkey = self.PLAPreheat
-                self._draw_capability_menu('preheat', self.select_PLA, profile=profile)
-            else:
+            if mode != -2:
                 self._action("Fan speed", lambda: self.pd.setFanSpeed(value))
                 self.checkkey = self.TemperatureID if mode == -1 else self.Tune
                 self.Draw_Temperature_Menu() if mode == -1 else self.Draw_Tune_Menu()
