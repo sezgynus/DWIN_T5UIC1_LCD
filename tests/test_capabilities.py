@@ -496,6 +496,30 @@ class CapabilityMenuTests(unittest.TestCase):
         rows = [call.args[0] for call in result.Draw_Menu_Line.call_args_list]
         self.assertEqual(rows, list(range(6)))
 
+    def test_temperature_scroll_uses_temperature_offset(self):
+        result = display(snapshot())
+        result.pd.material_preset = [
+            type('Preset', (), {'name': 'Preset %d' % i, 'hotend_temp': 200, 'bed_temp': 60})()
+            for i in range(6)
+        ]
+        result.pd.preset_revision += 1
+        result._configure_menus()
+        result.index_temp = result.TEMP_CASE_TOTAL
+        result.select_temp.set(result.TEMP_CASE_TOTAL)
+        result.Draw_Menu_Line = Mock()
+        result.Draw_Temperature_Menu()
+        rows = [call.args[0] for call in result.Draw_Menu_Line.call_args_list]
+        self.assertEqual(rows, list(range(6)))
+
+    def test_preset_refresh_resets_temperature_selection(self):
+        result = display(snapshot())
+        result.checkkey = result.PLAPreheat
+        result.pd.preset_revision += 1
+        result.select_temp.set(2)
+        result._configure_menus()
+        self.assertEqual(result.checkkey, result.TemperatureID)
+        self.assertEqual(result.select_temp.now, 0)
+
     def test_probe_detection_does_not_start_old_calibration_flow(self):
         result = display(snapshot(probe=True))
         result.select_prepare.set(result.PREPARE_CASE_ZOFF)
