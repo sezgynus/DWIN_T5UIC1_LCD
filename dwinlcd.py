@@ -2091,7 +2091,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         visible_count = 11
         max_scroll = max(0, len(items) - visible_count)
         self._info_scroll = max(0, min(getattr(self, '_info_scroll', 0), max_scroll))
-        y = 76
+        y = 92
         for kind, label, value in items[self._info_scroll:self._info_scroll + visible_count]:
             if kind == 'section':
                 self._draw_info_section(label, y)
