@@ -290,8 +290,10 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(labels[1][3], 0x0000)
         self.assertEqual(labels[2][3], result.lcd.Color_White)
         self.assertEqual(labels[3][3], result.lcd.Color_White)
-        self.assertEqual(labels[1][7], labels[0][7] + 1)
-        self.assertEqual(labels[3][7], labels[2][7] + 1)
+        self.assertEqual(labels[1][5], labels[0][5] + 1)
+        self.assertEqual(labels[3][5], labels[2][5] + 1)
+        self.assertEqual(labels[1][6], labels[0][6])
+        self.assertEqual(labels[3][6], labels[2][6])
 
     def test_mmu_visual_is_not_redrawn_for_unrelated_status_updates(self):
         result = display(snapshot())
