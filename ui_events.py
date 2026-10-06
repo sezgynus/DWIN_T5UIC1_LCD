@@ -80,11 +80,16 @@ class UIEventLoop:
             finally:
                 self._ready.set()
             next_tick = time.monotonic() + self._interval
+            scheduled_interval = self._interval
             while not self._stop.is_set():
+                if self._interval != scheduled_interval:
+                    next_tick = min(next_tick, time.monotonic() + self._interval)
+                    scheduled_interval = self._interval
                 if time.monotonic() >= next_tick:
                     self._invoke(self._tick)
                     # No catch-up burst after slow rendering.
                     next_tick = time.monotonic() + self._interval
+                    scheduled_interval = self._interval
                 try:
                     event = self._queue.get(timeout=max(0, next_tick - time.monotonic()))
                 except Empty:

@@ -14,6 +14,13 @@ from test_regressions import ui, backend
 
 
 class EventLoopTests(unittest.TestCase):
+    def test_shorter_interval_from_input_does_not_wait_for_previous_slow_tick(self):
+        ticks=Event()
+        loop=UIEventLoop(Mock(),lambda event:loop.set_interval(.02),ticks.set,Mock(),interval=2.0)
+        self.addCleanup(loop.close)
+        loop.start();loop.post(InputEvent('press',1,0))
+        self.assertTrue(ticks.wait(.5))
+
     def test_all_producers_and_ticks_have_one_owner(self):
         owners = []
         events = []

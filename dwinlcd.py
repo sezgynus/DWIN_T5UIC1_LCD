@@ -395,6 +395,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 if time.monotonic() < getattr(self, '_preview_status_at', 0):
                     return
                 self._preview_status_at = time.monotonic() + 2.0
+            elif getattr(self, 'checkkey', None) == self.SelectFile:
+                self._poll_thumbnail_preload()
+                if hasattr(self, '_loop'):
+                    self._loop.set_interval(.02 if self._thumbnail_cache.has_work() else 2.0)
+                if time.monotonic() < getattr(self, '_file_status_at', 0):
+                    return
+                self._file_status_at = time.monotonic() + 2.0
             elif hasattr(self, '_loop'):
                 self._loop.set_interval(2.0)
             self.EachMomentUpdate()
@@ -980,6 +987,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._file_view_epoch = self.pd.state.epoch
         self._file_view_revision = self.pd.state.file_revision
         self._file_view_sort_revision = self.pd.file_sort_revision
+        self._sync_thumbnail_cache()
+        if hasattr(self, '_loop'):
+            self._loop.set_interval(.02)
         return True
 
     def _enter_file_directory(self, directory, select=None):

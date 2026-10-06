@@ -3,7 +3,7 @@ from concurrent.futures import Future
 from unittest.mock import Mock, patch
 import unittest
 from PIL import Image
-from thumbnail_preview import image_jpeg, image_runs, load_thumbnail, merge_runs
+from thumbnail_preview import image_jpeg, load_thumbnail
 from test_capabilities import display, snapshot
 import test_files
 
@@ -13,19 +13,9 @@ def png(size=(128,128), color='red'):
 
 
 class ThumbnailTests(unittest.TestCase):
-    def test_solid_image_run_compression_and_rgb565(self):
-        runs=image_runs(png())
-        self.assertEqual(len(runs),1)
-        self.assertEqual(runs[0],(0xF800,0,0,79,79))
-
-    def test_aspect_ratio_transparency_and_black_background(self):
-        runs=image_runs(png((200,100)))
-        self.assertTrue(all(20<=r[2]<=r[4]<=59 for r in runs))
-        self.assertEqual(image_runs(png(color=(0,0,0,0))),())
-
     def test_corrupt_and_oversized_images_rejected(self):
-        with self.assertRaises(Exception):image_runs(b'invalid')
-        with self.assertRaises(ValueError):image_runs(png((2100,2100)))
+        with self.assertRaises(Exception):image_jpeg(b'invalid')
+        with self.assertRaises(ValueError):image_jpeg(png((2100,2100)))
 
     def test_thumbnail_parent_path_encoding_and_download_limit(self):
         client=Mock();client.get.return_value={'result':{'thumbnails':[
@@ -62,18 +52,20 @@ class ThumbnailTests(unittest.TestCase):
         view.get_encoder_state=Mock(return_value=view.ENCODER_DIFF_ENTER)
         view._preview_path='a.gcode';view._preview_epoch=view.pd.state.epoch
         view._preview_choice=1;view._preview_error=None
-        view._preview_runs=None;view._preview_index=0
+        view._preview_cache_key=view._thumbnail_keys['a.gcode']
+        view._preview_shown=False;view._preview_cache_hit=False;view._preview_open_at=0
         view._preview_future=Future();view.checkkey=view.FilePreview
+        view._thumbnail_cache.loader=Mock(return_value=view._preview_future)
+        view._thumbnail_cache.job=(view._preview_cache_key,view._preview_future,view._thumbnail_cache.generation)
         view._loop=Mock()
         return view
 
     def test_selecting_file_opens_confirmation_without_print(self):
         view=self.make();view.checkkey=view.SelectFile;view.select_file.set(1)
         view.pd.openAndPrintFile=Mock()
-        thread=Mock()
-        with patch.dict(view._open_file_preview.__func__.__globals__, {'Thread':thread}):
-            view.HMI_SelectFile()
-        thread.return_value.start.assert_called_once()
+        view._thumbnail_cache.job=None
+        view.HMI_SelectFile()
+        view._thumbnail_cache.loader.assert_called_once_with(view._thumbnail_keys['a.gcode'])
         self.assertEqual(view.checkkey,view.FilePreview)
         self.assertEqual(view._preview_choice,1)
         view.pd.openAndPrintFile.assert_not_called()
@@ -84,22 +76,21 @@ class ThumbnailTests(unittest.TestCase):
         self.assertEqual(view.checkkey,view.SelectFile)
         self.assertEqual(view._file_paths[view.select_file.now-1],'a.gcode')
         view.pd.sendGCode.assert_not_called()
-        view._loop.set_interval.assert_called_with(2.0)
+        view._loop.set_interval.assert_called_with(.02)
 
-    def test_draw_is_bounded_incremental_and_reconnect_restarts_cached_runs(self):
-        view=self.make();view._preview_runs=tuple((0xF800,0,y,79,y) for y in range(80))
+    def test_redraw_uses_sram_and_uart_reconnect_invalidates_it(self):
+        view=self.make();view._thumbnail_cache.job=None
+        view._thumbnail_cache.entries[view._preview_cache_key]=(4096,2300)
         view.Draw_File_Preview();view.lcd.reset_mock()
-        view._poll_file_preview();self.assertEqual(view._preview_index,64)
-        for call in view.lcd.Draw_Rectangle.call_args_list:
-            _,color,x0,y0,x1,y1=call.args
-            if y0>=290:continue
-            self.assertTrue(72<=x0<=x1<=199);self.assertTrue(80<=y0<=y1<=207)
-        view.Draw_File_Preview();self.assertEqual(view._preview_index,0)
-        view._poll_file_preview();view._poll_file_preview()
-        self.assertEqual(view._preview_index,80)
+        view._poll_file_preview()
+        view.lcd.SRAM_Icon.assert_called_once_with(72,80,4096)
+        view.lcd.Write_SRAM.assert_not_called()
+        view._uart_epoch=1;view.Draw_File_Preview();view._poll_file_preview()
+        self.assertFalse(view._thumbnail_cache.entries)
+        view._thumbnail_cache.loader.assert_called_once()
 
     def test_missing_thumbnail_leaves_buttons_usable(self):
-        view=self.make();view._preview_future.set_exception(ValueError('No thumbnail'))
+        view=self.make();view.Draw_File_Preview();view._preview_future.set_exception(ValueError('No thumbnail'))
         view._poll_file_preview()
         self.assertEqual(view._preview_error,'No thumbnail')
         self.assertIn('Cancel',[c.args[-1] for c in view.lcd.Draw_String.call_args_list])
@@ -107,7 +98,7 @@ class ThumbnailTests(unittest.TestCase):
     def test_jpeg_upload_is_chunked_and_displayed_only_once_after_completion(self):
         view=self.make();view._preview_future.set_result(b'x'*2300)
         view._poll_file_preview()
-        self.assertEqual(view._preview_index,1024)
+        self.assertEqual(view._thumbnail_cache.upload['index'],1024)
         self.assertEqual(view.lcd.Write_SRAM.call_count,8)
         view.lcd.SRAM_Icon.assert_not_called()
         view._poll_file_preview();view._poll_file_preview();view._poll_file_preview()
@@ -116,8 +107,9 @@ class ThumbnailTests(unittest.TestCase):
         self.assertEqual(b''.join(c.args[1] for c in calls),b'x'*2300)
         self.assertEqual([c.args[0] for c in calls],list(range(0,2300,128)))
         self.assertTrue(all(1<=len(c.args[1])<=128 for c in calls))
-        view.Draw_File_Preview();view._poll_file_preview()
-        self.assertEqual(view._preview_index,1024)
+        view.lcd.reset_mock();view.Draw_File_Preview();view._poll_file_preview()
+        view.lcd.Write_SRAM.assert_not_called()
+        view.lcd.SRAM_Icon.assert_called_once_with(72,80,0)
 
     def test_cancel_or_changed_connection_stops_partial_jpeg_upload(self):
         for cancel in (True,False):
@@ -146,7 +138,7 @@ class ThumbnailTests(unittest.TestCase):
 
     def test_late_completion_after_cancel_does_not_draw(self):
         view=self.make();view.HMI_File_Preview();view.lcd.reset_mock()
-        view._preview_future.set_result(image_runs(png()))
+        view._preview_future.set_result(image_jpeg(png()))
         view._poll_file_preview();view.lcd.Draw_Rectangle.assert_not_called()
 
     def test_large_source_preferred_over_tiny_icon(self):
@@ -157,28 +149,44 @@ class ThumbnailTests(unittest.TestCase):
         load_thumbnail(client,'a.gcode')
         self.assertIn('large.png',client.get_bytes.call_args.args[0])
 
-    def test_rectangle_merge_preserves_exact_pixels_and_row_gaps(self):
-        runs=((1,0,0,4,0),(2,5,0,7,0),(1,0,1,4,1),(2,5,1,7,1),
-              (1,0,2,3,2),(1,0,4,4,4))
-        rects=merge_runs(runs)
-        self.assertEqual(len(rects),4)
-        def pixels(shapes):
-            return {(x,y):color for color,x0,y0,x1,y1 in shapes
-                    for y in range(y0,y1+1) for x in range(x0,x1+1)}
-        self.assertEqual(pixels(runs),pixels(rects))
-        self.assertEqual(rects[0],(1,0,0,4,1))
+    def test_completed_sram_hit_needs_no_download_or_upload(self):
+        view=self.make();view._thumbnail_cache.job=None
+        view._thumbnail_cache.entries[view._thumbnail_keys['a.gcode']]=(3000,1200)
+        view._open_file_preview('a.gcode')
+        view._thumbnail_cache.loader.assert_not_called()
+        view.lcd.Write_SRAM.assert_not_called()
+        view.lcd.SRAM_Icon.assert_called_once_with(72,80,3000)
 
-    def test_scaled_rows_cover_128_area_without_gaps_or_extra_commands(self):
+    def test_replaced_file_cannot_print_from_old_preview(self):
+        view=self.make();view._preview_choice=0
+        view.pd.getREST.return_value={'result':[{'path':'a.gcode','modified':2,'size':500}]}
+        view.pd.openAndPrintFile=Mock()
+        view.HMI_File_Preview()
+        view.pd.openAndPrintFile.assert_not_called()
+        self.assertTrue(view._start_error_visible)
+
+    def test_browser_tick_preloads_without_drawing_thumbnail_or_frequent_status_poll(self):
+        view=self.make();view._preview_future.set_result(b'x'*2300)
+        view.checkkey=view.SelectFile;view._uart_online=True
+        view.EachMomentUpdate=Mock();view._file_status_at=0
+        view.lcd.reset_mock()
+        view._ui_tick();view._ui_tick()
+        self.assertEqual(view.lcd.Write_SRAM.call_count,4)
+        view.lcd.SRAM_Icon.assert_not_called()
+        view.EachMomentUpdate.assert_called_once()
+
+    def test_current_folder_first_five_follow_sort_and_file_replacement(self):
         view=self.make()
-        view._preview_runs=tuple((0xF800,0,y,79,y) for y in range(80))
-        view.Draw_File_Preview();view.lcd.reset_mock()
-        view._poll_file_preview();view._poll_file_preview()
-        calls=view.lcd.Draw_Rectangle.call_args_list
-        self.assertEqual(len(calls),80)
-        previous=79
-        for call in calls:
-            _,color,x0,y0,x1,y1=call.args
-            self.assertEqual((x0,x1),(72,199))
-            self.assertEqual(y0,previous+1)
-            previous=y1
-        self.assertEqual(previous,207)
+        view.pd.files=[{'path':name,'modified':1,'size':100} for name in
+                       ('a.gcode','b.gcode','c.gcode','d.gcode','e.gcode','f.gcode','sub/x.gcode')]
+        view._file_paths=('empty/', 'f.gcode','e.gcode','d.gcode','c.gcode','b.gcode','a.gcode')
+        view._sync_thumbnail_cache()
+        self.assertEqual([key[0] for key in view._thumbnail_cache.priority],
+                         ['f.gcode','e.gcode','d.gcode','c.gcode','b.gcode'])
+        key=view._thumbnail_keys['b.gcode'];view._thumbnail_cache.entries[key]=(0,1000)
+        view._file_paths=tuple(reversed(view._file_paths));view.pd.file_sort_revision+=1
+        view._sync_thumbnail_cache()
+        self.assertEqual(view._thumbnail_cache.address(key),0)
+        view.pd.files=[dict(item,modified=2) if item['path']=='b.gcode' else item for item in view.pd.files]
+        view._sync_thumbnail_cache()
+        self.assertIsNone(view._thumbnail_cache.address(key))

@@ -171,12 +171,17 @@ folder-first sorting in both directions at each level, cached resorting, basenam
 labels and folder icons, full-path print submission, deleted files/directories,
 stale Enter rejection and invalid path/entry validation.
 
-Thumbnail preview regressions cover RGB565 runs, 80×80 aspect-preserving
-conversion, transparency and decode limits, authenticated bounded downloads,
-relative thumbnail paths, confirmation before Print, Cancel/late-result handling,
-incremental rendering bounds, redraw, file/epoch revalidation and duplicate starts.
-Physical image quality and UART drawing latency still require LCD testing.
+Thumbnail preview regressions cover baseline 128×128 JPEG conversion,
+letterboxing, transparency and decode limits, authenticated bounded downloads,
+relative paths, confirmation before Print, Cancel/late-result handling,
+file/epoch revalidation and duplicate starts. Packet tests check exact 0x31/0x24
+frames and SRAM address/chunk bounds. Direct JPEG display has passed a physical
+panel test; cache behavior and perceived latency still need hardware validation.
 
-JPEG preview coverage includes baseline RGB encoding, 128×128 letterboxing,
-transparency, bounded SRAM chunks, exact 0x31/0x24 packets, display only after
-complete upload, cancellation, epoch changes and reupload after screen redraw.
+SRAM cache tests cover ordered first-five preloading, incremental upload,
+nonoverlapping addresses, completion-only publication, reuse after sorting,
+folder changes, replacement/deletion, LRU eviction, capacity limits, foreground
+priority, temporary failure retry, stale worker results and reconnect invalidation.
+UI coverage checks cache hits without downloads/uploads, redraw from SRAM,
+background work without thumbnail display, replacement checks before Print and
+prompt scheduling when switching from slow status polling to thumbnail work.
