@@ -391,59 +391,64 @@ class PrinterData:
             thermal['fan_speed'][0] = int(data['fan']['speed'] * 100) if caps.fan else 0
             mmu = None
             spoolman_changed = False
-            if 'mmu' in data:
-                raw_mmu = data['mmu']
-                num_gates = int(raw_mmu.get('num_gates', 0))
-                gate = int(raw_mmu.get('gate', -1))
-                colors = raw_mmu.get('gate_color_rgb', [])
-                statuses = raw_mmu.get('gate_status', [])
-                spool_ids = tuple(raw_mmu.get('gate_spool_id', [])[:num_gates])
-                spoolman_changed = self._poll_spoolman_percentages(spool_ids)
-                if num_gates < 1 or len(colors) < num_gates or len(statuses) < num_gates:
-                    raise ValueError('Invalid MMU status')
-                normalized_colors = []
-                for color in colors[:num_gates]:
-                    if (not isinstance(color, (list, tuple)) or len(color) != 3
-                            or not all(isinstance(value, (int, float)) and math.isfinite(value)
-                                       for value in color)):
-                        raise ValueError('Invalid MMU gate color')
-                    # Happy Hare publishes gate_color_rgb as normalized RGB floats.
-                    normalized_colors.append(tuple(max(0.0, min(1.0, float(value)))
-                                                   for value in color))
-                unit_name = 'MMU'
-                machine = data.get('mmu_machine', {})
-                # Happy Hare reports the selected unit as "unit" on current
-                # releases and "unit_selected" on older controller status.
-                unit_index = int(raw_mmu.get('unit',
-                                             raw_mmu.get('unit_selected', 0)))
-                unit_info = machine.get('unit_%d' % unit_index, {})
-                if isinstance(unit_info, Mapping):
-                    unit_name = str(unit_info.get('display_name') or
-                                    unit_info.get('name') or 'MMU')
-                exit_led_data = data.get('unit0_mmu_exit_leds', {}).get('color_data', ())
-                exit_led_rgb = ()
-                if len(exit_led_data) >= num_gates:
-                    normalized_leds = []
-                    for led_color in exit_led_data[:num_gates]:
-                        if (not isinstance(led_color, (list, tuple)) or len(led_color) < 3
+            if 'mmu' in data:                try:
+                    raw_mmu = data['mmu']
+                    num_gates = int(raw_mmu.get('num_gates', 0))
+                    gate = int(raw_mmu.get('gate', -1))
+                    colors = raw_mmu.get('gate_color_rgb', [])
+                    statuses = raw_mmu.get('gate_status', [])
+                    spool_ids = tuple(raw_mmu.get('gate_spool_id', [])[:num_gates])
+                    spoolman_changed = self._poll_spoolman_percentages(spool_ids)
+                    if num_gates < 1 or len(colors) < num_gates or len(statuses) < num_gates:
+                        raise ValueError('Invalid MMU status')
+                    normalized_colors = []
+                    for color in colors[:num_gates]:
+                        if (not isinstance(color, (list, tuple)) or len(color) != 3
                                 or not all(isinstance(value, (int, float)) and math.isfinite(value)
-                                           for value in led_color[:3])):
-                            normalized_leds = []
-                            break
-                        normalized_leds.append(tuple(max(0.0, min(1.0, float(value)))
-                                                     for value in led_color[:3]))
-                    exit_led_rgb = tuple(normalized_leds)
-                mmu = {'num_gates': num_gates, 'gate': gate,
-                       'gate_status': tuple(int(value) for value in statuses[:num_gates]),
-                       'gate_color_rgb': tuple(normalized_colors),
-                       'gate_spool_id': spool_ids,
-                       'remaining_percent': tuple(
-                           self._spoolman_percentages.get(int(sid))
-                           if isinstance(sid, (int, float)) and int(sid) > 0 else None
-                           for sid in spool_ids),
-                       'exit_led_rgb': exit_led_rgb,
-                       'name': unit_name,
-                       'filament': str(raw_mmu.get('filament', 'Unknown'))}
+                                           for value in color)):
+                            raise ValueError('Invalid MMU gate color')
+                        # Happy Hare publishes gate_color_rgb as normalized RGB floats.
+                        normalized_colors.append(tuple(max(0.0, min(1.0, float(value)))
+                                                       for value in color))
+                    unit_name = 'MMU'
+                    machine = data.get('mmu_machine', {})
+                    # Happy Hare reports the selected unit as "unit" on current
+                    # releases and "unit_selected" on older controller status.
+                    unit_index = int(raw_mmu.get('unit',
+                                                 raw_mmu.get('unit_selected', 0)))
+                    unit_info = machine.get('unit_%d' % unit_index, {})
+                    if isinstance(unit_info, Mapping):
+                        unit_name = str(unit_info.get('display_name') or
+                                        unit_info.get('name') or 'MMU')
+                    exit_led_data = data.get('unit0_mmu_exit_leds', {}).get('color_data', ())
+                    exit_led_rgb = ()
+                    if len(exit_led_data) >= num_gates:
+                        normalized_leds = []
+                        for led_color in exit_led_data[:num_gates]:
+                            if (not isinstance(led_color, (list, tuple)) or len(led_color) < 3
+                                    or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                                               for value in led_color[:3])):
+                                normalized_leds = []
+                                break
+                            normalized_leds.append(tuple(max(0.0, min(1.0, float(value)))
+                                                         for value in led_color[:3]))
+                        exit_led_rgb = tuple(normalized_leds)
+                    mmu = {'num_gates': num_gates, 'gate': gate,
+                           'gate_status': tuple(int(value) for value in statuses[:num_gates]),
+                           'gate_color_rgb': tuple(normalized_colors),
+                           'gate_spool_id': spool_ids,
+                           'remaining_percent': tuple(
+                               self._spoolman_percentages.get(int(sid))
+                               if isinstance(sid, (int, float)) and int(sid) > 0 else None
+                               for sid in spool_ids),
+                           'exit_led_rgb': exit_led_rgb,
+                           'name': unit_name,
+                           'filament': str(raw_mmu.get('filament', 'Unknown'))}
+                except (KeyError, TypeError, IndexError, ValueError, OverflowError) as exc:
+                    # Optional MMU telemetry must not make the core printer UI offline.
+                    logging.warning('Ignoring invalid MMU status: %s', exc)
+                    mmu = None
+                    spoolman_changed = False
         except (MoonrakerError, KeyError, TypeError, IndexError, ValueError) as exc:
             self.connection_error = str(exc)
             return False

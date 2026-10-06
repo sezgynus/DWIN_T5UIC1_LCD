@@ -154,6 +154,20 @@ class CapabilityTests(unittest.TestCase):
             backend.PrinterData._spool_remaining_percent(
                 {'remaining_weight': None, 'used_weight': 0}))
 
+    def test_invalid_mmu_does_not_take_core_printer_offline(self):
+        data = snapshot()
+        data['objects'].append('mmu')
+        data['status']['mmu'] = {
+            'num_gates': 4, 'gate': 0,
+            'gate_status': [1, 1, 1, 1],
+            'gate_color_rgb': [[1.0, 0.0, 0.0]],
+        }
+        result = printer(data)
+        self.assertIsNone(result.connection_error)
+        self.assertIsNone(result.mmu)
+        self.assertEqual(result.status, 'standby')
+        self.assertEqual(result.thermalManager['temp_hotend'][0]['target'], 205)
+
     def test_happy_hare_mmu_state_is_normalized(self):
         data = snapshot()
         data['objects'].append('mmu')
