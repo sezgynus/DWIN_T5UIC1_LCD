@@ -2287,8 +2287,18 @@ class DWIN_LCD:
             border = indicator
             self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
             self.lcd.Draw_Rectangle(0, border, lx0, top + 64, lx1, top + 78)
+            # Choose black or white text for maximum contrast against
+            # the live lane color.  This keeps bright green/yellow/cyan lane
+            # numbers readable without sacrificing dark-color visibility.
+            r5 = (label_bg >> 11) & 0x1F
+            g6 = (label_bg >> 5) & 0x3F
+            b5 = label_bg & 0x1F
+            luminance = (299 * r5 * 255 // 31 +
+                         587 * g6 * 255 // 63 +
+                         114 * b5 * 255 // 31) // 1000
+            label_fg = 0x0000 if luminance >= 140 else self.lcd.Color_White
             self.lcd.Draw_String(False, True, self.lcd.font6x12,
-                                 self.lcd.Color_White, label_bg,
+                                 label_fg, label_bg,
                                  cx - 3 * len(label), top + 65, label)
 
     def Goto_PrintProcess(self):
