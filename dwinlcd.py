@@ -2237,8 +2237,10 @@ class DWIN_LCD:
         active = mmu['gate']
         # Fill nearly the entire strip above the main menu icons.
         left, top, width = 8, 39, 256
-        gap = 5 if count <= 4 else 2
-        slot = max(16, min(60, (width - gap * (count - 1)) // count))
+        gap = 5 if count <= 4 else 2 if count <= 8 else 1
+        if count > 32:
+            gap = 0
+        slot = max(1, min(60, (width - gap * (count - 1)) // count))
         total = slot * count + gap * (count - 1)
         start = left + max(0, (width - total) // 2)
         title = str(mmu.get('name') or 'MMU')[:22]
@@ -2257,9 +2259,9 @@ class DWIN_LCD:
             flange_edge = 0xD58A
             # Keep lane spacing unchanged, but narrow the reel itself so its
             # height-to-width ratio resembles a physical filament spool.
-            reel_w = max(28, int(slot * 0.70))
+            reel_w = min(max(8, int(slot * 0.70)), max(1, slot - 2))
             reel_x = x + (slot - reel_w) // 2
-            flange_w = max(5, reel_w // 9)
+            flange_w = max(1, min(max(2, reel_w // 9), max(1, (reel_w - 2) // 2)))
             body_left = reel_x + flange_w
             body_right = reel_x + reel_w - flange_w - 1
             y0, y1 = top + 13, top + 52
@@ -2280,18 +2282,21 @@ class DWIN_LCD:
                 self.lcd.Draw_Line(winding, line_x, y0, line_x, y1)
 
             percent = percentages[gate] if gate < len(percentages) else None
-            pct = '--' if percent is None else '%d%%' % percent
-            # Black backing keeps the percentage readable on white/yellow filament.
-            pct_w = 6 * len(pct) + 4
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black,
-                                    cx - pct_w // 2, top + 27,
-                                    cx + pct_w // 2, top + 41)
-            self.lcd.Draw_String(False, True, self.lcd.font6x12,
-                                 self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                                 cx - 3 * len(pct), top + 28, pct)
+            # Percent text needs enough horizontal room. Compact high-gate
+            # layouts prioritize distinct lanes over overlapping text.
+            if slot >= 28:
+                pct = '--' if percent is None else '%d%%' % percent
+                # Black backing keeps the percentage readable on white/yellow filament.
+                pct_w = 6 * len(pct) + 4
+                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black,
+                                        cx - pct_w // 2, top + 27,
+                                        cx + pct_w // 2, top + 41)
+                self.lcd.Draw_String(False, True, self.lcd.font6x12,
+                                     self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                                     cx - 3 * len(pct), top + 28, pct)
 
             label = str(gate + 1)
-            label_w = max(24, min(38, slot - 8))
+            label_w = max(1, min(38, slot - 2 if slot > 2 else slot))
             lx0, lx1 = cx - label_w // 2, cx + label_w // 2
             exit_leds = mmu.get('exit_led_rgb', ())
             led_color = None

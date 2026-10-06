@@ -355,6 +355,35 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(labels[0][3], 0x0000)
         self.assertEqual(labels[1][3], result.lcd.Color_White)
 
+    def test_high_gate_count_mmu_lane_indicators_do_not_overlap(self):
+        result = display(snapshot())
+        count = 12
+        result.pd.mmu = {
+            'num_gates': count, 'gate': 0,
+            'gate_status': (1,) * count,
+            'gate_color_rgb': ((0.2, 0.4, 0.8),) * count,
+            'remaining_percent': (50,) * count,
+            'exit_led_rgb': ((0.0, 1.0, 0.0),) * count,
+            'name': 'MMU', 'filament': 'Loaded',
+        }
+        result.lcd.DWIN_WIDTH = 272
+        result.lcd.DWIN_HEIGHT = 480
+        result.lcd.Color_White = 0xffff
+        result.lcd.Color_Bg_Black = 0x0841
+        result.lcd.Line_Color = 0x3a6a
+        result.lcd.font6x12 = 0
+
+        result.Draw_MMU_Status()
+
+        indicators = [
+            call for call in result.lcd.Draw_Rectangle.call_args_list
+            if call.args[0] == 1 and call.args[3] == 103 and call.args[5] == 117
+        ]
+        self.assertEqual(len(indicators), count)
+        intervals = [(call.args[2], call.args[4]) for call in indicators]
+        for previous, current in zip(intervals, intervals[1:]):
+            self.assertLess(previous[1], current[0])
+
     def test_mmu_visual_is_not_redrawn_for_unrelated_status_updates(self):
         result = display(snapshot())
         result.pd.mmu = {
