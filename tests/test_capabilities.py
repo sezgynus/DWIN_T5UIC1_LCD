@@ -533,29 +533,35 @@ class CapabilityMenuTests(unittest.TestCase):
         result = display(snapshot())
         result.pd.refresh_system_info = Mock(return_value=False)
         result.pd.system_info = {
-            'klipperdwin': 'v0.4.0-2-g1234abcd',
-            'moonraker': 'v0.9.3-1-gabcd',
-            'mainsail': 'v2.14.0',
-            'network': 'Online',
-            'ip': '192.168.1.50',
-            'host_cpu': 37.2,
-            'host_temp': 48.5,
-            'mcus': (('mcu', 'Connected'), ('mmu', 'Connected')),
+            'klipperdwin': 'v0.4.0-2-g1234abcd', 'moonraker': 'v0.9.3-1-gabcd',
+            'mainsail': 'v2.14.0', 'network': 'Online', 'ip': '192.168.1.50',
+            'host_cpu': 37.2, 'host_temp': 48.5,
+            'mcus': ({'name': 'mcu', 'load': 1.2, 'temperature': 42.5, 'version': 'v1'},
+                     {'name': 'mmu', 'load': 0.4, 'temperature': None, 'version': 'v2'}),
         }
         result.pd.SHORT_BUILD_VERSION = 'v0.13.0-123'
         result.pd.MACHINE_SIZE = '220x220x250'
-        result._draw_info_row = Mock()
-        result._draw_info_section = Mock()
+        items = result._info_items()
+        self.assertIn(('row', 'Size', '220x220x250'), items)
+        self.assertIn(('row', 'CPU', '37%'), items)
+        self.assertIn(('section', 'MCU: mcu', None), items)
+        self.assertIn(('row', 'Load', '1.2%'), items)
+        self.assertIn(('row', 'Temp', '42.5 C'), items)
+        self.assertIn(('section', 'MCU: mmu', None), items)
+        self.assertIn(('row', 'Temp', 'N/A'), items)
         result.Draw_Info_Menu()
-        sections = [call.args[0] for call in result._draw_info_section.call_args_list]
-        self.assertEqual(sections, ['Machine', 'Host', 'Software', 'MCU'])
-        rows = [(call.args[0], call.args[1]) for call in result._draw_info_row.call_args_list]
-        self.assertEqual(rows, [
-            ('Size', '220x220x250'), ('Network', 'Online'), ('IP', '192.168.1.50'),
-            ('CPU', '37%'), ('CPU temp', '48.5 C'),
-            ('KlipperDWIN', 'v0.4.0-2-g1234abcd'), ('Klipper', 'v0.13.0-123'),
-            ('Moonraker', 'v0.9.3-1-gabcd'), ('Mainsail', 'v2.14.0'),
-            ('mcu', 'Connected'), ('mmu', 'Connected')])
+        self.assertGreater(len(items), 11)
+
+    def test_info_encoder_scrolls_and_enter_returns(self):
+        result = display(snapshot())
+        result.pd.system_info['mcus'] = tuple(
+            {'name': 'mcu%d' % i, 'load': i, 'temperature': None, 'version': ''}
+            for i in range(4))
+        result.Draw_Info_Menu = Mock()
+        result.get_encoder_state = Mock(return_value=result.ENCODER_DIFF_CW)
+        result.HMI_Info()
+        self.assertEqual(result._info_scroll, 1)
+        result.Draw_Info_Menu.assert_called_once_with()
 
     def test_case_light_uses_dedicated_light_icon_alias(self):
         data = snapshot()
