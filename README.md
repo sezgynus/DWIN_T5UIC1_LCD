@@ -53,9 +53,33 @@ It has grown beyond a small compatibility patch: the current codebase includes a
 
 ## Project status
 
-| ✅ Available now | 🚧 Roadmap |
-|---|---|
-| Native Moonraker HTTP + WebSocket integration<br>Capability-driven menus and live printer dashboard<br>Print browser, print-state tracking and print controls<br>Tune, Prepare, Move / Live Jog and runtime Motion controls<br>Temperature controls and persistent PLA/ABS presets<br>Case Light support through a compatible `M355` macro<br>Happy Hare MMU visualization with gate colors and exit-LED state<br>Spoolman remaining-filament percentage per MMU gate<br>Encoder-button printer power-on through a Moonraker power device<br>Interactive installation/configuration, systemd service and Moonraker Update Manager integration<br>UART recovery, guarded command execution and regression tests | **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.<br><br>**Bed Mesh Visualization & Control** — graphical `bed_mesh` display, probed Z-value visualization, active mesh/profile information and LCD access to Bed Mesh operations.<br><br>**Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.<br><br>**Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.<br><br>**Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.<br><br>**Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations. |
+### ✅ Available now
+
+<details>
+<summary><strong>Show completed features</strong></summary>
+
+- Native Moonraker HTTP + WebSocket integration
+- Capability-driven menus and live printer dashboard
+- Print browser, print-state tracking and print controls
+- Tune, Prepare, Move / Live Jog and runtime Motion controls
+- Temperature controls and persistent PLA/ABS presets
+- Case Light support through a compatible `M355` macro
+- Happy Hare MMU visualization with gate colors and exit-LED state
+- Spoolman remaining-filament percentage per MMU gate
+- Encoder-button printer power-on through a Moonraker power device
+- Interactive installation/configuration, systemd service and Moonraker Update Manager integration
+- UART recovery, guarded command execution and regression tests
+
+</details>
+
+### 🚧 Roadmap
+
+- **Probe Calibration** — correct `PROBE_CALIBRATE` / `TESTZ` flow, manual-probe state tracking, Z adjustment, `ACCEPT`, `ABORT` and guarded `SAVE_CONFIG` handling.
+- **Bed Mesh Visualization & Control** — graphical `bed_mesh` display, probed Z-value visualization, active mesh/profile information and LCD access to Bed Mesh operations.
+- **Screws Tilt Adjust** — `screws_tilt_adjust` support, `SCREWS_TILT_CALCULATE`, graphical screw positions and calculated CW/CCW adjustment guidance.
+- **Happy Hare MMU Control** — dedicated MMU control menu in addition to the current Home-screen visualization.
+- **Happy Hare Multi-Unit Support** — dynamic MMU unit and LED-source discovery instead of the current fixed `unit0_mmu_exit_leds` source.
+- **Hardware Validation** — expand physical testing across additional DWIN T5UIC1 and Klipper configurations.
 
 ## Installation
 
