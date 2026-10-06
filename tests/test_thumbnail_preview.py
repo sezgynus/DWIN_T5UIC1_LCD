@@ -3,7 +3,7 @@ from concurrent.futures import Future
 from unittest.mock import Mock, patch
 import unittest
 from PIL import Image
-from thumbnail_preview import image_runs, load_thumbnail
+from thumbnail_preview import image_runs, load_thumbnail, merge_runs
 from test_capabilities import display, snapshot
 import test_files
 
@@ -15,12 +15,12 @@ def png(size=(128,128), color='red'):
 class ThumbnailTests(unittest.TestCase):
     def test_solid_image_run_compression_and_rgb565(self):
         runs=image_runs(png())
-        self.assertEqual(len(runs),96)
-        self.assertEqual(runs[0],(0xF800,0,0,95,0))
+        self.assertEqual(len(runs),1)
+        self.assertEqual(runs[0],(0xF800,0,0,79,79))
 
     def test_aspect_ratio_transparency_and_black_background(self):
         runs=image_runs(png((200,100)))
-        self.assertTrue(all(24<=r[2]<=71 for r in runs))
+        self.assertTrue(all(20<=r[2]<=r[4]<=59 for r in runs))
         self.assertEqual(image_runs(png(color=(0,0,0,0))),())
 
     def test_corrupt_and_oversized_images_rejected(self):
@@ -31,7 +31,7 @@ class ThumbnailTests(unittest.TestCase):
         client=Mock();client.get.return_value={'result':{'thumbnails':[
             {'relative_path':'.thumbs/model.png','width':128,'height':128}]}}
         client.get_bytes.return_value=png()
-        self.assertEqual(len(load_thumbnail(client,'parts a/model.gcode')),96)
+        self.assertEqual(len(load_thumbnail(client,'parts a/model.gcode')),1)
         client.get.assert_called_once_with('/server/files/metadata?filename=parts%20a%2Fmodel.gcode')
         client.get_bytes.assert_called_once_with('/server/files/gcodes/parts%20a/.thumbs/model.png',max_bytes=2_000_000)
 
@@ -73,14 +73,15 @@ class ThumbnailTests(unittest.TestCase):
         view._loop.set_interval.assert_called_with(2.0)
 
     def test_draw_is_bounded_incremental_and_reconnect_restarts_cached_runs(self):
-        view=self.make();view._preview_future.set_result(image_runs(png()))
+        view=self.make();view._preview_future.set_result(tuple((0xF800,0,y,79,y) for y in range(80)))
         view._poll_file_preview();self.assertEqual(view._preview_index,64)
-        for call in view.lcd.Draw_Line.call_args_list:
-            _,x0,y0,x1,y1=call.args
-            self.assertTrue(88<=x0<=x1<=183);self.assertTrue(96<=y0<=y1<=191)
+        for call in view.lcd.Draw_Rectangle.call_args_list:
+            _,color,x0,y0,x1,y1=call.args
+            if y0>=290:continue
+            self.assertTrue(96<=x0<=x1<=175);self.assertTrue(104<=y0<=y1<=183)
         view.Draw_File_Preview();self.assertEqual(view._preview_index,0)
         view._poll_file_preview();view._poll_file_preview()
-        self.assertEqual(view._preview_index,96)
+        self.assertEqual(view._preview_index,80)
 
     def test_missing_thumbnail_leaves_buttons_usable(self):
         view=self.make();view._preview_future.set_exception(ValueError('No thumbnail'))
@@ -106,7 +107,7 @@ class ThumbnailTests(unittest.TestCase):
     def test_late_completion_after_cancel_does_not_draw(self):
         view=self.make();view.HMI_File_Preview();view.lcd.reset_mock()
         view._preview_future.set_result(image_runs(png()))
-        view._poll_file_preview();view.lcd.Draw_Line.assert_not_called()
+        view._poll_file_preview();view.lcd.Draw_Rectangle.assert_not_called()
 
     def test_large_source_preferred_over_tiny_icon(self):
         client=Mock();client.get.return_value={'result':{'thumbnails':[
@@ -115,3 +116,14 @@ class ThumbnailTests(unittest.TestCase):
         client.get_bytes.return_value=png()
         load_thumbnail(client,'a.gcode')
         self.assertIn('large.png',client.get_bytes.call_args.args[0])
+
+    def test_rectangle_merge_preserves_exact_pixels_and_row_gaps(self):
+        runs=((1,0,0,4,0),(2,5,0,7,0),(1,0,1,4,1),(2,5,1,7,1),
+              (1,0,2,3,2),(1,0,4,4,4))
+        rects=merge_runs(runs)
+        self.assertEqual(len(rects),4)
+        def pixels(shapes):
+            return {(x,y):color for color,x0,y0,x1,y1 in shapes
+                    for y in range(y0,y1+1) for x in range(x0,x1+1)}
+        self.assertEqual(pixels(runs),pixels(rects))
+        self.assertEqual(rects[0],(1,0,0,4,1))

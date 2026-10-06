@@ -30,7 +30,7 @@ class FilePreviewMixin:
             self._preview_worker.start()
         self.checkkey = self.FilePreview
         if hasattr(self, '_loop'):
-            self._loop.set_interval(.05)
+            self._loop.set_interval(.02)
         self.Draw_File_Preview()
 
     def _preview_buttons(self):
@@ -85,7 +85,7 @@ class FilePreviewMixin:
         runs = self._preview_runs or ()
         stop = min(len(runs), self._preview_index + 64)
         for color, x0, y0, x1, y1 in runs[self._preview_index:stop]:
-            self.lcd.Draw_Line(color, 88+x0, 96+y0, 88+x1, 96+y1)
+            self.lcd.Draw_Rectangle(1, color, 96+x0, 104+y0, 96+x1, 104+y1)
         if stop == len(runs) and self._preview_index < stop:
             logging.info('Thumbnail %s: UART drawing %.3fs', self._preview_path,
                          time.monotonic()-self._preview_draw_at)
