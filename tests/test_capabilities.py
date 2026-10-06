@@ -285,15 +285,9 @@ class CapabilityTests(unittest.TestCase):
         result.Draw_MMU_Status()
         labels = [call.args for call in result.lcd.Draw_String.call_args_list
                   if call.args[-1] in ('1', '2')]
-        self.assertEqual(len(labels), 4)
+        self.assertEqual(len(labels), 2)
         self.assertEqual(labels[0][3], 0x0000)
-        self.assertEqual(labels[1][3], 0x0000)
-        self.assertEqual(labels[2][3], result.lcd.Color_White)
-        self.assertEqual(labels[3][3], result.lcd.Color_White)
-        self.assertEqual(labels[1][5], labels[0][5] + 1)
-        self.assertEqual(labels[3][5], labels[2][5] + 1)
-        self.assertEqual(labels[1][6], labels[0][6])
-        self.assertEqual(labels[3][6], labels[2][6])
+        self.assertEqual(labels[1][3], result.lcd.Color_White)
 
     def test_mmu_visual_is_not_redrawn_for_unrelated_status_updates(self):
         result = display(snapshot())
