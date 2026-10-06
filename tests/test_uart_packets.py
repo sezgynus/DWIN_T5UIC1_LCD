@@ -3,6 +3,21 @@ from test_uart import Driver, Port
 
 
 class PacketTests(unittest.TestCase):
+    def test_sram_write_and_jpeg_display_packets(self):
+        result=self.driver()
+        result.Write_SRAM(0x1234,b'\xff\xd8\xff')
+        self.assertEqual(result.MYSERIAL1.frames[-1],bytes.fromhex(
+            'AA 31 5A 12 34 FF D8 FF CC 33 C3 3C'))
+        result.SRAM_Icon(72,80)
+        self.assertEqual(result.MYSERIAL1.frames[-1],bytes.fromhex(
+            'AA 24 00 48 00 50 80 00 00 CC 33 C3 3C'))
+        result.Write_SRAM(32640,b'x'*128)
+        for address,data in ((-1,b'x'),(32768,b'x'),(32767,b'xx'),(0,b''),(0,b'x'*129)):
+            with self.assertRaises(ValueError):result.Write_SRAM(address,data)
+        for x,y,address in ((-1,0,0),(272,0,0),(0,480,0),(0,0,32768)):
+            with self.assertRaises(ValueError):result.SRAM_Icon(x,y,address)
+        self.assertEqual(len(result.MYSERIAL1.frames),3)
+
     def driver(self):
         result = Driver.__new__(Driver)
         result.MYSERIAL1 = Port()

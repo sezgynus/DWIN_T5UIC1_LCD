@@ -3,7 +3,7 @@ from concurrent.futures import Future
 from unittest.mock import Mock, patch
 import unittest
 from PIL import Image
-from thumbnail_preview import image_runs, load_thumbnail, merge_runs
+from thumbnail_preview import image_jpeg, image_runs, load_thumbnail, merge_runs
 from test_capabilities import display, snapshot
 import test_files
 
@@ -31,7 +31,7 @@ class ThumbnailTests(unittest.TestCase):
         client=Mock();client.get.return_value={'result':{'thumbnails':[
             {'relative_path':'.thumbs/model.png','width':128,'height':128}]}}
         client.get_bytes.return_value=png()
-        self.assertEqual(len(load_thumbnail(client,'parts a/model.gcode')),1)
+        self.assertTrue(load_thumbnail(client,'parts a/model.gcode').startswith(b'\xff\xd8'))
         client.get.assert_called_once_with('/server/files/metadata?filename=parts%20a%2Fmodel.gcode')
         client.get_bytes.assert_called_once_with('/server/files/gcodes/parts%20a/.thumbs/model.png',max_bytes=2_000_000)
 
@@ -40,6 +40,20 @@ class ThumbnailTests(unittest.TestCase):
             client=Mock();client.get.return_value={'result':{'thumbnails':thumbs}}
             with self.assertRaises(ValueError):load_thumbnail(client,'parts/model.gcode')
             client.get_bytes.assert_not_called()
+
+    def test_jpeg_is_baseline_bounded_rgb_and_letterboxed(self):
+        jpeg = image_jpeg(png((256,128)))
+        self.assertLessEqual(len(jpeg),32768)
+        with Image.open(BytesIO(jpeg)) as image:
+            self.assertEqual(image.size,(128,128))
+            self.assertEqual(image.mode,'RGB')
+            self.assertFalse(image.info.get('progressive',False))
+            self.assertLessEqual(max(image.getpixel((64,0))),2)
+            self.assertGreater(image.getpixel((64,64))[0],240)
+        with Image.open(BytesIO(image_jpeg(png(color=(255,0,0,0))))) as image:
+            self.assertLessEqual(max(image.getpixel((64,64))),2)
+        for data in (b'corrupt',png((2100,2100))):
+            with self.assertRaises(Exception):image_jpeg(data)
 
     def make(self):
         view=test_files.FileTests().display(['a.gcode','b.gcode'])
@@ -89,6 +103,31 @@ class ThumbnailTests(unittest.TestCase):
         view._poll_file_preview()
         self.assertEqual(view._preview_error,'No thumbnail')
         self.assertIn('Cancel',[c.args[-1] for c in view.lcd.Draw_String.call_args_list])
+
+    def test_jpeg_upload_is_chunked_and_displayed_only_once_after_completion(self):
+        view=self.make();view._preview_future.set_result(b'x'*2300)
+        view._poll_file_preview()
+        self.assertEqual(view._preview_index,1024)
+        self.assertEqual(view.lcd.Write_SRAM.call_count,8)
+        view.lcd.SRAM_Icon.assert_not_called()
+        view._poll_file_preview();view._poll_file_preview();view._poll_file_preview()
+        view.lcd.SRAM_Icon.assert_called_once_with(72,80,0)
+        calls=view.lcd.Write_SRAM.call_args_list
+        self.assertEqual(b''.join(c.args[1] for c in calls),b'x'*2300)
+        self.assertEqual([c.args[0] for c in calls],list(range(0,2300,128)))
+        self.assertTrue(all(1<=len(c.args[1])<=128 for c in calls))
+        view.Draw_File_Preview();view._poll_file_preview()
+        self.assertEqual(view._preview_index,1024)
+
+    def test_cancel_or_changed_connection_stops_partial_jpeg_upload(self):
+        for cancel in (True,False):
+            view=self.make();view._preview_future.set_result(b'x'*2300)
+            view._poll_file_preview();view.lcd.reset_mock()
+            if cancel:view.HMI_File_Preview()
+            else:view._preview_epoch-=1
+            view._poll_file_preview()
+            view.lcd.Write_SRAM.assert_not_called()
+            view.lcd.SRAM_Icon.assert_not_called()
 
     def test_print_revalidates_file_and_duplicate_press_does_not_resubmit(self):
         view=self.make();view._preview_choice=0

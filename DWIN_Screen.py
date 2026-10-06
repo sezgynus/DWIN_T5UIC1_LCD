@@ -127,6 +127,23 @@ class T5UIC1_LCD:
 		self.DWIN_SendBuf = frame
 		self.Send()
 
+	def Write_SRAM(self, address, data):
+		"""Write one bounded upload chunk into volatile picture memory."""
+		if not isinstance(address, int) or not isinstance(data, (bytes, bytearray)):
+			raise ValueError('Invalid SRAM chunk')
+		if not 1 <= len(data) <= 128 or not 0 <= address <= 32768-len(data):
+			raise ValueError('SRAM chunk outside memory bounds')
+		self._packet(0x31, b'\x5a' + self._words(address) + data)
+
+	def SRAM_Icon(self, x, y, address=0):
+		"""Decode and display a JPEG already uploaded to SRAM."""
+		if any(not isinstance(value, int) for value in (x, y, address)):
+			raise ValueError('Invalid SRAM icon position')
+		if not (0 <= x < self.DWIN_WIDTH and 0 <= y < self.DWIN_HEIGHT
+		        and 0 <= address < 32768):
+			raise ValueError('SRAM icon outside bounds')
+		self._packet(0x24, self._words(x, y) + b'\x80' + self._words(address))
+
 	def Read(self, lend=1):
 		if not isinstance(lend, int) or lend < 0:
 			raise ValueError('Read size must be nonnegative')

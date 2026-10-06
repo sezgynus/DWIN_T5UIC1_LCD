@@ -176,3 +176,7 @@ conversion, transparency and decode limits, authenticated bounded downloads,
 relative thumbnail paths, confirmation before Print, Cancel/late-result handling,
 incremental rendering bounds, redraw, file/epoch revalidation and duplicate starts.
 Physical image quality and UART drawing latency still require LCD testing.
+
+JPEG preview coverage includes baseline RGB encoding, 128×128 letterboxing,
+transparency, bounded SRAM chunks, exact 0x31/0x24 packets, display only after
+complete upload, cancellation, epoch changes and reupload after screen redraw.

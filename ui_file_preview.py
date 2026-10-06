@@ -83,6 +83,18 @@ class FilePreviewMixin:
             if self._preview_error:
                 self._draw_menu_text(self._preview_error, 16, 225)
         runs = self._preview_runs or ()
+        if isinstance(runs, bytes):
+            # Keep upload on the UI owner and allow encoder events between batches.
+            stop = min(len(runs), self._preview_index + 8*128)
+            for offset in range(self._preview_index, stop, 128):
+                self.lcd.Write_SRAM(offset, runs[offset:min(offset+128, stop)])
+            if stop == len(runs) and self._preview_index < stop:
+                self.lcd.SRAM_Icon(72, 80, 0)
+                logging.info('Thumbnail %s: UART JPEG upload %.3fs (%d bytes)',
+                             self._preview_path, time.monotonic()-self._preview_draw_at, len(runs))
+            self._preview_index = stop
+            self.lcd.UpdateLCD()
+            return
         stop = min(len(runs), self._preview_index + 64)
         for color, x0, y0, x1, y1 in runs[self._preview_index:stop]:
             self.lcd.Draw_Rectangle(1, color,
