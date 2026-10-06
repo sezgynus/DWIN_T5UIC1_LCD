@@ -15,12 +15,12 @@ def png(size=(128,128), color='red'):
 class ThumbnailTests(unittest.TestCase):
     def test_solid_image_run_compression_and_rgb565(self):
         runs=image_runs(png())
-        self.assertEqual(len(runs),128)
-        self.assertEqual(runs[0],(0xF800,0,0,127,0))
+        self.assertEqual(len(runs),96)
+        self.assertEqual(runs[0],(0xF800,0,0,95,0))
 
     def test_aspect_ratio_transparency_and_black_background(self):
         runs=image_runs(png((200,100)))
-        self.assertTrue(all(32<=r[2]<=95 for r in runs))
+        self.assertTrue(all(24<=r[2]<=71 for r in runs))
         self.assertEqual(image_runs(png(color=(0,0,0,0))),())
 
     def test_corrupt_and_oversized_images_rejected(self):
@@ -31,7 +31,7 @@ class ThumbnailTests(unittest.TestCase):
         client=Mock();client.get.return_value={'result':{'thumbnails':[
             {'relative_path':'.thumbs/model.png','width':128,'height':128}]}}
         client.get_bytes.return_value=png()
-        self.assertEqual(len(load_thumbnail(client,'parts a/model.gcode')),128)
+        self.assertEqual(len(load_thumbnail(client,'parts a/model.gcode')),96)
         client.get.assert_called_once_with('/server/files/metadata?filename=parts%20a%2Fmodel.gcode')
         client.get_bytes.assert_called_once_with('/server/files/gcodes/parts%20a/.thumbs/model.png',max_bytes=2_000_000)
 
@@ -77,10 +77,10 @@ class ThumbnailTests(unittest.TestCase):
         view._poll_file_preview();self.assertEqual(view._preview_index,64)
         for call in view.lcd.Draw_Line.call_args_list:
             _,x0,y0,x1,y1=call.args
-            self.assertTrue(72<=x0<=x1<=199);self.assertTrue(80<=y0<=y1<=207)
+            self.assertTrue(88<=x0<=x1<=183);self.assertTrue(96<=y0<=y1<=191)
         view.Draw_File_Preview();self.assertEqual(view._preview_index,0)
         view._poll_file_preview();view._poll_file_preview()
-        self.assertEqual(view._preview_index,128)
+        self.assertEqual(view._preview_index,96)
 
     def test_missing_thumbnail_leaves_buttons_usable(self):
         view=self.make();view._preview_future.set_exception(ValueError('No thumbnail'))

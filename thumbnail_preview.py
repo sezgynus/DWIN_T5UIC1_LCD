@@ -11,16 +11,16 @@ def image_runs(data):
     with Image.open(BytesIO(data)) as source:
         if source.width * source.height > 4_000_000:
             raise ValueError('Thumbnail too large')
-        source.thumbnail((128, 128), Image.Resampling.LANCZOS)
+        source.thumbnail((96, 96), Image.Resampling.LANCZOS)
         rgba = source.convert('RGBA')
-        canvas = Image.new('RGB', (128, 128), 'black')
-        canvas.paste(rgba, ((128-rgba.width)//2, (128-rgba.height)//2), rgba)
-    image = canvas.quantize(colors=32, dither=Image.Dither.NONE).convert('RGB')
+        canvas = Image.new('RGB', (96, 96), 'black')
+        canvas.paste(rgba, ((96-rgba.width)//2, (96-rgba.height)//2), rgba)
+    image = canvas.quantize(colors=16, dither=Image.Dither.NONE).convert('RGB')
     runs = []
-    for y in range(128):
+    for y in range(96):
         start, previous = 0, None
         for x in range(129):
-            if x < 128:
+            if x < 96:
                 r, g, b = image.getpixel((x, y))
                 color = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
             else:
@@ -39,8 +39,8 @@ def load_thumbnail(client, filename):
     candidates = [t for t in thumbs if isinstance(t, dict) and isinstance(t.get('relative_path'), str)
                   and all(isinstance(t.get(k), int) and 0 < t[k] <= 4096 for k in ('width', 'height'))]
     # Prefer a source large enough for the preview, rather than a tiny icon.
-    candidates.sort(key=lambda t: (max(t['width'], t['height']) < 128,
-                                   abs(max(t['width'], t['height'])-128)))
+    candidates.sort(key=lambda t: (max(t['width'], t['height']) < 96,
+                                   abs(max(t['width'], t['height'])-96)))
     for thumb in candidates:
         relative = thumb['relative_path']
         path = posixpath.normpath(posixpath.join(posixpath.dirname(filename), relative))

@@ -85,7 +85,7 @@ class FilePreviewMixin:
         runs = self._preview_runs or ()
         stop = min(len(runs), self._preview_index + 64)
         for color, x0, y0, x1, y1 in runs[self._preview_index:stop]:
-            self.lcd.Draw_Line(color, 72+x0, 80+y0, 72+x1, 80+y1)
+            self.lcd.Draw_Line(color, 88+x0, 96+y0, 88+x1, 96+y1)
         if stop == len(runs) and self._preview_index < stop:
             logging.info('Thumbnail %s: UART drawing %.3fs', self._preview_path,
                          time.monotonic()-self._preview_draw_at)

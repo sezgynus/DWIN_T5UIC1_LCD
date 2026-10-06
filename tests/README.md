@@ -171,7 +171,7 @@ folder-first sorting in both directions at each level, cached resorting, basenam
 labels and folder icons, full-path print submission, deleted files/directories,
 stale Enter rejection and invalid path/entry validation.
 
-Thumbnail preview regressions cover RGB565 runs, 128×128 aspect-preserving
+Thumbnail preview regressions cover RGB565 runs, 96×96 aspect-preserving
 conversion, transparency and decode limits, authenticated bounded downloads,
 relative thumbnail paths, confirmation before Print, Cancel/late-result handling,
 incremental rendering bounds, redraw, file/epoch revalidation and duplicate starts.
