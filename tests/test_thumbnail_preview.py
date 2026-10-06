@@ -79,7 +79,7 @@ class ThumbnailTests(unittest.TestCase):
         for call in view.lcd.Draw_Rectangle.call_args_list:
             _,color,x0,y0,x1,y1=call.args
             if y0>=290:continue
-            self.assertTrue(96<=x0<=x1<=175);self.assertTrue(104<=y0<=y1<=183)
+            self.assertTrue(72<=x0<=x1<=199);self.assertTrue(80<=y0<=y1<=207)
         view.Draw_File_Preview();self.assertEqual(view._preview_index,0)
         view._poll_file_preview();view._poll_file_preview()
         self.assertEqual(view._preview_index,80)
@@ -128,3 +128,18 @@ class ThumbnailTests(unittest.TestCase):
                     for y in range(y0,y1+1) for x in range(x0,x1+1)}
         self.assertEqual(pixels(runs),pixels(rects))
         self.assertEqual(rects[0],(1,0,0,4,1))
+
+    def test_scaled_rows_cover_128_area_without_gaps_or_extra_commands(self):
+        view=self.make()
+        view._preview_runs=tuple((0xF800,0,y,79,y) for y in range(80))
+        view.Draw_File_Preview();view.lcd.reset_mock()
+        view._poll_file_preview();view._poll_file_preview()
+        calls=view.lcd.Draw_Rectangle.call_args_list
+        self.assertEqual(len(calls),80)
+        previous=79
+        for call in calls:
+            _,color,x0,y0,x1,y1=call.args
+            self.assertEqual((x0,x1),(72,199))
+            self.assertEqual(y0,previous+1)
+            previous=y1
+        self.assertEqual(previous,207)
