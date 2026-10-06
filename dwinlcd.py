@@ -120,6 +120,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     ENCODER_DIFF_CCW = 2  # counterclockwise rotation
     ENCODER_DIFF_ENTER = 3   # click
     ENCODER_WAIT_ENTER = 300
+    POWER_ON_HOLD_SECONDS = 3
     ENCODER_ACCEL_START_STEPS_PER_SEC = 10
     ENCODER_ACCEL_FULL_STEPS_PER_SEC = 46
     ENCODER_FAST_MULTIPLIER = 250
@@ -281,14 +282,15 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     # Passing parameters: serial port number
     # DWIN screen uses serial port 1 to send
     def __init__(self, USARTx, encoder_pins, button_pin, octoPrint_API_Key,
-                 moonraker_url='http://127.0.0.1:7125', request_timeout=5.0, settings_path=None):
+                 moonraker_url='http://127.0.0.1:7125', request_timeout=5.0, settings_path=None,
+                 power_device='Printer'):
         self._closed = False
         self._uart_epoch = 0
         self._uart_online = False
         self._next_uart_retry = 0
         self.encoder = self.button = self.lcd = self.pd = None
         self._settings = (USARTx, encoder_pins, button_pin, octoPrint_API_Key,
-                          moonraker_url, request_timeout, settings_path)
+                          moonraker_url, request_timeout, settings_path, power_device)
         self._input_lock = Lock()
         self._producer_value = 0
         self._last_press = float('-inf')
@@ -303,16 +305,18 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self._loop.start()
 
     def _initialize(self):
-        USARTx, encoder_pins, button_pin, api_key, url, timeout, settings_path = self._settings
+        USARTx, encoder_pins, button_pin, api_key, url, timeout, settings_path, power_device = self._settings
         Device.pin_factory = LGPIOFactory()
         for name in self.SELECTIONS:
             setattr(self, name, select_t())
         self.encoder = Encoder(encoder_pins[0], encoder_pins[1])
-        self.button = Button(button_pin, pull_up=True, bounce_time=0.05)
+        self.button = Button(button_pin, pull_up=True, bounce_time=0.05,
+                             hold_time=self.POWER_ON_HOLD_SECONDS, hold_repeat=False)
         self.next_rts_update_ms = 0
         self.last_cardpercentValue = 101
         self.checkkey = self.MainMenu
-        self.pd = PrinterData(api_key, url, timeout, settings_path=settings_path)
+        self.pd = PrinterData(api_key, url, timeout, settings_path=settings_path,
+                              power_device=power_device)
         self.pd.init_Webservices()
         self._configure_menus()
         self._offline = bool(self.pd.connection_error)
@@ -322,6 +326,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             self._producer_value = self.encoder.getValue()
             self.encoder.callback = self.encoder_has_data
         self.button.when_pressed = self._button_pressed
+        self.button.when_held = self._button_held
 
     def _uart_failed(self):
         self._uart_online = False
@@ -610,6 +615,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 self._last_press = now
                 self._enqueue_input('press', 1)
 
+    def _button_held(self):
+        # Power control must remain available while Klipper and/or the LCD UART are offline.
+        if self.pd is None or self._closed:
+            return
+        if not self._loop.post(InputEvent('power_on', 1, 0, 0)):
+            logging.warning('LCD input queue full or closed; power-on request discarded')
+
     def _sync_input_state(self, event):
         previous_epoch = self.pd.state.epoch
         self.pd.update_variable()
@@ -702,6 +714,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 'live_jog_flush', 0, snapshot['epoch'], getattr(self, '_uart_epoch', 0))))
 
     def _process_input(self, event):
+        if event.kind == 'power_on':
+            if not self._closed:
+                self.pd.power_on_if_off()
+            return
         if (not getattr(self, '_uart_online', True)
                 or event.ui_epoch != getattr(self, '_uart_epoch', 0)):
             return

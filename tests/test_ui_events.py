@@ -163,6 +163,17 @@ class InputRoutingTests(unittest.TestCase):
         self.assertEqual(display._loop.post.call_args_list[1].args[0], InputEvent('press', 1, 1))
         display._dispatch_input.assert_not_called()
 
+    def test_three_second_hold_routes_power_even_when_printer_and_uart_are_offline(self):
+        display = self.display()
+        display._uart_online = False
+        display.pd.subscription.snapshot.return_value = {'state': 'disconnected', 'epoch': 2}
+        display._button_held()
+        event = display._loop.post.call_args.args[0]
+        self.assertEqual(event.kind, 'power_on')
+        display._process_input(event)
+        display.pd.power_on_if_off.assert_called_once_with()
+        display._dispatch_input.assert_not_called()
+
     def test_each_rotation_step_is_preserved(self):
         display = self.display()
         seen = []
