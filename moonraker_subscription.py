@@ -18,7 +18,7 @@ from moonraker_client import MoonrakerError
 
 
 OBJECTS = ('webhooks', 'toolhead', 'gcode_move', 'print_stats', 'virtual_sdcard',
-           'pause_resume', 'extruder', 'heater_bed', 'fan', 'motion_report', 'manual_probe', 'configfile')
+           'pause_resume', 'extruder', 'heater_bed', 'fan', 'motion_report', 'manual_probe', 'configfile', 'screws_tilt_adjust')
 
 
 def connect(url, timeout, headers):
@@ -66,6 +66,8 @@ class MoonrakerSubscription:
         self._subscribing = False
         self._buffered = []
         self._outbound = Queue(maxsize=32)
+        self._completion_requests = set()
+        self._pending_requests = {}
         self.gcode_responses = Queue(maxsize=64)
         self._last_receive = time.monotonic()
         self._last_ping = time.monotonic()
@@ -109,6 +111,15 @@ class MoonrakerSubscription:
             self._revision += 1
 
     def _notification(self, message):
+        if 'id' in message:
+            with self._lock:
+                future = self._pending_requests.pop(message['id'], None)
+            if future is not None and not future.done():
+                if 'error' in message or 'result' not in message:
+                    future.set_exception(MoonrakerError('Moonraker command failed; check printer'))
+                else:
+                    future.set_result(message['result'])
+            return
         method = message.get('method')
         params = message.get('params', [])
         if method == 'notify_status_update':
@@ -141,20 +152,36 @@ class MoonrakerSubscription:
                         pass
                     self.gcode_responses.put_nowait(params[0])
 
-    def notify(self, method, params=None):
+    def request(self, method, params=None):
+        """Nonblocking RPC; Future resolves on completion, never on dispatch."""
+        return self.notify(method, params, completion=True)
+
+    def notify(self, method, params=None, completion=False):
         future = Future()
         with self._lock:
             if self._stop.is_set() or self._state != 'ready' or self._socket is None:
                 future.set_exception(MoonrakerError('Moonraker subscription is not ready'))
                 return future
             epoch = self._epoch
+        if completion:
+            with self._lock:
+                self._completion_requests.add(future)
         try:
             self._outbound.put_nowait((future, epoch, method, params or {}))
         except Full:
+            with self._lock:
+                self._completion_requests.discard(future)
             future.set_exception(MoonrakerError('Subscription command queue is full'))
         return future
 
     def _fail_outbound(self, message):
+        with self._lock:
+            pending = list(self._pending_requests.values())
+            self._pending_requests.clear()
+            self._completion_requests.clear()
+        for future in pending:
+            if not future.done():
+                future.set_exception(MoonrakerError(message))
         while True:
             try:
                 future, _, _, _ = self._outbound.get_nowait()
@@ -165,6 +192,9 @@ class MoonrakerSubscription:
             self._outbound.task_done()
 
     def _drain_outbound(self):
+        with self._lock:
+            self._pending_requests = {key: value for key, value in self._pending_requests.items()
+                                      if not value.done()}
         while True:
             try:
                 future, epoch, method, params = self._outbound.get_nowait()
@@ -175,10 +205,19 @@ class MoonrakerSubscription:
                     valid = self._state == 'ready' and self._epoch == epoch and self._socket is not None
                 if not valid:
                     raise MoonrakerError('Printer connection changed before command dispatch')
-                # JSON-RPC notification: deliberately omit id. Moonraker/Klipper do not send
-                # a completion response, so long-running G-Code cannot block this transport.
-                self._socket.send(json.dumps({'jsonrpc': '2.0', 'method': method, 'params': params}))
-                future.set_result(None)
+                if future.cancelled():
+                    continue
+                envelope = {'jsonrpc': '2.0', 'method': method, 'params': params}
+                with self._lock:
+                    completion = future in self._completion_requests
+                    self._completion_requests.discard(future)
+                    if completion:
+                        self._id += 1
+                        envelope['id'] = self._id
+                        self._pending_requests[self._id] = future
+                self._socket.send(json.dumps(envelope))
+                if not completion and not future.done():
+                    future.set_result(None)
             except Exception as exc:
                 if not future.done():
                     future.set_exception(exc if isinstance(exc, MoonrakerError)
@@ -186,6 +225,10 @@ class MoonrakerSubscription:
                 if not isinstance(exc, MoonrakerError):
                     raise MoonrakerError('WebSocket command dispatch failed') from exc
             finally:
+                with self._lock:
+                    self._completion_requests.discard(future)
+                    self._pending_requests = {key: value for key, value in self._pending_requests.items()
+                                              if not value.done()}
                 self._outbound.task_done()
 
     def _receive(self):
