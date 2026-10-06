@@ -310,14 +310,17 @@ class DisplayIntegrationTests(unittest.TestCase):
             original(display)
             prepared.set()
 
-        with patch.object(backend, 'MoonrakerClient') as transport, \
+        command_client = Mock()
+        telemetry_client = Mock()
+        command_client.command_results = Queue()
+        with patch.object(backend, 'MoonrakerClient',
+                          side_effect=[command_client, telemetry_client]), \
                 patch.object(backend, 'MoonrakerSubscription') as subscription, \
                 patch.object(ui, 'Encoder', return_value=encoder), \
                 patch.object(ui, 'Button', return_value=button), \
                 patch.object(ui, 'T5UIC1_LCD', FakeLCD), \
                 patch.object(ui.DWIN_LCD, 'HMI_ShowBoot'), \
                 patch.object(ui.DWIN_LCD, 'Draw_Prepare_Menu', prepare):
-            transport.return_value.command_results = Queue()
             subscription.return_value.snapshot.return_value = snapshot
             display = ui.DWIN_LCD('fake-port', (21, 19), 13, '')
             try:
@@ -337,7 +340,8 @@ class DisplayIntegrationTests(unittest.TestCase):
             encoder.close.assert_called_once()
             button.close.assert_called_once()
             subscription.return_value.close.assert_called_once()
-            transport.return_value.close.assert_called_once()
+            command_client.close.assert_called_once()
+            telemetry_client.close.assert_called_once()
 
     def test_selection_state_is_not_shared(self):
         first, second = ui.select_t(), ui.select_t()
