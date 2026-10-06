@@ -257,11 +257,39 @@ class PrinterData:
         current['host_temp'] = temperature
         mcus = []
         if self.state.ready:
-            for name, value in self.state.status.items():
-                if name == 'mcu' or name.startswith('mcu '):
-                    if isinstance(value, Mapping):
-                        mcus.append((name[4:] if name.startswith('mcu ') else 'mcu',
-                                     str(value.get('mcu_version') or value.get('last_stats') or 'Connected')))
+            temperatures = {}
+            for object_name, value in self.state.status.items():
+                if not object_name.startswith('temperature_sensor ') or not isinstance(value, Mapping):
+                    continue
+                setting = self.state.settings.get(object_name, {})
+                if not isinstance(setting, Mapping) or setting.get('sensor_type') != 'temperature_mcu':
+                    continue
+                mcu_name = str(setting.get('sensor_mcu') or 'mcu')
+                try:
+                    temperature = float(value.get('temperature'))
+                    if math.isfinite(temperature):
+                        temperatures[mcu_name] = temperature
+                except (TypeError, ValueError):
+                    pass
+            for object_name, value in self.state.status.items():
+                if object_name != 'mcu' and not object_name.startswith('mcu '):
+                    continue
+                if not isinstance(value, Mapping):
+                    continue
+                name = object_name[4:] if object_name.startswith('mcu ') else 'mcu'
+                stats = value.get('last_stats', {})
+                load = None
+                if isinstance(stats, Mapping):
+                    try:
+                        awake = float(stats.get('mcu_awake'))
+                        if math.isfinite(awake) and awake >= 0:
+                            # Klipper's MCU statistics window is five seconds.
+                            load = max(0.0, min(100.0, awake * 20.0))
+                    except (TypeError, ValueError):
+                        pass
+                mcus.append({'name': name, 'load': load,
+                             'temperature': temperatures.get(name),
+                             'version': str(value.get('mcu_version') or '')})
             current['mcus'] = tuple(mcus)
         try:
             response = self.client.get('/machine/update/status')
