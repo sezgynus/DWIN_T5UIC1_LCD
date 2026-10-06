@@ -1108,10 +1108,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         items = self._info_items()
         max_scroll = max(0, len(items) - 11)
         if event == self.ENCODER_DIFF_CW:
-            self._info_scroll = min(max_scroll, self._info_scroll + 1)
+            self._info_scroll = min(max_scroll, getattr(self, '_info_scroll', 0) + 1)
             self.Draw_Info_Menu()
         elif event == self.ENCODER_DIFF_CCW:
-            self._info_scroll = max(0, self._info_scroll - 1)
+            self._info_scroll = max(0, getattr(self, '_info_scroll', 0) - 1)
             self.Draw_Info_Menu()
         elif event == self.ENCODER_DIFF_ENTER:
             self._info_scroll = 0
