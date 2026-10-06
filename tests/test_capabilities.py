@@ -124,6 +124,21 @@ class CapabilityTests(unittest.TestCase):
                 settings_path=tempfile.mktemp(prefix='dwin-test-', suffix='.json'))
         self.assertIsNone(result.mmu)
 
+    def test_spoolman_uses_isolated_transport(self):
+        command_client = Mock()
+        telemetry_client = Mock()
+        with patch.object(backend, 'MoonrakerClient',
+                          side_effect=[command_client, telemetry_client]), \
+                patch.object(backend, 'MoonrakerSubscription'):
+            result = backend.PrinterData(
+                settings_path=tempfile.mktemp(prefix='dwin-test-', suffix='.json'))
+        result._poll_spoolman_percentages((123,))
+        telemetry_client.post.assert_called_once_with(
+            '/server/spoolman/proxy',
+            {'request_method': 'GET', 'path': '/v1/spool/123'},
+            report_error=False)
+        command_client.post.assert_not_called()
+
     def test_spoolman_remaining_percentage_uses_initial_weight(self):
         self.assertEqual(
             backend.PrinterData._spool_remaining_percent(

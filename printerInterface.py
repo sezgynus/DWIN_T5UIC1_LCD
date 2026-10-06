@@ -138,6 +138,9 @@ class PrinterData:
 
     def __init__(self, API_Key='', URL='http://127.0.0.1:7125', timeout=5.0, settings_path=None):
         self.client = MoonrakerClient(URL, API_Key, timeout)
+        # Keep read-only Spoolman telemetry off the serialized printer-command
+        # transport. A telemetry timeout must never cancel or delay user commands.
+        self.spoolman_client = MoonrakerClient(URL, API_Key, timeout, queue_size=16)
         self._jog_lock = Lock()
         self._jog_restore = None
         self._jog_state_name = '_DWIN_JOG_' + uuid.uuid4().hex
@@ -209,6 +212,7 @@ class PrinterData:
 
     def close(self):
         self.subscription.close()
+        self.spoolman_client.close()
         self.client.close()
 
     def check_command_results(self):
@@ -326,7 +330,7 @@ class PrinterData:
         for sid in valid_ids:
             if sid in self._spoolman_futures or now < self._spoolman_refresh_at.get(sid, 0):
                 continue
-            self._spoolman_futures[sid] = self.client.post(
+            self._spoolman_futures[sid] = self.spoolman_client.post(
                 '/server/spoolman/proxy',
                 {'request_method': 'GET', 'path': '/v1/spool/%d' % sid},
                 report_error=False)
