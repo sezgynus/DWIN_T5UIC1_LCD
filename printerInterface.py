@@ -263,10 +263,12 @@ class PrinterData:
                          object_name.startswith('temperature_fan ')) or
                         not isinstance(value, Mapping)):
                     continue
-                setting = self.state.settings.get(object_name, {})
+                setting = next((item for key, item in self.state.settings.items()
+                                if key.lower() == object_name.lower()), {})
                 if not isinstance(setting, Mapping) or setting.get('sensor_type') != 'temperature_mcu':
                     continue
-                sensor_mcu = setting.get('sensor_mcu')
+                # Klipper defaults temperature_mcu sensors to the primary MCU.
+                sensor_mcu = setting.get('sensor_mcu', 'mcu')
                 if not isinstance(sensor_mcu, str):
                     continue
                 try:
