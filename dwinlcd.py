@@ -2032,10 +2032,21 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                              self.lcd.Color_Bg_Black, 128, y, text)
 
     def _draw_info_section(self, label, y):
-        text = T5UIC1_LCD._panel_text(label)[:28]
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
-                             self.lcd.Color_Bg_Black, 16, y, text.upper())
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Blue, 16, y + 18, 255, y + 19)
+        text = T5UIC1_LCD._panel_text(label)[:24]
+        palette = {
+            'MACHINE': (0x07FF, self.ICON_PrintSize),
+            'HOST': (0xF81F, self.ICON_Info),
+            'SOFTWARE': (0xA81F, self.ICON_Version),
+        }
+        key = text.upper()
+        if key.startswith('MCU'):
+            color, icon = 0x07E0, self.ICON_Setup_0
+        else:
+            color, icon = palette.get(key, (self.lcd.Color_White, self.ICON_Info))
+        self.lcd.ICON_Show(self.ICON, icon, 16, y - 2)
+        self.lcd.Draw_String(False, False, self.lcd.font10x20, color,
+                             self.lcd.Color_Bg_Black, 48, y, key)
+        self.lcd.Draw_Rectangle(1, color, 48, y + 21, 255, y + 22)
 
     def _info_items(self):
         info = self.pd.system_info
