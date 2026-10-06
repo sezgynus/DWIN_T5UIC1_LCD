@@ -48,29 +48,25 @@ class AuditRenderingTests(unittest.TestCase):
         result = self.screen()
         result.pd.refresh_system_info = lambda: False
         result.pd.system_info = {
-            'klipperdwin': 'v' * 100,
-            'moonraker': 'm' * 100,
-            'mainsail': 'Ölçüm' * 20,
-            'network': 'Online',
-            'ip': '192.168.100.200',
-            'host_cpu': 99.9,
-            'host_temp': 52.75,
-            'mcus': (('mcu', 'Connected'), ('toolhead-µcu', 'Connected'),
-                     ('very-long-mcu-name-that-must-be-clipped', 'Connected')),
+            'klipperdwin': 'v' * 100, 'moonraker': 'm' * 100,
+            'mainsail': 'Ölçüm' * 20, 'network': 'Online', 'ip': '192.168.100.200',
+            'host_cpu': 99.9, 'host_temp': 52.75,
+            'mcus': ({'name': 'toolhead-µcu-with-long-name', 'load': 12.34,
+                      'temperature': 44.4, 'version': 'v' * 100},),
         }
         result.pd.SHORT_BUILD_VERSION = 'k' * 100
         result.pd.MACHINE_SIZE = '999x999x999'
-        result.Draw_Info_Menu()
-        frames = [frame for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11]
-        values = [frame for frame in frames if int.from_bytes(frame[7:9], 'big') == 136]
-        self.assertEqual(len(values), 12)
-        for frame in values:
-            self.assertLessEqual(len(frame[11:-4]), 17)
-            x = int.from_bytes(frame[7:9], 'big')
-            y = int.from_bytes(frame[9:11], 'big')
-            self.assertLessEqual(x + len(frame[11:-4]) * result.MENU_CHR_W,
-                                 result.lcd.DWIN_WIDTH)
-            self.assertLess(y, 480)
+        for scroll in (0, 5, 9):
+            result._info_scroll = scroll
+            result.lcd.MYSERIAL1.frames.clear()
+            result.Draw_Info_Menu()
+            frames = [frame for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11]
+            values = [frame for frame in frames if int.from_bytes(frame[7:9], 'big') == 128]
+            for frame in values:
+                self.assertLessEqual(len(frame[11:-4]), 17)
+                self.assertLessEqual(128 + len(frame[11:-4]) * result.MENU_CHR_W,
+                                     result.lcd.DWIN_WIDTH)
+                self.assertLess(int.from_bytes(frame[9:11], 'big'), 360)
 
     def test_large_printer_values_show_overflow_without_changing_target(self):
         result = self.screen()
