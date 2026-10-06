@@ -2297,9 +2297,15 @@ class DWIN_LCD:
                          587 * g6 * 255 // 63 +
                          114 * b5 * 255 // 31) // 1000
             label_fg = 0x0000 if luminance >= 140 else self.lcd.Color_White
+            label_x = cx - 3 * len(label)
             self.lcd.Draw_String(False, True, self.lcd.font6x12,
                                  label_fg, label_bg,
-                                 cx - 3 * len(label), top + 65, label)
+                                 label_x, top + 65, label)
+            # The panel has no bold font. Redraw one pixel to the right to
+            # give the small lane number a heavier, more legible stroke.
+            self.lcd.Draw_String(False, True, self.lcd.font6x12,
+                                 label_fg, label_bg,
+                                 label_x + 1, top + 65, label)
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
