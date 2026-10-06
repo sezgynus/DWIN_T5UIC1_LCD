@@ -313,9 +313,14 @@ class PrinterData:
                 response = future.result()
                 spool = response['result']
                 percent = self._spool_remaining_percent(spool)
-            except (KeyError, TypeError, MoonrakerError):
+            except (KeyError, TypeError, ValueError, MoonrakerError):
                 percent = None
-            if percent is not None and self._spoolman_percentages.get(sid) != percent:
+            if percent is None:
+                # Never present an old percentage as current after a failed refresh.
+                if sid in self._spoolman_percentages:
+                    del self._spoolman_percentages[sid]
+                    changed = True
+            elif self._spoolman_percentages.get(sid) != percent:
                 self._spoolman_percentages[sid] = percent
                 changed = True
 

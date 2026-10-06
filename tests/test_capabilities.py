@@ -139,6 +139,18 @@ class CapabilityTests(unittest.TestCase):
             report_error=False)
         command_client.post.assert_not_called()
 
+    def test_failed_spoolman_refresh_clears_stale_percentage(self):
+        result = printer(snapshot())
+        future = Future()
+        future.set_result({'result': {'remaining_weight': None}})
+        result._spoolman_percentages[123] = 57
+        result._spoolman_futures[123] = future
+
+        changed = result._poll_spoolman_percentages((123,))
+
+        self.assertTrue(changed)
+        self.assertNotIn(123, result._spoolman_percentages)
+
     def test_spoolman_remaining_percentage_uses_initial_weight(self):
         self.assertEqual(
             backend.PrinterData._spool_remaining_percent(
