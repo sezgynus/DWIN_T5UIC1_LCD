@@ -2106,7 +2106,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             elif kind == 'wide':
                 text = T5UIC1_LCD._panel_text(value)[:30]
                 self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
-                                     self.lcd.Color_Bg_Black, 16, y, text)
+                                     self.lcd.Color_Bg_Black, 8, y, text)
             else:
                 self._draw_info_row(label, value, y)
             y += 24
