@@ -54,33 +54,24 @@ Proje artık küçük bir uyumluluk yamasının ötesine geçti: mevcut kod taba
 
 ## Proje durumu
 
-### ✅ Şu anda kullanılabilir
-
-<details>
-<summary><strong>Tamamlanan özellikleri göster</strong></summary>
-
-- Doğrudan Moonraker HTTP + WebSocket entegrasyonu
-- Capability tabanlı menüler ve canlı yazıcı dashboard'u
-- Baskı dosyası tarayıcısı, print-state takibi ve baskı kontrolleri
-- Tune, Prepare, Move / Live Jog ve runtime Motion kontrolleri
-- Temperature kontrolleri ve kalıcı PLA/ABS presetleri
-- Uyumlu bir `M355` macro üzerinden Case Light desteği
-- Gate renkleri ve exit-LED state'i ile Happy Hare MMU görselleştirmesi
-- MMU gate başına Spoolman kalan filament yüzdesi
-- Moonraker power device üzerinden encoder butonuyla yazıcıyı açma
-- İnteraktif kurulum/yapılandırma, systemd servisi ve Moonraker Update Manager entegrasyonu
-- UART recovery, kontrollü komut yürütme ve regression testleri
-
-</details>
-
-### 🚧 Yapılacaklar
-
-- **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.
-- **Bed Mesh Visualization & Control** — grafiksel `bed_mesh` gösterimi, ölçülen Z değerlerinin görselleştirilmesi, aktif mesh/profile bilgisi ve Bed Mesh işlemlerine LCD üzerinden erişim.
-- **Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.
-- **Happy Hare MMU Control** — mevcut Home-screen görselleştirmesine ek olarak ayrı MMU kontrol menüsü.
-- **Happy Hare Multi-Unit Support** — mevcut sabit `unit0_mmu_exit_leds` kaynağı yerine dinamik MMU unit ve LED-source keşfi.
-- **Hardware Validation** — fiziksel testlerin ek DWIN T5UIC1 ve Klipper konfigürasyonlarında genişletilmesi.
+- ✅ **Moonraker entegrasyonu** — doğrudan HTTP + WebSocket haberleşmesi.
+- ✅ **Capability tabanlı UI** — dinamik menüler ve canlı yazıcı dashboard'u.
+- ✅ **Baskı akışı** — dosya tarayıcısı, print-state takibi ve baskı kontrolleri.
+- ✅ **Yazıcı kontrolleri** — Tune, Prepare, Move / Live Jog ve runtime Motion kontrolleri.
+- ✅ **Temperature & presetler** — temperature kontrolleri ve kalıcı lokal PLA/ABS presetleri.
+- ✅ **Case Light** — uyumlu bir `M355` macro üzerinden kontrol.
+- ✅ **Happy Hare görselleştirmesi** — Home ekranında MMU gate renkleri ve exit-LED state'i.
+- ✅ **Spoolman entegrasyonu** — MMU gate başına kalan filament yüzdesi.
+- ✅ **Encoder ile power-on** — Moonraker power device üzerinden yazıcıyı açma.
+- ✅ **Kurulum & güncelleme** — interaktif yapılandırma, systemd servisi ve Moonraker Update Manager entegrasyonu.
+- ✅ **Güvenilirlik** — UART recovery, kontrollü komut yürütme ve regression testleri.
+- 🛠️ **Probe Calibration** — doğru `PROBE_CALIBRATE` / `TESTZ` akışı, manual-probe state takibi, Z ayarı, `ACCEPT`, `ABORT` ve kontrollü `SAVE_CONFIG` yönetimi.
+- 🛠️ **Bed Mesh Visualization & Control** — grafiksel `bed_mesh` gösterimi, ölçülen Z değerlerinin görselleştirilmesi, aktif mesh/profile bilgisi ve Bed Mesh işlemlerine LCD üzerinden erişim.
+- 🛠️ **Screws Tilt Adjust** — `screws_tilt_adjust` desteği, `SCREWS_TILT_CALCULATE`, vida konumlarının grafiksel gösterimi ve hesaplanan CW/CCW düzeltme yönlendirmesi.
+- 🛠️ **Mainsail preset senkronizasyonu** — sabit lokal presetler yerine Mainsail'de kullanıcının oluşturduğu presetlerin adları, sıcaklıkları ve fan değerleriyle birlikte otomatik olarak alınması.
+- 🛠️ **Happy Hare MMU Control** — mevcut Home-screen görselleştirmesine ek olarak ayrı MMU kontrol menüsü.
+- 🛠️ **Happy Hare Multi-Unit Support** — mevcut sabit `unit0_mmu_exit_leds` kaynağı yerine dinamik MMU unit ve LED-source keşfi.
+- 🛠️ **Hardware Validation** — fiziksel testlerin ek DWIN T5UIC1 ve Klipper konfigürasyonlarında genişletilmesi.
 
 ## Kurulum
 
