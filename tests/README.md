@@ -1,194 +1,75 @@
-# Regression contracts
+# Regression tests
 
-Run from the repository root:
+Run the complete isolated suite from the repository root:
 
-```sh
+```bash
 python3 -m unittest discover -s tests -v
 ```
 
-The tests use Python's standard library. Import-time GPIO, serial, timer and
-HTTP dependencies are replaced; no hardware or network connection is opened.
-Real UI/backend methods run against isolated printer state and mocked I/O.
+On an installed Pi, use `~/klipperdwin-env/bin/python` instead of `python3` to
+run with the application's dependencies.
 
-The original regression contracts now all pass without expected-failure markers.
-Hardware and live-server validation are still separate from these isolated tests.
+The suite uses `unittest`, isolated printer state and mocked serial, GPIO,
+HTTP and WebSocket I/O. Tests execute real UI/backend methods without opening a
+printer connection or moving hardware. Preset writes use temporary directories.
 
-Initial coverage: resume routing, paused progress/duration, homing invalidation,
-and hotend/bed target application through both Temperature and Tune menus.
-Coverage now also includes transport reconnection, file-list changes,
-coordinate/modal-state preservation and UART framing as described below.
+## Coverage
 
-Transport coverage now also checks optional authentication, timeout forwarding,
-HTTP/JSON error handling, recovery on the next GET, observable POST results,
-closed-client rejection and cancellation of pending commands after failure.
-Resume routing and homing invalidation are fixed and no longer expected failures.
+| Area | Regression contracts |
+|---|---|
+| HTTP transport | Authentication, bounded requests/downloads, malformed responses, observable command results, closed clients and cancelled queues |
+| WebSocket state | Bootstrap/discovery, partial and out-of-order updates, early notifications, lifecycle changes, reconnect, ping checks and RPC completion |
+| State and capabilities | Immutable snapshots, effective configuration/limits, heater/fan combinations, active extruder, optional controls and epoch replacement |
+| Input and ownership | Concurrent producers, FIFO input, bounded overload, debounce, stale-event rejection, one UI owner for initialization/rendering/cleanup and UART writes |
+| Home menus | Forward/reverse four-icon paging, empty slots, Leveling/MMU/Info routes, return selection, capability removal and persistent dashboard/MMU areas |
+| MMU placeholder | Back-only menu, no G-code on entry/exit and bounded selected/unselected reel icons |
+| Files and folders | Cached lists, nested/empty folders, folder-first sorting, basename labels, full-path print starts, deletion/replacement and selection preservation |
+| Mainsail sorting | Name/date/size in both directions, newest-first fallback, invalid preferences/timestamps, bounded polling and stale Enter rejection |
+| Print workflow | Duplicate suppression, command/status confirmation, failed starts, timeout without replay, paused/resumed/completed/cancelled states and retained errors |
+| Preview images | Baseline 128×128 JPEG, letterboxing/transparency, decode/download limits, relative paths, Cancel/late results and revalidation before Print |
+| SRAM cache | First-five priorities, incremental uploads, nonoverlapping addresses, complete-entry publication, folder/sort reuse, LRU eviction, retry and stale-worker rejection |
+| Preview metadata | Shared metadata request, JSON-encoded materials, referenced T1/T2 versus all tools, positive-weight fallback, unknown values, image-free details and bounded rows |
+| Movement | Command-space targets, homing/bounds, cold/excessive extrusion, paused/printing rejection, relative modal-state preservation and restore failure guards |
+| Thermal/presets | Optional heaters/fan, atomic target validation, percentage conversion, local editor isolation, Mainsail sync and atomic local JSON persistence |
+| Motion | All four runtime parameters, supported-field omission, numeric domains, cruise-ratio boundaries and external updates |
+| Probe calibration | Session ownership, start/manual-state confirmation, serialized TESTZ, accept/abort, exact pending-offset save guards and reconnect without replay |
+| Screws Tilt | Four-corner geometry, homing/print guards, fresh and identical repeated results, largest-turn instruction, tolerance/colors, rollover, failures and label bounds |
+| Bed Mesh | Completion and fresh query, probe sample deduplication, profile viewing without LOAD, exact pending-profile save guards, explicit stop/restart confirmation and map bounds |
+| System/integrations | Host/software/MCU information, Happy Hare/Spoolman data, light state and configured encoder power behavior |
+| UART/display | Handshake/ACK fragmentation, framing, short writes, retries, numeric/text bounds, RGB565, asset coordinates and SRAM/JPEG command/address bounds |
 
-WebSocket coverage checks JSON-RPC identification, optional auth, available-object
-subscriptions, partial snapshot merging, out-of-order updates, notifications
-arriving before the subscription response, Klipper lifecycle changes, reconnect,
-file-list invalidation and command rejection after a connection-epoch change.
-The fake socket exercises the subscriber's real bootstrap/reconnect code; no
-running Moonraker server or physical printer is required.
+Failure/epoch tests verify that uncertain actions are not replayed. Acceptance of
+a transport request is tested separately from the expected printer-state change.
+Rendering fixtures validate generated packets and coordinates; they cannot prove
+that an arbitrary physical panel will render those packets correctly.
 
-UI coverage checks concurrent producers, FIFO order, one thread for initialization,
-events/ticks/cleanup, bounded queue overload, startup failures, exception recovery,
-press debounce, stale connection events and deeply immutable printer snapshots.
-An integration test runs real menu rendering and UART packet construction against
-a fake serial port and confirms writes and close all occur on the UI owner.
+## Physical validation
 
-Capability tests exercise all eight hotend/bed/fan combinations, compact menu
-indices and scrolling, active extruder selection, effective heater/extrusion and
-axis limits, reconnect replacement, invalid configuration rejection, atomic
-preheat validation, fan percentage conversion and runtime offset routing.
-Bootstrap now queries effective configfile settings before subscribing.
+User panel tests have exercised direct JPEG display, SRAM cache hits and metadata
+layout. Compatibility with other panel kernels/assets and printer configurations
+remains a separate check. Automated tests do not validate Pi service lifecycle,
+real motion, probing accuracy or live-server persistence.
 
-Preset coverage uses temporary directories: save/restart round trips, instance
-isolation, corrupt and unsupported files, invalid numeric values, XDG defaults,
-and failed atomic replacement preserving the old file and cleaning temporary
-files. No user settings are written by these tests.
+When checking a release on hardware:
 
-Jog coverage checks all coordinate/extrusion mode combinations, save/restore
-without G92, displacement from command space, negative limits, homing, cold
-and excessive extrusion, paused/printing rejection, numeric/axis validation,
-Z velocity caps and local UI edits until confirmation. Actual motion and
-Klipper error recovery still require live printer validation.
+- Browse nested folders, change Mainsail sorting and verify the selected file/path.
+  Hidden thumbnail folders and non-G-code files should remain absent.
+- Compare preview time, tool changes, totals and used-tool colors/weights with
+  Moonraker metadata. Check Print/Cancel, missing images and the four-row layout.
+- Compare cold and cached previews using `Thumbnail` logs. Replace/delete a file,
+  reconnect and ensure stale SRAM entries are not reused.
+- Open Prepare → Screws Tilt Adjust → Calculate. Compare Base and each direction/
+  amount with Klipper, adjust the indicated screw and repeat. Confirm input is
+  locked during measurement and success instructions turn green within tolerance.
+- Open Home → Leveling → Bed Mesh Calibrate. Compare final points/min/max with
+  `bed_mesh.probed_matrix`, inspect grid orientation and repeat after Continue.
+- In Mesh Viewer, compare saved profiles and Current Mesh; verify viewing does not
+  change `bed_mesh.profile_name` or move the printer.
+- Confirm Save only when the displayed profile/restart is intended; after restart,
+  verify the generated `lcd_mesh_N` profile persists with the measured matrix.
+- Test Cancel → Stop only when shutdown is intended; restore Klipper with
+  `FIRMWARE_RESTART` afterward.
 
-Print screen coverage checks paused startup/resume, completion confirmation and
-acknowledgement, new-print reset, cancellation/standby, retained error messages,
-external speed updates and editor isolation.
-
-File coverage checks cached empty lists, path selection across insert/delete,
-failed refresh blocking starts, path-based submission, duplicate suppression,
-HTTP/status confirmation, failures/cancellation/epoch changes, timeout without
-retry and snapshot-only scrolling.
-
-Preheat fan tests check one combined submission, invalid fan values preventing
-partial heating, optional devices, zero fan speed and active extruder selection.
-
-Motion coverage checks all four Klipper parameters and commands, numeric domains,
-missing/invalid-field omission, local edits until confirmation, cruise-ratio
-boundaries and external status updates.
-
-UART tests cover first-frame header/tail, fragmented ACK with noise, incomplete
-ACK, bounded noise storage/retries, timeout and short-write cleanup, UART Read,
-backlight validation and independent buffers. The existing UI ownership test
-now exercises the single-write frame path. Firmware compatibility and display
-rendering still require a physical panel.
-
-UART recovery tests cover missing-panel retry timing, reconnect redraw without
-printer commands, short-write disconnect handling, old-input rejection, closed
-display rejection and unrelated error propagation.
-
-Configuration coverage checks environment defaults, CLI overrides and invalid
-pin/timeout rejection before GPIO imports. Unit syntax was checked with
-systemd-analyze using the local Python executable substituted for the Pi-only
-venv path; this does not replace target-Pi service lifecycle validation.
-
-Probe coverage checks homing, active-session/config/print guards, start-result
-and manual-state gating, owned TESTZ and serialization, accept plus pending
-offset confirmation, abort without save, explicit save guards and epoch changes
-without replay. No physical probing is performed.
-
-Command feedback tests distinguish HTTP acceptance from expected printer state,
-check errors/cancellation/epochs/timeouts, duplicate suppression, acknowledgement
-without retry, validation failures and future-returning backend actions.
-
-Packet tests cover the DWIN protocol: color-bearing points,
-padded numeric text, scaled rounding, complete sign fields and invalid-input
-isolation. No physical panel is exercised.
-
-The packet fixtures also cover clear/line/rectangle/area movement, JPG
-show/cache, QR and icon animation packets; decimal sign transitions retain a
-complete field and numeric overflow draws explicit # markers. The existing real-menu fixture
-runs the updated driver on the UI owner with a fake serial port. These fixtures
-verify source-derived bytes and routing, not screen-side execution or rendering.
-
-Final audit rendering coverage includes 100% progress, completed-minute time
-formatting (including 100-hour prints), negative zero, immediate reconnect flush
-and input-owner flush for early-returning editors. A01–A09 regressions cover GPIO
-error acknowledgement, isolated offset editing, epoch/cache invalidation, jog
-recovery, atomic packet validation and bounded numeric rendering. The limits of
-these isolated fixtures are listed in docs/source-audit.md.
-
-Screws tilt coverage checks optional Prepare menu discovery, geometry-based corner
-placement, conditional homing, print/manual-probe/recovery rejection, completed
-WebSocket RPCs followed by fresh result queries, identical repeated measurements,
-malformed/incomplete results, largest-turn recommendation, 0.05 mm peak-to-peak
-tolerance, minute rollover, epoch/disconnect/timeout failures, encoder locking,
-Continue/back navigation and corner label bounds. Completion RPC tests also check
-notification merging, response IDs, command errors, disconnect and cancelled queues.
-
-Physical check: open Prepare → Screws Tilt Adjust → Calculate, compare Base and
-every direction/amount with the Moonraker console, turn the indicated screw and
-repeat. Check input is ignored while probing, Continue returns to Calculate,
-missing homing runs first, and all labels fit on the actual panel.
-
-Bed mesh coverage checks completion-tracked calibration and fresh result queries,
-conditional homing, duplicate/mutually exclusive calibration guards, profile
-selection without LOAD, malformed/empty/deleted profiles, raw probe sample
-mapping with XY offsets, repeated samples and measurements, config ownership
-and exact pending-profile validation before SAVE_CONFIG, explicit stop/save
-confirmations, interruption and timeout handling. UI tests cover grid orientation,
-color/radius scaling, bounded labels through 25×25, profile-list scrolling,
-real UART result/menu packets and reconnect redraw without command replay.
-
-Physical bed mesh checks:
-
-- Open Home → Leveling → Bed Mesh Calibrate and compare the final point values and
-  min/max with Moonraker's bed_mesh.probed_matrix.
-- Check raw probe progress, circle colors/sizes and labels on the physical LCD.
-- Continue, then repeat calibration; the owned pending profile must not block it.
-- Open Home → Leveling → Mesh Viewer, select saved profiles and Current Mesh, and verify
-  that viewing does not change bed_mesh.profile_name or move the printer.
-- Save only after the displayed profile/restart confirmation; after restart,
-  verify the new lcd_mesh_N profile persists and matches the measured matrix.
-- If testing Cancel, confirm Stop only when a Klipper shutdown is intended;
-  restore operation with FIRMWARE_RESTART afterward.
-
-These isolated tests do not verify physical probing, LCD appearance, service
-lifecycle or live-server persistence.
-
-Home navigation regressions cover four-icon paging, forward/reverse page boundaries,
-empty-slot rejection, Leveling, MMU and Info routing, return to the originating Home
-page or Control menu, capability removal and preservation of the MMU/dashboard
-areas while paging.
-
-Bed Mesh menu regressions check that Prepare/Control no longer duplicate its
-entries, the Home shortcut opens a submenu without starting motion, calibration
-and profile-list Back/Continue return to that menu, viewer-only access without a
-probe, bounded menu selection and UART reconnect without measurement replay.
-
-MMU placeholder regressions verify Back-only navigation with and without bed mesh,
-return to the same Home selection, no G-code on entry/exit and bounded reel icon
-rendering with distinct selected/unselected colors.
-
-File sorting regressions cover saved Mainsail name/date/size preferences in both
-directions, newest-first fallback, malformed timestamps/settings, bounded polling,
-cached file lists, selected-path preservation and stale Enter rejection on resort.
-
-Directory browsing regressions cover empty folders, nested entry/parent Back,
-folder-first sorting in both directions at each level, cached resorting, basename
-labels and folder icons, full-path print submission, deleted files/directories,
-stale Enter rejection and invalid path/entry validation.
-
-Thumbnail preview regressions cover baseline 128×128 JPEG conversion,
-letterboxing, transparency and decode limits, authenticated bounded downloads,
-relative paths, confirmation before Print, Cancel/late-result handling,
-file/epoch revalidation and duplicate starts. Packet tests check exact 0x31/0x24
-frames and SRAM address/chunk bounds. Direct JPEG display has passed a physical
-panel test; cache behavior and perceived latency still need hardware validation.
-
-SRAM cache tests cover ordered first-five preloading, incremental upload,
-nonoverlapping addresses, completion-only publication, reuse after sorting,
-folder changes, replacement/deletion, LRU eviction, capacity limits, foreground
-priority, temporary failure retry, stale worker results and reconnect invalidation.
-UI coverage checks cache hits without downloads/uploads, redraw from SRAM,
-background work without thumbnail display, replacement checks before Print and
-prompt scheduling when switching from slow status polling to thumbnail work.
-
-Metadata regressions use an OrcaSlicer-style response with only T1/T2 referenced,
-JSON-encoded material lists, per-tool weight/color indexing, all four tools,
-plain single-material values, missing/invalid fields and unknown placeholders.
-They check one shared metadata request, details without a thumbnail, cache
-invalidation, row/text bounds above the existing status area and no repeated
-metadata rendering on cache-hit ticks.
+Record the software revision, hardware configuration, logs and screen photos for
+failures. The [historical audit](../docs/source-audit.md) and
+[LCD compatibility notes](../docs/lcd-assets.md) provide additional context.
