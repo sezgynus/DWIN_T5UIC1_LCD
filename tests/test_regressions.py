@@ -124,11 +124,12 @@ class RegressionContracts(unittest.TestCase):
             'SET_HEATER_TEMPERATURE HEATER=extruder1 TARGET=205')
 
     def test_preset_edits_do_not_heat_printer(self):
-        for mode, profile in ((-2, 0), (-3, 1)):
+        for profile in (0, 1):
             for method, field, target in (('HMI_ETemp', 'hotend_temp', 205),
                                            ('HMI_BedTemp', 'bed_temp', 65)):
-                with self.subTest(mode=mode, method=method):
-                    display = self.display(mode)
+                with self.subTest(profile=profile, method=method):
+                    display = self.display(-2)
+                    display._active_preset = profile
                     getattr(display, method)()
                     self.assertEqual(getattr(display.pd.material_preset[profile], field), target)
                     display.pd.sendGCode.assert_not_called()

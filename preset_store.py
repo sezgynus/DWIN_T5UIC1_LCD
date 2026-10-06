@@ -25,12 +25,10 @@ class PresetStore:
         for preset, name in zip(presets, ('PLA', 'ABS')):
             if not isinstance(preset, dict) or preset.get('name') != name:
                 raise ValueError('Invalid preset name')
-            for key in ('hotend_temp', 'bed_temp', 'fan_speed'):
+            for key in ('hotend_temp', 'bed_temp'):
                 value = preset.get(key)
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                     raise ValueError('Invalid preset value: ' + key)
-            if preset['fan_speed'] > 100:
-                raise ValueError('Invalid fan percentage')
         return presets
 
     def load(self):

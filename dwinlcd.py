@@ -74,6 +74,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     index_file = MROWS
     index_prepare = MROWS
     index_control = MROWS
+    index_temp = MROWS
     index_tune = MROWS
 
     MainMenu = 0
@@ -273,8 +274,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
 
     PREHEAT_CASE_TEMP = (0 + 1)
     PREHEAT_CASE_BED = (PREHEAT_CASE_TEMP + 1)
-    PREHEAT_CASE_FAN = (PREHEAT_CASE_BED + 0)
-    PREHEAT_CASE_SAVE = (PREHEAT_CASE_FAN + 1)
+    PREHEAT_CASE_SAVE = (PREHEAT_CASE_BED + 1)
     PREHEAT_CASE_TOTAL = PREHEAT_CASE_SAVE
 
     # Dwen serial screen initialization
@@ -426,10 +426,18 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
     def _configure_menus(self):
         caps = self.pd.capabilities
         recovery = self.pd.jog_recovery_required
-        if getattr(self, '_menu_capabilities', None) == caps and getattr(self, '_menu_recovery', False) == recovery:
+        preset_revision = getattr(self.pd, 'preset_revision', 0)
+        if getattr(self, '_menu_preset_revision', preset_revision) != preset_revision and getattr(self, 'checkkey', self.MainMenu) in (self.PLAPreheat, self.ABSPreheat):
+            self.checkkey = self.TemperatureID
+            self.select_temp.reset()
+            self._active_preset = 0
+        if (getattr(self, '_menu_capabilities', None) == caps
+                and getattr(self, '_menu_recovery', False) == recovery
+                and getattr(self, '_menu_preset_revision', -1) == preset_revision):
             return False
         self._menu_capabilities = caps
         self._menu_recovery = recovery
+        self._menu_preset_revision = preset_revision
         heat = self.pd.HAS_HOTEND or self.pd.HAS_HEATED_BED
         self._menus = {
             'prepare': [('MOVE', 'Move', self.ICON_Axis), ('DISA', 'Disable steppers', self.ICON_CloseMotor),
@@ -442,17 +450,18 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 self._menus[menu].append(('TEMP', 'Hotend temp', self.ICON_HotendTemp))
             if self.pd.HAS_HEATED_BED:
                 self._menus[menu].append(('BED', 'Bed temp', self.ICON_BedTemp))
-            if self.pd.HAS_FAN:
+            if self.pd.HAS_FAN and menu != 'preheat':
                 self._menus[menu].append(('FAN', 'Fan speed', self.ICON_FanSpeed))
         self._menus['tune'].append(('ZOFF', 'Runtime Z offset', self.ICON_Zoffset))
         if heat:
-            self._menus['prepare'].extend([('PLA', 'Preheat PLA', self.ICON_PLAPreheat),
-                                           ('ABS', 'Preheat ABS', self.ICON_ABSPreheat),
-                                           ('COOL', 'Cooldown', self.ICON_Cool)])
-        # Preset-edit screens currently use the hotend-based PLA/ABS layout.
+            for index, preset in enumerate(self.pd.material_preset):
+                key = 'PRESET:' + str(index)
+                self._menus['prepare'].append((key, 'Preheat ' + preset.name, self.ICON_PLAPreheat))
+            self._menus['prepare'].append(('COOL', 'Cooldown', self.ICON_Cool))
         if self.pd.HAS_HOTEND:
-            self._menus['temperature'].extend([('PLA', 'PLA settings', self.ICON_PLAPreheat),
-                                               ('ABS', 'ABS settings', self.ICON_ABSPreheat)])
+            for index, preset in enumerate(self.pd.material_preset):
+                key = 'PRESET:' + str(index)
+                self._menus['temperature'].append((key, preset.name + ' settings', self.ICON_PLAPreheat))
         self._menus['preheat'].append(('SAVE', 'Save settings', self.ICON_WriteEEPROM))
         if heat or self.pd.HAS_FAN:
             self._menus['control'].append(('TEMP', 'Temperature', self.ICON_Temperature))
@@ -468,8 +477,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self._menus['control'].append(('INFO', 'Info', self.ICON_Info))
         prefixes = {'prepare': 'PREPARE', 'temperature': 'TEMP', 'tune': 'TUNE',
                     'preheat': 'PREHEAT', 'control': 'CONTROL'}
-        keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'PLA', 'ABS', 'COOL',
-                'SPEED', 'TEMP', 'BED', 'FAN', 'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT')
+        keys = ('MOVE', 'DISA', 'HOME', 'ZOFF', 'COOL', 'SPEED', 'TEMP', 'BED', 'FAN',
+                'SAVE', 'INFO', 'PROBE', 'RECOVERY', 'LIGHT')
         for menu, prefix in prefixes.items():
             for key in keys:
                 setattr(self, prefix + '_CASE_' + key, -1)
@@ -516,7 +525,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 elif key == 'BED':
                     value = preset.bed_temp if preset else self.pd.thermalManager['temp_bed']['target']
                 elif key == 'FAN':
-                    value = preset.fan_speed if preset else self.pd.thermalManager['fan_speed'][0]
+                    value = self.pd.thermalManager['fan_speed'][0]
                 elif key == 'SPEED':
                     value = self.pd.feedrate_percentage
                 elif key == 'ZOFF':
@@ -540,7 +549,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             value = values.Bed_Temp
         else:
             self.checkkey = self.FanSpeed
-            values.Fan_speed = preset.fan_speed if preset else self.pd.thermalManager['fan_speed'][0]
+            values.Fan_speed = self.pd.thermalManager['fan_speed'][0]
             value = values.Fan_speed
         self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
                                self.lcd.Color_White, self.lcd.Select_Color,
@@ -1019,11 +1028,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             elif self.select_prepare.now == self.PREPARE_CASE_ZOFF:  # Z-offset
                 self._open_zoffset(-4, self.PREPARE_CASE_ZOFF + self.MROWS - self.index_prepare)
 
-            elif self.select_prepare.now == self.PREPARE_CASE_PLA:  # PLA preheat
-                self._action("Preheat PLA", lambda: self.pd.preheat("PLA"))
-
-            elif self.select_prepare.now == self.PREPARE_CASE_ABS:  # ABS preheat
-                self._action("Preheat ABS", lambda: self.pd.preheat("ABS"))
+            elif self.select_prepare.now > 0 and self._menus['prepare'][self.select_prepare.now - 1][0].startswith('PRESET:'):
+                profile = int(self._menus['prepare'][self.select_prepare.now - 1][0].split(':', 1)[1])
+                name = self.pd.material_preset[profile].name
+                self._action('Preheat ' + name, lambda profile=profile: self.pd.preheat_preset(profile))
 
             elif self.select_prepare.now == self.PREPARE_CASE_COOL:  # Cool
                 self._action('Cooldown', self.pd.cooldown)
@@ -1470,20 +1478,27 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             self.Draw_Control_Menu()
         else:
             key = self._menus['temperature'][self.select_temp.now - 1][0]
-            if key in ('PLA', 'ABS'):
-                profile = 0 if key == 'PLA' else 1
-                self.checkkey = self.PLAPreheat if profile == 0 else self.ABSPreheat
-                selection = self.select_PLA if profile == 0 else self.select_ABS
-                selection.reset()
-                self.pd.HMI_ValueStruct.show_mode = -2 - profile
-                self._draw_capability_menu('preheat', selection, profile=profile)
+            if key.startswith('PRESET:'):
+                profile = int(key.split(':', 1)[1])
+                self._active_preset = profile
+                self.checkkey = self.PLAPreheat
+                self.select_PLA.reset()
+                self.pd.HMI_ValueStruct.show_mode = -2
+                self._draw_capability_menu('preheat', self.select_PLA, profile=profile)
             else:
                 self.pd.HMI_ValueStruct.show_mode = -1
                 self._open_thermal_editor(key, self.select_temp.now)
         self.lcd.UpdateLCD()
 
-    def _preset_hmi(self, profile):
-        selection = self.select_PLA if profile == 0 else self.select_ABS
+    def _preset_hmi(self, profile=None):
+        profile = getattr(self, '_active_preset', 0) if profile is None else profile
+        if not 0 <= profile < len(self.pd.material_preset):
+            self.checkkey = self.TemperatureID
+            self.select_temp.reset()
+            self.Draw_Temperature_Menu()
+            self.lcd.UpdateLCD()
+            return
+        selection = self.select_PLA
         draw = lambda: self._draw_capability_menu('preheat', selection, profile=profile)
         if self._menu_navigation('preheat', selection, 'index_preset', draw):
             return
@@ -1502,29 +1517,21 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self.lcd.UpdateLCD()
 
     def HMI_PLAPreheatSetting(self):
-        self._preset_hmi(0)
+        self._preset_hmi()
 
     def HMI_ABSPreheatSetting(self):
-        self._preset_hmi(1)
+        self._preset_hmi()
 
     def HMI_FanSpeed(self):
         event = self.get_encoder_state()
         mode = self.pd.HMI_ValueStruct.show_mode
-        if mode in (-2, -3):
-            row = self.PREHEAT_CASE_FAN
-        elif mode == -1:
+        if mode == -1:
             row = self.TEMP_CASE_FAN
         else:
             row = self.TUNE_CASE_FAN + self.MROWS - self.index_tune
         if event == self.ENCODER_DIFF_ENTER:
             value = self.pd.HMI_ValueStruct.Fan_speed
-            if mode in (-2, -3):
-                profile = -mode - 2
-                self.pd.material_preset[profile].fan_speed = value
-                self.checkkey = self.PLAPreheat if profile == 0 else self.ABSPreheat
-                selection = self.select_PLA if profile == 0 else self.select_ABS
-                self._draw_capability_menu('preheat', selection, profile=profile)
-            else:
+            if mode != -2:
                 self._action("Fan speed", lambda: self.pd.setFanSpeed(value))
                 self.checkkey = self.TemperatureID if mode == -1 else self.Tune
                 self.Draw_Temperature_Menu() if mode == -1 else self.Draw_Tune_Menu()
@@ -1545,8 +1552,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             temp_line = self.TEMP_CASE_TEMP
         elif self.pd.HMI_ValueStruct.show_mode == -2:
             temp_line = self.PREHEAT_CASE_TEMP
-        elif self.pd.HMI_ValueStruct.show_mode == -3:
-            temp_line = self.PREHEAT_CASE_TEMP
         else:
             temp_line = self.TUNE_CASE_TEMP + self.MROWS - self.index_tune
 
@@ -1560,20 +1565,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 )
             elif (self.pd.HMI_ValueStruct.show_mode == -2):
                 self.checkkey = self.PLAPreheat
-                self.pd.material_preset[0].hotend_temp = self.pd.HMI_ValueStruct.E_Temp
+                profile = getattr(self, '_active_preset', 0)
+                self.pd.material_preset[profile].hotend_temp = self.pd.HMI_ValueStruct.E_Temp
                 self.lcd.Draw_IntValue(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(temp_line),
-                    self.pd.material_preset[0].hotend_temp
-                )
-                return
-            elif (self.pd.HMI_ValueStruct.show_mode == -3):
-                self.checkkey = self.ABSPreheat
-                self.pd.material_preset[1].hotend_temp = self.pd.HMI_ValueStruct.E_Temp
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                    3, 216, self.MBASE(temp_line),
-                    self.pd.material_preset[1].hotend_temp
+                    self.pd.material_preset[profile].hotend_temp
                 )
                 return
             else:  # tune
@@ -1616,8 +1613,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
             bed_line = self.TEMP_CASE_BED
         elif self.pd.HMI_ValueStruct.show_mode == -2:
             bed_line = self.PREHEAT_CASE_BED
-        elif self.pd.HMI_ValueStruct.show_mode == -3:
-            bed_line = self.PREHEAT_CASE_BED
         else:
             bed_line = self.TUNE_CASE_BED + self.MROWS - self.index_tune
 
@@ -1631,20 +1626,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
                 )
             elif (self.pd.HMI_ValueStruct.show_mode == -2):
                 self.checkkey = self.PLAPreheat
-                self.pd.material_preset[0].bed_temp = self.pd.HMI_ValueStruct.Bed_Temp
+                profile = getattr(self, '_active_preset', 0)
+                self.pd.material_preset[profile].bed_temp = self.pd.HMI_ValueStruct.Bed_Temp
                 self.lcd.Draw_IntValue(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(bed_line),
-                    self.pd.material_preset[0].bed_temp
-                )
-                return
-            elif (self.pd.HMI_ValueStruct.show_mode == -3):
-                self.checkkey = self.ABSPreheat
-                self.pd.material_preset[1].bed_temp = self.pd.HMI_ValueStruct.Bed_Temp
-                self.lcd.Draw_IntValue(
-                    True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                    3, 216, self.MBASE(bed_line),
-                    self.pd.material_preset[1].bed_temp
+                    self.pd.material_preset[profile].bed_temp
                 )
                 return
             else:  # tune
@@ -2053,7 +2040,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin):
         self._draw_capability_menu('tune', self.select_tune, self.index_tune)
 
     def Draw_Temperature_Menu(self):
-        self._draw_capability_menu('temperature', self.select_temp)
+        self._draw_capability_menu('temperature', self.select_temp, self.index_temp)
 
     def Draw_Motion_Menu(self):
         self.Clear_Main_Window()
