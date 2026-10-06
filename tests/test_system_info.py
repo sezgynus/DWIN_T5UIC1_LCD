@@ -1,6 +1,6 @@
 import socket
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import system_info
 
@@ -22,13 +22,13 @@ class SystemInfoTests(unittest.TestCase):
     @patch.object(system_info.fcntl, 'ioctl')
     def test_network_info_selects_active_non_loopback_ipv4(self, ioctl, _interfaces):
         def response(_fd, request, packed):
-            name = packed.split(b'\\0', 1)[0]
+            name = packed.rstrip(bytes([0])).decode('ascii')
             if request == system_info.SIOCGIFFLAGS:
                 flags = (system_info.IFF_UP | system_info.IFF_LOOPBACK
-                         if name == b'lo' else system_info.IFF_UP)
-                return b'\\0' * 16 + flags.to_bytes(2, 'little') + b'\\0' * 238
+                         if name == 'lo' else system_info.IFF_UP)
+                return bytes(16) + flags.to_bytes(2, 'little') + bytes(238)
             if request == system_info.SIOCGIFADDR:
-                return b'\\0' * 20 + socket.inet_aton('192.168.1.50') + b'\\0' * 232
+                return bytes(20) + socket.inet_aton('192.168.1.50') + bytes(232)
             raise AssertionError(request)
         ioctl.side_effect = response
         self.assertEqual(system_info.network_info(), ('Online', '192.168.1.50'))
