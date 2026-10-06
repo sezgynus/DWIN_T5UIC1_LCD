@@ -843,7 +843,7 @@ class PrinterData:
         if not isinstance(index, int) or not 0 <= index < len(self.material_preset):
             raise ValueError('Unknown preheat preset')
         preset = self.material_preset[index]
-        return self.preHeat(preset.bed_temp, preset.hotend_temp, fan_speed=preset.fan_speed)
+        return self.preHeat(preset.bed_temp, preset.hotend_temp)
 
     def save_settings(self):
         if self.presets_from_mainsail:
