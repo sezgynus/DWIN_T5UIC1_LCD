@@ -237,7 +237,13 @@ class PrinterData:
                 raise ValueError('Invalid Mainsail preset database')
             presets = [material_preset_t.from_mainsail(item, preset_id) for preset_id, item in values.items()]
             if not presets:
-                return False
+                changed = bool(self.material_preset)
+                if changed:
+                    self.material_preset = []
+                    self.preset_revision += 1
+                self.presets_from_mainsail = True
+                self.mainsail_presets_error = None
+                return changed
             changed = self._preset_signature(presets) != self._preset_signature(self.material_preset)
             if changed:
                 self.material_preset = presets
