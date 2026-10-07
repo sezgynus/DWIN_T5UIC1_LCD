@@ -354,6 +354,8 @@ Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başa
 | `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Ekran paketleri, GPIO girdileri ve olay döngüsü |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset kaydı, çalışma zamanı sınırları ve sistem telemetrisi |
 
+Hareket ve kalibrasyon komutları gönderilirken canlı baskı, home ve oturum durumu yeniden kontrol edilir; eski jog konumu reddedilir. Hareket hatasından sonra MOVE=0 temizliğinin çalışabilmesi için jog geri yükleme ayrı bağlantı kontrolü kullanır.
+
 ### Regresyon testleri
 
 ```bash

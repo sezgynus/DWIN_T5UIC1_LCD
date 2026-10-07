@@ -1,4 +1,5 @@
 """Completion-tracked bed calibration and read-only profile snapshots."""
+from operation_guards import motion_dispatch_guard
 import copy
 from dataclasses import dataclass
 import math
@@ -93,7 +94,11 @@ class BedMeshSession:
         self.epoch = self.printer.state.epoch
         self.started = time.monotonic()
         self.phase, self.message = phase, message
-        self.pending = self.printer.subscription.request(method, params)
+        if phase == 'measuring':
+            guard = motion_dispatch_guard(self.printer, owner='bed_mesh')
+            self.pending = self.printer.subscription.request(method, params, guard=guard)
+        else:
+            self.pending = self.printer.subscription.request(method, params)
         self.revision += 1
 
     def refresh(self):

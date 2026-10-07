@@ -88,9 +88,10 @@ class MoonrakerClient:
         except (HTTPError, URLError, OSError) as error:
             raise MoonrakerError('Thumbnail download failed') from error
 
-    def post(self, path, payload=None, guard=None, cleanup=None, report_error=True):
+    def post(self, path, payload=None, guard=None, cleanup=None, report_error=True, cleanup_guard=None):
         future = Future()
         future.cleanup_complete = cleanup is not None
+        future.cleanup_guard = cleanup_guard or guard
         with self._lock:
             if self._stop.is_set():
                 future.set_exception(MoonrakerError('Client is closed'))
@@ -150,7 +151,7 @@ class MoonrakerClient:
                         future.cleanup_complete = True
                     if cleanup is not None and mutated and not self._stop.is_set():
                         try:
-                            if guard is not None and not guard():
+                            if future.cleanup_guard is not None and not future.cleanup_guard():
                                 raise MoonrakerError('Connection changed before jog restore')
                             self.request('POST', path, cleanup)
                             future.cleanup_complete = True

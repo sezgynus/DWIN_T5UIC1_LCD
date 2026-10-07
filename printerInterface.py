@@ -8,6 +8,7 @@ from urllib.parse import quote
 from collections.abc import Mapping
 from concurrent.futures import Future
 from threading import Lock
+from operation_guards import motion_dispatch_guard
 from motion_settings import PARAMETERS, validate as validate_motion
 from moonraker_client import MoonrakerClient, MoonrakerError
 from moonraker_subscription import MoonrakerSubscription
@@ -421,7 +422,7 @@ class PrinterData:
     def getREST(self, path):
         return self.client.get(path)
 
-    def postREST(self, path, json, cleanup=None, report_error=True):
+    def postREST(self, path, json, cleanup=None, report_error=True, dispatch_guard=None):
         snapshot = self.subscription.snapshot()
         if (self.connection_error or not self.state.ready or snapshot['state'] != 'ready'
                 or snapshot['epoch'] != self.state.epoch):
@@ -437,7 +438,10 @@ class PrinterData:
             current = self.subscription.snapshot()
             return current['state'] == 'ready' and current['epoch'] == epoch
 
-        return self.client.post(path, json, guard=guard, cleanup=cleanup, report_error=report_error) if cleanup is not None else self.client.post(path, json, guard=guard, report_error=report_error)
+        def operation_guard():
+            return guard() and (dispatch_guard is None or dispatch_guard())
+
+        return self.client.post(path, json, guard=operation_guard, cleanup=cleanup, cleanup_guard=guard, report_error=report_error) if cleanup is not None else self.client.post(path, json, guard=operation_guard, report_error=report_error)
 
     def power_on_if_off(self):
         """Turn on the configured Moonraker power device only when it is off."""
@@ -906,7 +910,9 @@ class PrinterData:
         with self._jog_lock:
             self._jog_restore = restore
         try:
-            future = self.sendGCode(script, cleanup=restore, report_error=False)
+            dispatch_guard = motion_dispatch_guard(self, owner='jog', position=True,
+                                                   extrusion=heater.name if axis == 'E' else None)
+            future = self.sendGCode(script, cleanup=restore, report_error=False, dispatch_guard=dispatch_guard)
         except Exception:
             # Submission failed before sending anything.
             with self._jog_lock:
@@ -981,20 +987,23 @@ class PrinterData:
             return future
         if self.jog_recovery_required:
             raise ValueError('Restore jog state before sending motion commands')
-        return self.subscription.notify('printer.gcode.script', {'script': gcode})
+        guard = motion_dispatch_guard(self) if gcode.strip() == 'G28' else None
+        return self.subscription.notify('printer.gcode.script', {'script': gcode}, guard=guard)
 
-    def sendGCode(self, gcode, cleanup=None, report_error=True):
+    def sendGCode(self, gcode, cleanup=None, report_error=True, dispatch_guard=None):
         if cleanup is None and self.jog_recovery_required:
             # Heater/fan shutdown and temperature control do not depend on modes.
             allowed = {'TURN_OFF_HEATERS', 'SET_HEATER_TEMPERATURE', 'M106', 'M107'}
             if any(line.strip().split()[0].upper() not in allowed
                    for line in gcode.splitlines() if line.strip()):
                 raise ValueError('Restore jog state before sending motion commands')
+        if dispatch_guard is None and gcode.strip() in ('G28', 'G28 X Y', 'G28 X Y Z', 'M84'):
+            dispatch_guard = motion_dispatch_guard(self)
         if cleanup is not None:
             return self.postREST('/printer/gcode/script', json={'script': gcode},
-                                 cleanup={'script': cleanup}, report_error=report_error)
+                                 cleanup={'script': cleanup}, report_error=report_error, dispatch_guard=dispatch_guard)
         return self.postREST('/printer/gcode/script', json={'script': gcode},
-                             report_error=report_error)
+                             report_error=report_error, dispatch_guard=dispatch_guard)
 
     def disable_all_heaters(self):
         if not self.capabilities.has_heaters:

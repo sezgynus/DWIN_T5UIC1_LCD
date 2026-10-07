@@ -1,4 +1,5 @@
 """Explicit manual-probe session; no automatic motion or command replay."""
+from operation_guards import motion_dispatch_guard
 import math
 import time
 
@@ -34,7 +35,9 @@ class ProbeWizard:
             raise ValueError('Wait for the pending probe command')
 
     def _submit(self, action, script):
-        future = self.printer.sendGCode(script)
+        guard = motion_dispatch_guard(self.printer, owner='probe_wizard',
+                                      manual_active=action in ('step', 'accept', 'abort'), position=action == 'step')
+        future = self.printer.sendGCode(script, dispatch_guard=guard)
         self.pending = (action, future, time.monotonic())
         self.message = 'Waiting for ' + action
         return future

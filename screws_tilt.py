@@ -1,4 +1,5 @@
 """Four-corner screws tilt session using authoritative Klipper RPC results."""
+from operation_guards import motion_dispatch_guard
 import math
 import re
 import time
@@ -74,7 +75,8 @@ class ScrewsTiltSession:
         self.leveled = False
         self.phase, self.message = 'measuring', 'Probing corners...'
         self.started = time.monotonic()
-        self.pending = p.subscription.request('printer.gcode.script', {'script': script})
+        guard = motion_dispatch_guard(p, owner='screws_tilt')
+        self.pending = p.subscription.request('printer.gcode.script', {'script': script}, guard=guard)
 
     def _read_results(self, payload):
         raw = payload['status']['screws_tilt_adjust']['results']

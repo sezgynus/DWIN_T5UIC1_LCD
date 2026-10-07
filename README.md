@@ -354,6 +354,8 @@ Connection epochs reject stale input and queued commands. Failed printer command
 | `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Display packets, GPIO input and event loop |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset persistence, runtime limits and system telemetry |
 
+Motion and calibration commands recheck live print, homing and session state when dispatched; stale jog positions are rejected. Jog cleanup uses a separate connection guard so MOVE=0 restoration remains available after a movement failure.
+
 ### Regression tests
 
 ```bash
