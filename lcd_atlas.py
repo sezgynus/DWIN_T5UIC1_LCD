@@ -18,6 +18,7 @@ ICON_MCU = 0x0103
 ICON_MACHINE = 0x0104
 ICON_HOST = 0x0105
 ICON_SOFTWARE = 0x0106
+ICON_POWER = 0x0107
 
 # virtual_area: (repo-relative JPEG path, reserved Picture Flash ID)
 ATLAS_FILES = {
@@ -37,4 +38,5 @@ ICON_COORDINATES = {
     ICON_MACHINE: (0, 224, 0, 20, 20),
     ICON_HOST: (0, 160, 32, 20, 20),
     ICON_SOFTWARE: (0, 192, 32, 20, 20),
+    ICON_POWER: (0, 224, 32, 20, 20),
 }

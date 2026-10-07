@@ -21,6 +21,7 @@ Current Atlas 0 layout:
 | `0x0104` | 3D printer (`ICON_MACHINE`) | 0 | 224 | 0 | 20 | 20 |
 | `0x0105` | Host computer board (`ICON_HOST`) | 0 | 160 | 32 | 20 | 20 |
 | `0x0106` | Software terminal (`ICON_SOFTWARE`) | 0 | 192 | 32 | 20 | 20 |
+| `0x0107` | Power (`ICON_POWER`) | 0 | 224 | 32 | 20 | 20 |
 
 The Info section icons use blue/cyan shading on black to match the stock `9.ICO`
 style: a 3D printer for MACHINE, a computer board for HOST, a terminal window
@@ -28,6 +29,8 @@ for SOFTWARE, and a chip for MCU. Info draws all four through
 `draw_atlas_icon(icon_id, 8, y - 2)`, including the unavailable-MCU heading.
 Their atlas rectangles are in portrait coordinates; the JPEG remains 480x272.
 The existing stock icon definitions remain available for other screens.
+
+The power icon is registered in Atlas 0 for future UI use and is not currently drawn by any screen.
 
 Atlas 1 currently contains no icons and is reserved for future expansion.
 
