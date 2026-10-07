@@ -120,6 +120,22 @@ class RenderBaselineTests(unittest.TestCase):
             lambda: (screen.Draw_Prepare_Menu(), screen.lcd.update()))
         self.assertEqual(metrics.refreshes, 1)
 
+    def test_prepare_menu_cursor_move_is_incremental(self):
+        screen = self.screen()
+        screen.get_encoder_state = lambda: screen.ENCODER_DIFF_CW
+        screen.Draw_Prepare_Menu()
+        screen.lcd.update()
+        metrics = RenderMetrics.measure(
+            screen.lcd,
+            lambda: screen._menu_navigation(
+                'prepare', screen.select_prepare, 'index_prepare',
+                screen.Draw_Prepare_Menu))
+        self.assertEqual(screen.select_prepare.now, 1)
+        self.assertEqual(metrics.refreshes, 1)
+        self.assertNotIn(0x11, dict(metrics.opcodes))
+        self.assertNotIn(0x23, dict(metrics.opcodes))
+        self.assertLess(metrics.packets, 24)
+
     def test_control_menu_full_draw(self):
         screen = self.screen()
         metrics = self.measure(

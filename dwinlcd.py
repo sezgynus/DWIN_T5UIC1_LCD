@@ -551,17 +551,26 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         event = self.get_encoder_state()
         if event not in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             return False
+        previous = selection.now
         if event == self.ENCODER_DIFF_CW:
             selection.inc(1 + len(self._menus[menu]))
         else:
             selection.dec()
         bottom = getattr(self, index_name, self.MROWS)
+        old_bottom = bottom
         if selection.now > bottom:
             bottom = selection.now
         elif selection.now < bottom - self.MROWS:
             bottom = selection.now + self.MROWS
-        setattr(self, index_name, max(self.MROWS, bottom))
-        draw()
+        bottom = max(self.MROWS, bottom)
+        setattr(self, index_name, bottom)
+
+        if bottom == old_bottom and selection.now != previous:
+            start = max(0, bottom - self.MROWS)
+            self.Erase_Menu_Cursor(previous - start)
+            self.Draw_Menu_Cursor(selection.now - start)
+        elif bottom != old_bottom:
+            draw()
         self.lcd.update()
         return True
 
