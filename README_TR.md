@@ -360,6 +360,8 @@ SAVE_CONFIG gönderiminde onaylanan pending ayarların tam kümesi ve değerleri
 
 Preset, dosya listesi, klasör, sıralama ve Info HTTP okumaları sınırlı bir arka plan kuyruğunda çalışır; beklerken arayüz kullanılabilir. Baskı onayı dosyayı asenkron doğrular; İptal veya bağlantı değişimi bekleyen doğrulamanın baskı başlatmasını engeller. Mainsail preset yazımları da asenkron tamamlanır ve hatalar ekranda gösterilir.
 
+Komut geri bildirimi, taşıma Future sonucu gelmese de süre sınırına tabidir. Süresi dolan işlem geç gelen sonuçla başarılı sayılmaz; tekrar denemeden önce yazıcı durumunu kontrol edin.
+
 ### Regresyon testleri
 
 ```bash

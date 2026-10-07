@@ -360,6 +360,8 @@ SAVE_CONFIG dispatch rechecks the exact approved pending settings; mesh saves al
 
 Preset, file-list, directory, sorting and Info HTTP reads run in a bounded background worker. The UI remains responsive while reads are pending. Print confirmation revalidates the file asynchronously; Cancel or a connection change prevents a pending validation from starting the print. Mainsail preset writes also finish asynchronously and report failures on screen.
 
+Command feedback has a deadline even while its transport Future remains unresolved. Expired actions stay unconfirmed and are never accepted by a late result; inspect the printer before retrying.
+
 ### Regression tests
 
 ```bash
