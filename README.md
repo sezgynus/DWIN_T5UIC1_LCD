@@ -34,7 +34,7 @@ The application targets the 4.3-inch panel and asset layout used by the Ender 3 
 | Adjust the printer | Homing, Move/Live Jog, heater/fan targets, runtime Z offset and motion limits |
 | Calibrate the bed | Four-corner Screws Tilt Adjust, Bed Mesh Calibrate, saved Mesh Viewer and Probe calibration |
 | Use integrations | Editable Mainsail temperature presets, Happy Hare gate visualization, Spoolman percentages and M355 case light |
-| Inspect the system | Scrollable host, software and MCU information; encoder power-on |
+| Inspect the system | Scrollable host, software and MCU information; encoder power on/off |
 
 Menus adapt to detected printer capabilities. The **MMU menu is a placeholder containing only Back**; the Home-screen Happy Hare visualization is functional. Remaining limitations are listed [below](#scope-and-limitations).
 
@@ -230,9 +230,11 @@ M355 P0..255
 Light is ON, Brightness=128
 ```
 
-### Encoder power-on
+### Encoder power control
 
 A Moonraker power device can be switched on by holding the encoder button, even while Klipper or LCD UART is offline. Configure the device name and hold duration with `./configure.sh`. Defaults are `Printer` and **2 seconds**; `0` ms requests power-on immediately on press.
+
+Every menu exposes the same power icon at the top-right. From the first menu item, rotate the encoder counter-clockwise to focus the icon; rotate clockwise to return to the menu. Pressing the focused icon opens a **Turn off printer?** confirmation with **Yes selected by default**. Confirming Yes switches off the configured Moonraker power device only when its reported state is `on`; No returns to the originating menu.
 
 ## Configuration
 
