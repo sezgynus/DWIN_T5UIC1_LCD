@@ -88,6 +88,7 @@ class AtlasDriverTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             lcd, _, _ = configured_driver(tmp)
             lcd._virtual_area_pictures[1] = 15
+            lcd._atlas_virtual_areas_loaded = True
             lcd.draw_atlas_icon(0x101, 100, 120)
 
         self.assertEqual(len(lcd.serial.frames), 1)
