@@ -358,6 +358,8 @@ Motion and calibration commands recheck live print, homing and session state whe
 
 SAVE_CONFIG dispatch rechecks the exact approved pending settings; mesh saves also recheck the measured current/profile data. Changes observed from other clients invalidate the save. This client-side guard is not an atomic lock across all Moonraker clients.
 
+Preset, file-list, directory, sorting and Info HTTP reads run in a bounded background worker. The UI remains responsive while reads are pending. Print confirmation revalidates the file asynchronously; Cancel or a connection change prevents a pending validation from starting the print. Mainsail preset writes also finish asynchronously and report failures on screen.
+
 ### Regression tests
 
 ```bash

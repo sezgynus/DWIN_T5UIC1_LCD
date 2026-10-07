@@ -358,6 +358,8 @@ Hareket ve kalibrasyon komutları gönderilirken canlı baskı, home ve oturum d
 
 SAVE_CONFIG gönderiminde onaylanan pending ayarların tam kümesi ve değerleri yeniden doğrulanır; mesh kaydında ölçülen current/profile verisi de kontrol edilir. Diğer istemcilerden gözlenen değişiklikler kaydı geçersiz kılar. Bu istemci kontrolü tüm Moonraker istemcilerini kapsayan atomik kilit değildir.
 
+Preset, dosya listesi, klasör, sıralama ve Info HTTP okumaları sınırlı bir arka plan kuyruğunda çalışır; beklerken arayüz kullanılabilir. Baskı onayı dosyayı asenkron doğrular; İptal veya bağlantı değişimi bekleyen doğrulamanın baskı başlatmasını engeller. Mainsail preset yazımları da asenkron tamamlanır ve hatalar ekranda gösterilir.
+
 ### Regresyon testleri
 
 ```bash

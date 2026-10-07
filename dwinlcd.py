@@ -987,7 +987,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def _refresh_file_snapshot(self):
         paths = self.pd.GetDirectory(getattr(self, '_file_directory', ''))
-        if self.pd.file_error:
+        if self.pd.file_error or self.pd._files_loading or self.pd._directory_loading:
             return False
         previous = getattr(self, '_file_paths', ())
         selected = (previous[self.select_file.now - 1]
@@ -1580,7 +1580,11 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         else:
             key = self._menus['preheat'][selection.now - 1][0]
             if key == 'SAVE':
-                self.HMI_AudioFeedback(self.pd.save_settings())
+                future = self.pd.save_settings()
+                if isinstance(future, Future):
+                    self._action('Save presets', lambda: future, on_accept=draw)
+                else:
+                    self.HMI_AudioFeedback(future)
             else:
                 self._open_thermal_editor(key, selection.now, profile)
         self.lcd.UpdateLCD()
@@ -2396,7 +2400,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if len(entries) == 1:
             self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
                                  self.lcd.Color_Bg_Black, 20, self.MBASE(2),
-                                 'File list unavailable' if self.pd.file_error else 'No files')
+                                 'File list unavailable' if self.pd.file_error else 'Loading files...' if self.pd._files_loading or self.pd._directory_loading else 'No files')
 
     def CompletedHoming(self):
         self.pd.HMI_flag.home_flag = False
@@ -2576,7 +2580,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if self._poll_print_start() or getattr(self, '_start_error_visible', False):
             return
         if self.checkkey == self.SelectFile and (
-                self.pd.state.epoch != getattr(self, '_file_view_epoch', -1)
+                self.pd._files_loading or self.pd._directory_loading
+                or self.pd.state.epoch != getattr(self, '_file_view_epoch', -1)
                 or self.pd.state.file_revision != getattr(self, '_file_view_revision', -1)
                 or self.pd.file_sort_revision != getattr(self, '_file_view_sort_revision', -1)):
             if self._refresh_file_snapshot():
