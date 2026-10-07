@@ -1,0 +1,707 @@
+"""Complete UART driver for DWIN T5UIC1 instruction-set displays.
+
+The class in this module is deliberately limited to panel/protocol concerns.
+UI layout and rendering policy live above it.  The public methods map directly
+onto the T5UIC1 v2.3 instruction set, with a small set of compatibility
+renderers used by KlipperDWIN to preserve its current visual output.
+"""
+
+import math
+import time
+import unicodedata
+from collections import deque
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from threading import Lock
+
+import serial
+
+
+class T5UIC1ProtocolError(RuntimeError):
+    """Raised when a panel response is malformed or does not match a request."""
+
+
+class T5UIC1TimeoutError(TimeoutError):
+    """Raised when an expected T5UIC1 response is not received in time."""
+
+
+class T5UIC1Display:
+    HEADER = b"\xAA"
+    TAIL = b"\xCC\x33\xC3\x3C"
+
+    WIDTH = 272
+    HEIGHT = 480
+    SRAM_SIZE = 32 * 1024
+    FLASH_SIZE = 16 * 1024
+    MEMORY_SRAM = 0x5A
+    MEMORY_FLASH = 0xA5
+    MAX_DATA_LENGTH = 248
+    MEMORY_WRITE_CHUNK = 128
+    MEMORY_READ_CHUNK = 0xF0
+
+    FONT_SIZES = (
+        (6, 12), (8, 16), (10, 20), (12, 24), (14, 28),
+        (16, 32), (20, 40), (24, 48), (28, 56), (32, 64),
+    )
+
+    FONT_6X12 = 0x00
+    FONT_8X16 = 0x01
+    FONT_10X20 = 0x02
+    FONT_12X24 = 0x03
+    FONT_14X28 = 0x04
+    FONT_16X32 = 0x05
+    FONT_20X40 = 0x06
+    FONT_24X48 = 0x07
+    FONT_28X56 = 0x08
+    FONT_32X64 = 0x09
+
+    # Compatibility names used by the current UI.  These are constants only;
+    # production call sites use the new snake_case driver API.
+    font6x12 = FONT_6X12
+    font8x16 = FONT_8X16
+    font10x20 = FONT_10X20
+    font12x24 = FONT_12X24
+    font14x28 = FONT_14X28
+    font16x32 = FONT_16X32
+    font20x40 = FONT_20X40
+    font24x48 = FONT_24X48
+    font28x56 = FONT_28X56
+    font32x64 = FONT_32X64
+
+    DWIN_WIDTH = WIDTH
+    DWIN_HEIGHT = HEIGHT
+
+    Color_White = 0xFFFF
+    Color_Yellow = 0xFF0F
+    Color_Bg_Window = 0x31E8
+    Color_Bg_Blue = 0x1125
+    Color_Bg_Black = 0x0841
+    Color_Bg_Red = 0xF00F
+    Popup_Text_Color = 0xD6BA
+    Line_Color = 0x3A6A
+    Rectangle_Color = 0xEE2F
+    Percent_Color = 0xFE29
+    BarFill_Color = 0x10E4
+    Select_Color = 0x33BB
+
+    DWIN_FONT_MENU = FONT_8X16
+    DWIN_FONT_STAT = FONT_10X20
+    DWIN_FONT_HEAD = FONT_10X20
+
+    _FIXED_RX_PAYLOAD = {
+        0x00: 2,  # "OK"
+        0x31: 3,  # Flash write: A5 "OK"
+        0x33: 2,  # Picture write: "OK"
+        0x34: 2,  # Direction change: "OK"
+        0xFF: 1,  # CRC error report
+    }
+
+    def __init__(self, port, baudrate=115200, handshake_timeout=1.0,
+                 handshake_attempts=3, wake_delay=0.750):
+        if not isinstance(baudrate, int) or baudrate <= 0:
+            raise ValueError("baudrate must be positive")
+        if not math.isfinite(handshake_timeout) or handshake_timeout <= 0:
+            raise ValueError("handshake timeout must be positive")
+        if not isinstance(handshake_attempts, int) or handshake_attempts <= 0:
+            raise ValueError("handshake attempts must be positive")
+        if not math.isfinite(wake_delay) or wake_delay < 0:
+            raise ValueError("wake delay must be nonnegative")
+
+        self.serial = serial.Serial(port, baudrate, timeout=0.05, write_timeout=1)
+        # Compatibility attribute while the rest of the application migrates.
+        self.MYSERIAL1 = self.serial
+        self._closed = False
+        self._needs_update = True
+        self._defer_updates = False
+        self._rx = bytearray()
+        self._frames = deque()
+        self._aux_rx = deque()
+        self._crc_errors = 0
+        self._transaction_lock = Lock()
+
+        try:
+            time.sleep(wake_delay)
+            for _ in range(handshake_attempts):
+                if self.handshake(handshake_timeout):
+                    break
+            else:
+                raise T5UIC1TimeoutError("DWIN handshake timed out")
+            # Preserve the existing Ender 3 V2 portrait orientation and startup
+            # traffic.  Do not wait for the optional 0x34 acknowledgement here.
+            self.set_orientation(1, wait_ack=False)
+            self.update()
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        if not getattr(self, "_closed", False):
+            self._closed = True
+            self.serial.close()
+
+    @staticmethod
+    def _u8(value, name="value"):
+        if not isinstance(value, int) or not 0 <= value <= 0xFF:
+            raise ValueError(f"{name} must be 0..255")
+        return value
+
+    @staticmethod
+    def _u16(value, name="value"):
+        if not isinstance(value, int) or not 0 <= value <= 0xFFFF:
+            raise ValueError(f"{name} must be 0..65535")
+        return value
+
+    @classmethod
+    def _word(cls, value, name="value"):
+        return cls._u16(value, name).to_bytes(2, "big")
+
+    @classmethod
+    def _words(cls, *values):
+        return b"".join(cls._word(value) for value in values)
+
+    @staticmethod
+    def _ensure_bytes(data, name="data"):
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise ValueError(f"{name} must be bytes-like")
+        return bytes(data)
+
+    def _send(self, command, payload=b""):
+        if self._closed:
+            raise RuntimeError("LCD is closed")
+        command = self._u8(command, "command")
+        payload = self._ensure_bytes(payload)
+        if len(payload) > self.MAX_DATA_LENGTH:
+            raise ValueError("T5UIC1 data field exceeds 248 bytes")
+        frame = self.HEADER + bytes((command,)) + payload + self.TAIL
+        written = self.serial.write(frame)
+        if written != len(frame):
+            self.close()
+            raise IOError("Incomplete LCD frame write")
+        self._needs_update = True
+        time.sleep(0.001)
+        return frame
+
+    def _read_available(self):
+        if self._closed:
+            raise RuntimeError("LCD is closed")
+        waiting = int(getattr(self.serial, "in_waiting", 0) or 0)
+        if waiting:
+            self._rx.extend(self.serial.read(min(waiting, 4096)))
+            self._parse_rx()
+
+    def _parse_rx(self):
+        while True:
+            start = self._rx.find(self.HEADER)
+            if start < 0:
+                # Keep no arbitrary noise. A future frame always starts at AA.
+                self._rx.clear()
+                return
+            if start:
+                del self._rx[:start]
+            if len(self._rx) < 2:
+                return
+
+            command = self._rx[1]
+            if command == 0x32:
+                # AA 32 TYPE ADDR_H ADDR_L LEN DATA... TAIL
+                if len(self._rx) < 6:
+                    return
+                payload_length = 4 + self._rx[5]
+            elif command == 0x3A:
+                # AA 3A LEN DATA... TAIL
+                if len(self._rx) < 3:
+                    return
+                payload_length = 1 + self._rx[2]
+            else:
+                payload_length = self._FIXED_RX_PAYLOAD.get(command)
+                if payload_length is None:
+                    # Unknown inbound opcode. Drop only the header byte and
+                    # resynchronize without treating data bytes as a frame.
+                    del self._rx[0]
+                    continue
+
+            total = 2 + payload_length + len(self.TAIL)
+            if len(self._rx) < total:
+                return
+            if bytes(self._rx[total - len(self.TAIL):total]) != self.TAIL:
+                del self._rx[0]
+                continue
+
+            payload = bytes(self._rx[2:2 + payload_length])
+            del self._rx[:total]
+            if command == 0x3A:
+                self._aux_rx.append(payload[1:])
+            elif command == 0xFF:
+                self._crc_errors += 1
+            else:
+                self._frames.append((command, payload))
+
+    def _wait_response(self, command, timeout, predicate=None):
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be positive")
+        deadline = time.monotonic() + timeout
+        while True:
+            for _ in range(len(self._frames)):
+                frame_command, payload = self._frames.popleft()
+                if frame_command == command and (predicate is None or predicate(payload)):
+                    return payload
+                self._frames.append((frame_command, payload))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise T5UIC1TimeoutError(f"Timed out waiting for opcode 0x{command:02X}")
+            self._read_available()
+            if not getattr(self.serial, "in_waiting", 0):
+                time.sleep(min(0.005, remaining))
+
+    @staticmethod
+    def _ok(payload):
+        return payload.endswith(b"OK")
+
+    # ------------------------------------------------------------------
+    # Configuration and interface instructions
+    # ------------------------------------------------------------------
+
+    def handshake(self, timeout=1.0):
+        with self._transaction_lock:
+            self._send(0x00)
+            try:
+                payload = self._wait_response(0x00, timeout)
+            except T5UIC1TimeoutError:
+                return False
+            return payload == b"OK"
+
+    def set_backlight(self, brightness):
+        self._send(0x30, bytes((self._u8(brightness, "brightness"),)))
+
+    def set_orientation(self, direction, wait_ack=False, timeout=1.0):
+        if direction not in (0, 1, 2, 3):
+            raise ValueError("direction must be 0..3")
+        with self._transaction_lock:
+            self._send(0x34, b"\x5A\xA5" + bytes((direction,)))
+            if wait_ack:
+                payload = self._wait_response(0x34, timeout, self._ok)
+                if payload != b"OK":
+                    raise T5UIC1ProtocolError("Invalid orientation acknowledgement")
+
+    def set_aux_baud_divisor(self, divisor):
+        if not isinstance(divisor, int) or not 1 <= divisor <= 0x03FF:
+            raise ValueError("extended UART divisor must be 1..0x03FF")
+        self._send(0x38, self._word(divisor))
+
+    def set_aux_baudrate(self, baudrate):
+        if not isinstance(baudrate, int) or baudrate < 15300:
+            raise ValueError("extended UART baudrate must be at least 15300")
+        divisor = round(15667200 / baudrate)
+        if not 1 <= divisor <= 0x03FF:
+            raise ValueError("extended UART baudrate is outside panel range")
+        self.set_aux_baud_divisor(divisor)
+        return 15667200 / divisor
+
+    def aux_write(self, data):
+        data = self._ensure_bytes(data)
+        if not data:
+            raise ValueError("extended UART write must not be empty")
+        self._send(0x39, data)
+
+    def poll_aux_data(self):
+        self._read_available()
+        return self._aux_rx.popleft() if self._aux_rx else None
+
+    def poll_crc_error(self):
+        self._read_available()
+        if not self._crc_errors:
+            return False
+        self._crc_errors -= 1
+        return True
+
+    def update(self):
+        if self._closed:
+            raise RuntimeError("LCD is closed")
+        if self._defer_updates or not self._needs_update:
+            return
+        self._send(0x3D)
+        self._needs_update = False
+
+    # ------------------------------------------------------------------
+    # Drawing instructions
+    # ------------------------------------------------------------------
+
+    def clear(self, color):
+        self._send(0x01, self._word(color, "color"))
+
+    def draw_points(self, color, width, height, points):
+        color = self._u16(color, "color")
+        if not isinstance(width, int) or not 1 <= width <= 15:
+            raise ValueError("point width must be 1..15")
+        if not isinstance(height, int) or not 1 <= height <= 15:
+            raise ValueError("point height must be 1..15")
+        points = tuple(points)
+        if not points:
+            raise ValueError("at least one point is required")
+        payload = self._word(color) + bytes((width, height))
+        for point in points:
+            if not isinstance(point, (tuple, list)) or len(point) != 2:
+                raise ValueError("points must contain (x, y) pairs")
+            payload += self._words(point[0], point[1])
+        self._send(0x02, payload)
+
+    def draw_point(self, color, width, height, x, y):
+        self.draw_points(color, width, height, ((x, y),))
+
+    def draw_polyline(self, color, points):
+        color = self._u16(color, "color")
+        points = tuple(points)
+        if len(points) < 2:
+            raise ValueError("a polyline needs at least two points")
+        payload = self._word(color)
+        for point in points:
+            if not isinstance(point, (tuple, list)) or len(point) != 2:
+                raise ValueError("points must contain (x, y) pairs")
+            payload += self._words(point[0], point[1])
+        self._send(0x03, payload)
+
+    def draw_line(self, color, x0, y0, x1, y1):
+        self.draw_polyline(color, ((x0, y0), (x1, y1)))
+
+    def draw_rectangle(self, mode, color, x0, y0, x1, y1):
+        if mode not in (0, 1, 2):
+            raise ValueError("rectangle mode must be 0, 1 or 2")
+        payload = bytes((mode,)) + self._word(color, "color") + self._words(x0, y0, x1, y1)
+        self._send(0x05, payload)
+
+    def draw_bitmap(self, x, y, width, color1, color0, data):
+        if not isinstance(width, int) or not 1 <= width <= 480:
+            raise ValueError("bitmap width must be 1..480")
+        data = self._ensure_bytes(data)
+        row_bytes = (width + 7) // 8
+        if not data or len(data) % row_bytes:
+            raise ValueError("bitmap data must contain complete left-aligned rows")
+        payload = (self._words(x, y) + self._word(width)
+                   + self._word(color1, "color1") + self._word(color0, "color0") + data)
+        self._send(0x08, payload)
+
+    def move_area(self, mode, direction, distance, color, x0, y0, x1, y1):
+        if mode not in (0, 1):
+            raise ValueError("move mode must be 0 or 1")
+        if direction not in (0, 1, 2, 3):
+            raise ValueError("move direction must be 0..3")
+        flags = (mode << 7) | direction
+        payload = bytes((flags,)) + self._words(distance, color, x0, y0, x1, y1)
+        self._send(0x09, payload)
+
+    # Software-only helpers retained because the current UI uses them.
+    def draw_circle(self, color, x0, y0, radius):
+        if not isinstance(radius, int) or radius < 0:
+            raise ValueError("radius must be a nonnegative integer")
+        x = radius
+        y = 0
+        error = 1 - radius
+        while x >= y:
+            points = (
+                (x0 + x, y0 + y), (x0 + y, y0 + x),
+                (x0 - y, y0 + x), (x0 - x, y0 + y),
+                (x0 - x, y0 - y), (x0 - y, y0 - x),
+                (x0 + y, y0 - x), (x0 + x, y0 - y),
+            )
+            self.draw_points(color, 1, 1, points)
+            y += 1
+            if error < 0:
+                error += 2 * y + 1
+            else:
+                x -= 1
+                error += 2 * (y - x) + 1
+
+    def fill_circle(self, color, x0, y0, radius):
+        if not isinstance(radius, int) or radius < 0:
+            raise ValueError("radius must be a nonnegative integer")
+        for dy in range(-radius, radius + 1):
+            dx = int(math.sqrt(radius * radius - dy * dy))
+            self.draw_rectangle(1, color, x0 - dx, y0 + dy, x0 + dx, y0 + dy)
+
+    # ------------------------------------------------------------------
+    # Text and numeric instructions
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _panel_text(text):
+        text = str(text).translate(str.maketrans({
+            "ı": "i", "İ": "I", "ş": "s", "Ş": "S", "ğ": "g", "Ğ": "G",
+        }))
+        text = unicodedata.normalize("NFKD", text)
+        return "".join(
+            char if " " <= char <= "~" else "?"
+            for char in text if not unicodedata.combining(char)
+        )
+
+    def draw_text_bytes(self, width_adjust, show_background, font, color,
+                        background, x, y, data):
+        if not isinstance(font, int) or not 0 <= font <= 9:
+            raise ValueError("font must be 0..9")
+        data = self._ensure_bytes(data)
+        if not data:
+            return
+        mode = (bool(width_adjust) << 7) | (bool(show_background) << 6) | font
+        payload = (bytes((mode,)) + self._word(color, "color")
+                   + self._word(background, "background") + self._words(x, y) + data)
+        self._send(0x11, payload)
+
+    def draw_text(self, width_adjust, show_background, font, color,
+                  background, x, y, text):
+        self._u16(x, "x")
+        self._u16(y, "y")
+        if not isinstance(font, int) or not 0 <= font <= 9:
+            raise ValueError("font must be 0..9")
+        font_width = self.FONT_SIZES[font][0]
+        visible = min(90, max(0, (self.WIDTH - x) // font_width))
+        encoded = self._panel_text(text)[:visible].encode("ascii")
+        if encoded and y < self.HEIGHT:
+            self.draw_text_bytes(width_adjust, show_background, font, color,
+                                 background, x, y, encoded)
+
+    def draw_number(self, value, *, signed=False, show_background=False,
+                    zero_fill=False, zero_mode=False, font=FONT_8X16,
+                    color=0xFFFF, background=0, integer_digits=1,
+                    fractional_digits=0, x=0, y=0, byte_length=4):
+        if not isinstance(font, int) or not 0 <= font <= 9:
+            raise ValueError("font must be 0..9")
+        if not isinstance(integer_digits, int) or not 1 <= integer_digits <= 20:
+            raise ValueError("integer_digits must be 1..20")
+        if not isinstance(fractional_digits, int) or not 0 <= fractional_digits <= 20:
+            raise ValueError("fractional_digits must be 0..20")
+        if integer_digits + fractional_digits > 20:
+            raise ValueError("integer_digits + fractional_digits must not exceed 20")
+        if not isinstance(byte_length, int) or not 1 <= byte_length <= 8:
+            raise ValueError("byte_length must be 1..8")
+        if not isinstance(value, int):
+            raise ValueError("native numeric value must be an integer")
+        try:
+            raw = value.to_bytes(byte_length, "big", signed=bool(signed))
+        except OverflowError as error:
+            raise ValueError("numeric value does not fit requested byte length") from error
+        mode = (bool(show_background) << 7 | bool(signed) << 6
+                | bool(zero_fill) << 5 | bool(zero_mode) << 4 | font)
+        payload = (bytes((mode,)) + self._word(color, "color")
+                   + self._word(background, "background")
+                   + bytes((integer_digits, fractional_digits))
+                   + self._words(x, y) + raw)
+        self._send(0x14, payload)
+
+    def _format_scaled_decimal(self, value, integer_digits, fractional_digits, signed):
+        try:
+            number = Decimal(value) if isinstance(value, int) else Decimal(str(value))
+            if not number.is_finite():
+                raise ValueError("numeric value must be finite")
+            limit = Decimal(10) ** (integer_digits + fractional_digits)
+            if abs(number) < limit:
+                number = number.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+            if number == 0:
+                number = abs(number)
+            width = integer_digits + (fractional_digits + 1 if fractional_digits else 0) + int(signed)
+            if abs(number) >= limit:
+                return "#" * width
+            text = format(number.scaleb(-fractional_digits), f".{fractional_digits}f")
+            return text.rjust(width) if len(text) <= width else "#" * width
+        except InvalidOperation as error:
+            raise ValueError("invalid numeric value") from error
+
+    def draw_integer_text(self, show_background, zero_fill, zero_mode, font,
+                          color, background, digits, x, y, value):
+        if not isinstance(digits, int) or not 1 <= digits <= 19:
+            raise ValueError("digits must be 1..19")
+        text = self._format_scaled_decimal(value, digits, 0, False)
+        self.draw_text(False, show_background, font, color, background, x, y, text)
+
+    def draw_scaled_float_text(self, show_background, zero_fill, zero_mode, font,
+                               color, background, integer_digits, fractional_digits,
+                               x, y, value):
+        if not (isinstance(integer_digits, int) and isinstance(fractional_digits, int)
+                and 1 <= integer_digits <= 19 and 0 <= fractional_digits <= 18
+                and integer_digits + fractional_digits < 20):
+            raise ValueError("invalid numeric digit count")
+        font_width = self.FONT_SIZES[font][0] if isinstance(font, int) and 0 <= font <= 9 else 0
+        text = self._format_scaled_decimal(value, integer_digits, fractional_digits, True)
+        self.draw_text(False, show_background, font, color, background,
+                       max(0, x - font_width), y, text)
+
+    def draw_signed_scaled_float_text(self, font, background, integer_digits,
+                                      fractional_digits, x, y, value):
+        self.draw_scaled_float_text(
+            True, True, False, font, self.Color_White, background,
+            integer_digits, fractional_digits, x, y, value,
+        )
+
+    # ------------------------------------------------------------------
+    # Picture, icon, QR and barcode instructions
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _image_mode(index, background, restore, enhanced):
+        if not isinstance(index, int) or not 0 <= index <= 0x0F:
+            raise ValueError("image library/cache index must be 0..15")
+        return (bool(background) << 7 | bool(restore) << 6
+                | bool(enhanced) << 5 | index)
+
+    def draw_qr(self, x, y, pixel_size, data):
+        if not isinstance(pixel_size, int) or not 1 <= pixel_size <= 15:
+            raise ValueError("QR pixel size must be 1..15")
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        data = self._ensure_bytes(data)
+        if not 1 <= len(data) <= 154:
+            raise ValueError("QR data must contain 1..154 bytes")
+        self._send(0x21, self._words(x, y) + bytes((pixel_size,)) + data)
+
+    def show_jpeg(self, jpeg_id):
+        if not isinstance(jpeg_id, int) or not 0 <= jpeg_id <= 15:
+            raise ValueError("JPEG ID must be 0..15")
+        self._send(0x22, bytes((0, jpeg_id)))
+
+    def show_icon(self, library_id, icon_ids, x, y, *, background=True,
+                  restore=False, enhanced=False):
+        mode = self._image_mode(library_id, background, restore, enhanced)
+        if isinstance(icon_ids, int):
+            icon_ids = (icon_ids,)
+        icon_ids = tuple(icon_ids)
+        if not icon_ids:
+            raise ValueError("at least one icon ID is required")
+        icons = bytes(self._u8(icon, "icon ID") for icon in icon_ids)
+        self._send(0x23, self._words(x, y) + bytes((mode,)) + icons)
+
+    def show_sram_jpeg(self, x, y, address=0, *, background=True, enhanced=False):
+        if not isinstance(address, int) or not 0 <= address < self.SRAM_SIZE:
+            raise ValueError("SRAM address outside 32KB range")
+        mode = (bool(background) << 7) | (bool(enhanced) << 5)
+        self._send(0x24, self._words(x, y) + bytes((mode,)) + self._word(address))
+
+    def cache_jpeg(self, jpeg_id):
+        if not isinstance(jpeg_id, int) or not 0 <= jpeg_id <= 15:
+            raise ValueError("JPEG ID must be 0..15")
+        self._send(0x25, bytes((1, jpeg_id)))
+
+    def copy_cache1(self, x0, y0, x1, y1, x, y):
+        self._send(0x26, self._words(x0, y0, x1, y1, x, y))
+
+    def copy_cache(self, cache_id, x0, y0, x1, y1, x, y, *,
+                   background=False, restore=False, enhanced=True):
+        if cache_id not in (0, 1):
+            raise ValueError("virtual display area must be 0 or 1")
+        mode = self._image_mode(cache_id, background, restore, enhanced)
+        self._send(0x27, bytes((mode,)) + self._words(x0, y0, x1, y1, x, y))
+
+    def configure_animation(self, animation_id, enabled, library_id,
+                            first_icon, last_icon, x, y, interval,
+                            *, restart_from_first=True):
+        if not isinstance(animation_id, int) or not 0 <= animation_id <= 15:
+            raise ValueError("animation ID must be 0..15")
+        if not isinstance(library_id, int) or not 0 <= library_id <= 15:
+            raise ValueError("icon library ID must be 0..15")
+        first_icon = self._u8(first_icon, "first icon")
+        last_icon = self._u8(last_icon, "last icon")
+        interval = self._u8(interval, "interval")
+        mode = (bool(enabled) << 7 | bool(restart_from_first) << 6 | animation_id)
+        payload = self._words(x, y) + bytes((mode, library_id, first_icon, last_icon, interval))
+        self._send(0x28, payload)
+
+    def set_animation_mask(self, state):
+        self._send(0x29, self._word(state, "animation mask"))
+
+    def draw_ean13(self, x, y, digits):
+        if isinstance(digits, str):
+            if len(digits) != 12 or not digits.isdigit():
+                raise ValueError("EAN-13 source must contain exactly 12 digits")
+            digits = tuple(int(char) for char in digits)
+        else:
+            digits = tuple(digits)
+        if len(digits) != 12 or any(not isinstance(value, int) or not 0 <= value <= 9 for value in digits):
+            raise ValueError("EAN-13 source must contain exactly 12 digits in the range 0..9")
+        if x % 2 or y % 2:
+            raise ValueError("EAN-13 coordinates must be even")
+        self._send(0x2A, self._words(x, y) + bytes(digits))
+
+    # ------------------------------------------------------------------
+    # SRAM, data Flash and picture Flash instructions
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _memory_limit(cls, memory):
+        if memory == cls.MEMORY_SRAM:
+            return cls.SRAM_SIZE
+        if memory == cls.MEMORY_FLASH:
+            return cls.FLASH_SIZE
+        raise ValueError("memory must be MEMORY_SRAM or MEMORY_FLASH")
+
+    def write_memory(self, memory, address, data, *, timeout=1.25):
+        limit = self._memory_limit(memory)
+        if not isinstance(address, int):
+            raise ValueError("memory address must be an integer")
+        data = self._ensure_bytes(data)
+        if not data:
+            raise ValueError("memory write must not be empty")
+        if not 0 <= address < limit or address + len(data) > limit:
+            raise ValueError("memory write outside selected memory range")
+
+        with self._transaction_lock:
+            offset = 0
+            while offset < len(data):
+                chunk = data[offset:offset + self.MEMORY_WRITE_CHUNK]
+                self._send(0x31, bytes((memory,)) + self._word(address + offset) + chunk)
+                if memory == self.MEMORY_FLASH:
+                    payload = self._wait_response(
+                        0x31, timeout,
+                        lambda value: value == bytes((self.MEMORY_FLASH,)) + b"OK",
+                    )
+                    if payload != bytes((self.MEMORY_FLASH,)) + b"OK":
+                        raise T5UIC1ProtocolError("Invalid Flash write acknowledgement")
+                offset += len(chunk)
+
+    def read_memory(self, memory, address, length, *, timeout=1.0):
+        limit = self._memory_limit(memory)
+        if not isinstance(address, int) or not isinstance(length, int):
+            raise ValueError("memory address and length must be integers")
+        if length <= 0 or not 0 <= address < limit or address + length > limit:
+            raise ValueError("memory read outside selected memory range")
+
+        result = bytearray()
+        with self._transaction_lock:
+            offset = 0
+            while offset < length:
+                size = min(self.MEMORY_READ_CHUNK, length - offset)
+                chunk_address = address + offset
+                self._send(0x32, bytes((memory,)) + self._word(chunk_address) + bytes((size,)))
+
+                def matches(payload):
+                    return (len(payload) == 4 + size
+                            and payload[0] == memory
+                            and int.from_bytes(payload[1:3], "big") == chunk_address
+                            and payload[3] == size)
+
+                payload = self._wait_response(0x32, timeout, matches)
+                if not matches(payload):
+                    raise T5UIC1ProtocolError("Memory response does not match request")
+                result.extend(payload[4:])
+                offset += size
+        return bytes(result)
+
+    def write_sram(self, address, data):
+        self.write_memory(self.MEMORY_SRAM, address, data)
+
+    def read_sram(self, address, length, *, timeout=1.0):
+        return self.read_memory(self.MEMORY_SRAM, address, length, timeout=timeout)
+
+    def write_flash(self, address, data, *, timeout=1.25):
+        self.write_memory(self.MEMORY_FLASH, address, data, timeout=timeout)
+
+    def read_flash(self, address, length, *, timeout=1.0):
+        return self.read_memory(self.MEMORY_FLASH, address, length, timeout=timeout)
+
+    def store_sram_as_picture(self, picture_id, *, timeout=2.5):
+        if not isinstance(picture_id, int) or not 0 <= picture_id <= 15:
+            raise ValueError("picture ID must be 0..15")
+        with self._transaction_lock:
+            self._send(0x33, b"\x5A\xA5" + bytes((picture_id,)))
+            payload = self._wait_response(0x33, timeout, self._ok)
+            if payload != b"OK":
+                raise T5UIC1ProtocolError("Invalid picture Flash acknowledgement")
+
+
+# Transitional class alias.  The application import is migrated separately.
+T5UIC1_LCD = T5UIC1Display
