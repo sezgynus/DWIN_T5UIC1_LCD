@@ -15,6 +15,7 @@ from gpiozero import Button, Device
 from gpiozero.pins.lgpio import LGPIOFactory
 from printerInterface import PrinterData
 from t5uic1_driver import T5UIC1Display
+from lcd_atlas import ICON_FOLDER
 
 def _MAX(lhs, rhs):
     if lhs > rhs:
@@ -2033,9 +2034,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         label = path.rstrip('/').rsplit('/', 1)[-1]
         self.Draw_Menu_Line(row, False if is_dir else self.ICON_File, label)
         if is_dir:
-            y = self.MBASE(row)
-            self.lcd.draw_rectangle(1, 0xFFE0, 26, y-7, 35, y-3)
-            self.lcd.draw_rectangle(1, 0xFFE0, 26, y-3, 45, y+10)
+            self.lcd.draw_atlas_icon(ICON_FOLDER, 26, self.MBASE(row) - 7)
 
     def Draw_Select_Highlight(self, sel):
         self.pd.HMI_flag.select_flag = sel
