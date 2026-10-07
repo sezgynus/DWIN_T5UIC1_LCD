@@ -146,6 +146,13 @@ class T5UIC1Display:
 
     @staticmethod
     def _u16(value, name="value"):
+        # Preserve the legacy UI contract for calculations that yield exact
+        # integer-valued floats (for example 256.0), while rejecting fractional
+        # coordinates that cannot be represented by the wire protocol.
+        if isinstance(value, float):
+            if not math.isfinite(value) or not value.is_integer():
+                raise ValueError(f"{name} must be an integer in 0..65535")
+            value = int(value)
         if not isinstance(value, int) or not 0 <= value <= 0xFFFF:
             raise ValueError(f"{name} must be 0..65535")
         return value

@@ -184,6 +184,13 @@ class T5UIC1DriverPackets(unittest.TestCase):
                     operation()
         self.assertFalse(lcd.serial.frames)
 
+    def test_word_fields_accept_integral_float_but_reject_fraction(self):
+        lcd = driver()
+        lcd.draw_rectangle(1, 0, 16 + 100 * 240 / 100, 93, 256, 113)
+        self.assertEqual(lcd.serial.frames[-1][5:7], bytes.fromhex("01 00"))
+        with self.assertRaises(ValueError):
+            lcd.draw_rectangle(1, 0, 12.5, 0, 20, 20)
+
 
 if __name__ == "__main__":
     unittest.main()
