@@ -303,6 +303,8 @@ sudo systemctl restart KlipperDWIN.service
 
 Tek UI sahibi thread; çizim, gezinme ve UART yazımlarını yönetir. GPIO callback’leri girdi olaylarını kuyruğa ekler. Moonraker WebSocket abonelikleri birleştirilmiş değiştirilemez durum sağlar; sıralı HTTP worker komutları işler, uzun tabla kalibrasyonları tamamlanması izlenen WebSocket RPC kullanır.
 
+Yanıt tabanlı panel heartbeat'i, Linux UART aygıtı açık kalmış olsa bile LCD güç çevrimini algılar. Yeniden bağlantıda ekran ve geçici atlas/cache durumu persistent Picture Flash'tan geri yüklenir; değişmemiş atlas verisi Flash'a yeniden yazılmaz.
+
 Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başarısız yazıcı komutları **otomatik tekrar gönderilmez**. Yeniden bağlantı arayüzü çizer ve geçici önbellekleri yeniden kurar. Zaman aşımı, komutun yazıcıya ulaşıp yanıtın kaybolduğu anlamına gelebilir; tekrarlamadan önce gerçek durumu inceleyin.
 
 | Modüller | Sorumluluk |
@@ -312,8 +314,10 @@ Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başa
 | `moonraker_client.py`, `moonraker_subscription.py`, `command_feedback.py` | HTTP/WebSocket iletişimi ve komut onayı |
 | `screws_tilt.py`, `bed_mesh.py`, `probe_wizard.py` | Kalibrasyon durum makineleri ve sonuç/yapılandırma korumaları |
 | `thumbnail_preview.py`, `thumbnail_cache.py`, `preview_metadata.py` | JPEG hazırlığı, SRAM alan yönetimi ve isteğe bağlı metadata |
-| `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Ekran paketleri, GPIO girdileri ve olay döngüsü |
+| `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Tam T5UIC1 protokol sürücüsü, GPIO girdileri ve olay döngüsü |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset kaydı, çalışma zamanı sınırları ve sistem telemetrisi |
+
+T5UIC1 LCD'nin donanım yapılandırması, firmware/görsel kaynakları, bellek düzeni ve çalışma zamanı protokolü [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md) içinde birlikte belgelenmiştir.
 
 ### Regresyon testleri
 

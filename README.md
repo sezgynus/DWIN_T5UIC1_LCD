@@ -303,7 +303,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 
 One UI owner thread controls rendering, navigation and UART writes. GPIO callbacks enqueue input events. Moonraker WebSocket subscriptions supply merged immutable state; a serialized HTTP worker handles commands, while long bed-calibration operations use completion-tracked WebSocket RPC.
 
-Connection epochs reject stale input and queued commands. Failed printer commands are **not replayed automatically**. Reconnecting redraws the UI and rebuilds volatile caches. A timeout may mean the printer received a command but its response was lost; inspect actual state before retrying.
+Connection epochs reject stale input and queued commands. Failed printer commands are **not replayed automatically**. A response-based panel heartbeat detects LCD power cycles even when the Linux UART device remains open; reconnecting redraws the UI and restores volatile atlas/cache state from persistent Picture Flash without rewriting unchanged atlas data. A timeout may mean the printer received a command but its response was lost; inspect actual state before retrying.
 
 | Modules | Responsibility |
 |---|---|
@@ -312,8 +312,10 @@ Connection epochs reject stale input and queued commands. Failed printer command
 | `moonraker_client.py`, `moonraker_subscription.py`, `command_feedback.py` | HTTP/WebSocket transport and command confirmation |
 | `screws_tilt.py`, `bed_mesh.py`, `probe_wizard.py` | Calibration state machines and result/config guards |
 | `thumbnail_preview.py`, `thumbnail_cache.py`, `preview_metadata.py` | JPEG preparation, SRAM allocation and optional metadata |
-| `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Display packets, GPIO input and event loop |
+| `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Complete T5UIC1 protocol driver, GPIO input and event loop |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset persistence, runtime limits and system telemetry |
+
+Complete T5UIC1 LCD configuration, firmware/assets, memory layout and runtime protocol details are documented in [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md).
 
 ### Regression tests
 

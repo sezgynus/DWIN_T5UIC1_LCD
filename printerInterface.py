@@ -806,17 +806,14 @@ class PrinterData:
         return self.postREST('/printer/print/start', json={'filename': path})
 
     def cancel_job(self): #fixed
-        print('Canceling job:')
         return self.postREST('/printer/print/cancel', json=None)
 
     def pause_job(self): #fixed
-        print('Pausing job:')
         return self.postREST('/printer/print/pause', json=None)
 
     def resume_job(self): #fixed
         if self.jog_recovery_required:
             raise ValueError('Restore jog state before resuming')
-        print('Resuming job:')
         return self.postREST('/printer/print/resume', json=None)
 
     def set_feedrate(self, fr):

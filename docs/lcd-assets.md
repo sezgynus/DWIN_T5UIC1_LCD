@@ -7,10 +7,11 @@ The installer does not flash LCD firmware or install display assets.
 ## Required layout
 
 - Icon library **9** (`9.ICO`).
-- English JPEG **1**, copied through cache **1**.
 - Display direction **1**, giving a 272×480 coordinate space.
-- A compatible `1_English.jpg` bitmap sheet as well as the icon library: some
-  existing labels/buttons still use frame copies rather than font rendering.
+- Stock icon library **9** remains panel-resident; KlipperDWIN custom icons are
+  managed separately in persistent Picture Flash atlases.
+- Virtual areas **0** and **1** are owned exclusively by the managed atlas
+  driver. Upper UI code must not populate or copy legacy language JPEG caches.
 
 The audited English JPEG is stored as 480×272; clockwise rotation yields the
 portrait coordinate space. Its raw landscape dimensions alone do not indicate
@@ -20,9 +21,8 @@ compatibility. DWIN, DACAI and TJC packages are not interchangeable.
 ## Inventory and verification
 
 [lcd-assets.json](lcd-assets.json) records the audited stock file SHA-256 hashes,
-icon dimensions and static copy regions. The inventory covers 91 icon IDs and
-50 statically specified copy regions; the regression tests check that current
-source constants and copy coordinates remain compatible with that inventory.
+icon dimensions and the historical audited source regions. The inventory covers 91 stock icon IDs;
+regression tests keep the current stock icon constants compatible with that inventory.
 This does not identify the exact files installed on an individual panel.
 
 Dynamic text is sanitized/transliterated for the stock ASCII fonts. Coordinates,

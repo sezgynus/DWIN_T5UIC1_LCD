@@ -109,7 +109,7 @@ class CapabilityTests(unittest.TestCase):
         result.lcd.reset_mock()
         with patch.object(ui.time, 'monotonic', return_value=0):
             result.Draw_Status_Area(True)
-        calls = result.lcd.Draw_IntValue.call_args_list
+        calls = result.lcd.draw_integer_text.call_args_list
         coordinates = [(call.args[7], call.args[8]) for call in calls]
         self.assertIn((26, 382), coordinates)
         self.assertIn((66, 382), coordinates)
@@ -262,7 +262,7 @@ class CapabilityTests(unittest.TestCase):
         result.Goto_MainMenu()
         result.Draw_MMU_Status.assert_called_once()
         self.assertFalse(any(call.args[1] == result.ICON_LOGO
-                             for call in result.lcd.ICON_Show.call_args_list))
+                             for call in result.lcd.show_icon.call_args_list))
 
     def test_home_keeps_logo_without_mmu(self):
         result = display(snapshot())
@@ -271,7 +271,7 @@ class CapabilityTests(unittest.TestCase):
         result.ICON_StartInfo = Mock()
         result.Goto_MainMenu()
         self.assertTrue(any(call.args[1] == result.ICON_LOGO
-                            for call in result.lcd.ICON_Show.call_args_list))
+                            for call in result.lcd.show_icon.call_args_list))
 
     def test_mmu_visual_marks_active_gate_and_uses_gate_colors(self):
         result = display(snapshot())
@@ -291,7 +291,7 @@ class CapabilityTests(unittest.TestCase):
         result.lcd.Select_Color = 0x33bb
         result.lcd.font6x12 = 0
         result.Draw_MMU_Status()
-        rectangles = result.lcd.Draw_Rectangle.call_args_list
+        rectangles = result.lcd.draw_rectangle.call_args_list
         self.assertTrue(any(call.args[0] == 1 and call.args[1] == result._rgb565((0.0, 0.0, 1.0))
                             for call in rectangles))
         for led_rgb in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0),
@@ -307,9 +307,9 @@ class CapabilityTests(unittest.TestCase):
         wood_fills = [call.args for call in rectangles
                       if call.args[0] == 1 and call.args[1] == 0x9B46]
         self.assertTrue(all(args[5] - args[3] == 51 for args in wood_fills))
-        self.assertGreater(result.lcd.Draw_Line.call_count, 0)
-        result.lcd.CircleFill.assert_not_called()
-        result.lcd.Draw_Circle.assert_not_called()
+        self.assertGreater(result.lcd.draw_line.call_count, 0)
+        result.lcd.fill_circle.assert_not_called()
+        result.lcd.draw_circle.assert_not_called()
 
     def test_mmu_lane_led_hue_is_normalized_for_lcd_visibility(self):
         result = display(snapshot())
@@ -325,9 +325,9 @@ class CapabilityTests(unittest.TestCase):
             'remaining_percent': (50,), 'exit_led_rgb': ((0.1, 0.0, 0.0),),
             'name': 'MMU', 'filament': 'Loaded',
         }
-        result.lcd.Draw_Rectangle.reset_mock()
+        result.lcd.draw_rectangle.reset_mock()
         result.Draw_MMU_Status()
-        fills = [call.args[1] for call in result.lcd.Draw_Rectangle.call_args_list
+        fills = [call.args[1] for call in result.lcd.draw_rectangle.call_args_list
                  if call.args[0] == 1]
         self.assertIn(result._rgb565((1.0, 0.0, 0.0)), fills)
         self.assertNotIn(result._rgb565((0.1, 0.0, 0.0)), fills)
@@ -347,9 +347,9 @@ class CapabilityTests(unittest.TestCase):
             'exit_led_rgb': ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
             'name': 'MMU', 'filament': 'Loaded',
         }
-        result.lcd.Draw_String.reset_mock()
+        result.lcd.draw_text.reset_mock()
         result.Draw_MMU_Status()
-        labels = [call.args for call in result.lcd.Draw_String.call_args_list
+        labels = [call.args for call in result.lcd.draw_text.call_args_list
                   if call.args[-1] in ('1', '2')]
         self.assertEqual(len(labels), 2)
         self.assertEqual(labels[0][3], 0x0000)
@@ -376,7 +376,7 @@ class CapabilityTests(unittest.TestCase):
         result.Draw_MMU_Status()
 
         indicators = [
-            call for call in result.lcd.Draw_Rectangle.call_args_list
+            call for call in result.lcd.draw_rectangle.call_args_list
             if call.args[0] == 1 and call.args[3] == 103 and call.args[5] == 117
         ]
         self.assertEqual(len(indicators), count)
@@ -403,7 +403,7 @@ class CapabilityTests(unittest.TestCase):
         result.pd.probe_wizard.update = Mock()
         result._poll_print_start = Mock(return_value=False)
         result.last_status = result.pd.status
-        result.lcd.UpdateLCD = Mock()
+        result.lcd.update = Mock()
         result.EachMomentUpdate()
         result.Draw_MMU_Status.assert_not_called()
 

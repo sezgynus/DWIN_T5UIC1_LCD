@@ -84,7 +84,7 @@ class MetadataTests(unittest.TestCase):
         payload_type=view._thumbnail_cache.tick.__func__.__globals__['PreviewData']
         view._preview_future.set_result(payload_type(None,details_from_metadata(sample())))
         view._poll_file_preview()
-        texts=[c.args[-1] for c in view.lcd.Draw_String.call_args_list]
+        texts=[c.args[-1] for c in view.lcd.draw_text.call_args_list]
         self.assertIn('T1',texts);self.assertIn('T2',texts)
         self.assertNotIn('T0',texts);self.assertNotIn('T3',texts)
         self.assertIn('2.05g',texts);self.assertIn('20.36g',texts)
@@ -96,17 +96,17 @@ class MetadataTests(unittest.TestCase):
         view._thumbnail_cache.details[key]=details_from_metadata(data)
         view._thumbnail_cache.entries[key]=(1000,300);view._thumbnail_cache.job=None
         view.Draw_File_Preview();view._poll_file_preview()
-        for call in view.lcd.Draw_String.call_args_list:
+        for call in view.lcd.draw_text.call_args_list:
             x,y,text=call.args[-3:]
             self.assertGreaterEqual(x,0);self.assertLessEqual(x+len(text)*8,272)
             self.assertLess(y+16,360)
-        texts=[call.args[-1] for call in view.lcd.Draw_String.call_args_list]
+        texts=[call.args[-1] for call in view.lcd.draw_text.call_args_list]
         for label in ('Print time','Tool changes','Total usage','Filaments used'):
             self.assertIn(label,texts)
-        last_row=next(call.args[-2] for call in view.lcd.Draw_String.call_args_list if call.args[-1]=='T3')
-        button_top=min(call.args[3] for call in view.lcd.Draw_Rectangle.call_args_list
+        last_row=next(call.args[-2] for call in view.lcd.draw_text.call_args_list if call.args[-1]=='T3')
+        button_top=min(call.args[3] for call in view.lcd.draw_rectangle.call_args_list
                        if call.args[2] in (20,146) and call.args[3]>=300)
         self.assertGreaterEqual(button_top-(last_row+16),12)
         view.lcd.reset_mock();view._poll_file_preview()
-        view.lcd.Draw_String.assert_not_called();view.lcd.Write_SRAM.assert_not_called()
-        view.lcd.SRAM_Icon.assert_not_called()
+        view.lcd.draw_text.assert_not_called();view.lcd.write_sram.assert_not_called()
+        view.lcd.show_sram_jpeg.assert_not_called()

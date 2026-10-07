@@ -1,6 +1,6 @@
 """Bed mesh screens, profile browsing and encoder navigation."""
 import math
-from DWIN_Screen import T5UIC1_LCD
+from t5uic1_driver import T5UIC1Display
 
 
 def point_style(z, columns):
@@ -49,7 +49,7 @@ class BedMeshMixin:
         for index, (_, label, icon) in enumerate(entries):
             self.Draw_Menu_Line(index, icon, label)
         self.Draw_Menu_Cursor(choice)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Bed_Mesh_Menu(self):
         event = self.get_encoder_state()
@@ -78,25 +78,25 @@ class BedMeshMixin:
         self.Draw_Bed_Mesh_Menu()
 
     def _mesh_text(self, text, y, size=8, color=None):
-        text = T5UIC1_LCD._panel_text(text)[:272 // size]
-        self.lcd.Draw_String(False, False, self.lcd.font6x12 if size == 6 else self.lcd.font8x16,
+        text = T5UIC1Display._panel_text(text)[:272 // size]
+        self.lcd.draw_text(False, False, self.lcd.font6x12 if size == 6 else self.lcd.font8x16,
                              self.lcd.Color_White if color is None else color,
                              self.lcd.Color_Bg_Black, max(0, (272-len(text)*size)//2), y, text)
 
     def _mesh_button(self, label, x, selected=False):
-        self.lcd.Draw_Rectangle(1, 0x03B5, x, 305, x+99, 343)
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+        self.lcd.draw_rectangle(1, 0x03B5, x, 305, x+99, 343)
+        self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Color_White,
                              0x03B5, x+(99-len(label)*8)//2, 316, label)
         if selected:
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x-2, 303, x+101, 345)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, x-2, 303, x+101, 345)
 
     def _draw_mesh_grid(self, columns, rows, points):
         xs = [round(25 + x*222/(columns-1)) for x in range(columns)]
         ys = [round(277 - y*222/(rows-1)) for y in range(rows)]
         color = 0x03B5
-        self.lcd.Draw_Rectangle(0, color, 25, 55, 247, 277)
-        for x in xs[1:-1]: self.lcd.Draw_Line(color, x, 55, x, 277)
-        for y in ys[1:-1]: self.lcd.Draw_Line(color, 25, y, 247, y)
+        self.lcd.draw_rectangle(0, color, 25, 55, 247, 277)
+        for x in xs[1:-1]: self.lcd.draw_line(color, x, 55, x, 277)
+        for y in ys[1:-1]: self.lcd.draw_line(color, 25, y, 247, y)
         # Avoid overlaps in dense grids without changing any underlying values.
         stride = max(1, math.ceil((36 if columns < 9 else 24) / (222/(columns-1))))
         row_stride = max(1, math.ceil(12 / (222/(rows-1))))
@@ -104,11 +104,11 @@ class BedMeshMixin:
             color, radius = point_style(z, max(columns, rows))
             for dy in range(-radius, radius+1):
                 dx = math.isqrt(radius*radius-dy*dy)
-                self.lcd.Draw_Rectangle(1, color, xs[x]-dx, ys[y]+dy, xs[x]+dx, ys[y]+dy)
+                self.lcd.draw_rectangle(1, color, xs[x]-dx, ys[y]+dy, xs[x]+dx, ys[y]+dy)
             if x % stride == 0 and y % row_stride == 0:
                 label = point_label(z, columns)
                 tx = max(0, min(272-len(label)*6, xs[x]-len(label)*3))
-                self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
+                self.lcd.draw_text(False, False, self.lcd.font6x12, self.lcd.Color_White,
                                      self.lcd.Color_Bg_Black, tx, ys[y]-6, label)
 
     def Draw_Bed_Mesh(self):
@@ -116,7 +116,7 @@ class BedMeshMixin:
         self.Clear_Main_Window()
         title = ('Mesh: ' + session.mesh.name) if session.phase == 'viewing' and session.mesh else 'Mesh Viewer'
         if session.phase in ('measuring', 'stopping'): title = 'Bed Mesh Calibrate'
-        self.Draw_Title(T5UIC1_LCD._panel_text(title)[:24])
+        self.Draw_Title(T5UIC1Display._panel_text(title)[:24])
         confirmation = getattr(self, '_mesh_confirmation', None)
         if confirmation:
             self._mesh_text('Stop probing?' if confirmation == 'cancel' else 'Save mesh profile?', 100)
@@ -148,7 +148,7 @@ class BedMeshMixin:
         else:
             self._mesh_text(session.message or 'Mesh unavailable', 150, size=6)
             if not session.pending: self._mesh_button('Continue', 86, True)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def Draw_Mesh_Profiles(self):
         session = self.pd.bed_mesh
@@ -164,10 +164,10 @@ class BedMeshMixin:
             self._mesh_profile_selection = choice
             start = max(0, choice-self.MROWS)
             for index in range(start, min(len(entries), start+self.TROWS)):
-                label = T5UIC1_LCD._panel_text(entries[index])[:25]
+                label = T5UIC1Display._panel_text(entries[index])[:25]
                 self.Draw_Menu_Line(index-start, self.ICON_Back if index == 0 else self.ICON_HotendTemp, label)
             self.Draw_Menu_Cursor(choice-start)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def _open_mesh_profiles(self, selected=None, view_after=False):
         try:
@@ -210,7 +210,7 @@ class BedMeshMixin:
         else:
             self.checkkey = self.Prepare
             self.Draw_Prepare_Menu()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Mesh_Profiles(self):
         event = self.get_encoder_state()
