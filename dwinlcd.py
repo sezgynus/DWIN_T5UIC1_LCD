@@ -141,9 +141,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     dwin_zoffset = 0.0
     last_zoffset = 0.0
 
-    # Picture ID
-    Language_English = 1
-
     # ICON ID
     ICON = 0x09
 
@@ -832,12 +829,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def MBASE(self, L):
         return 49 + self.MLINE * L
 
-    def HMI_SetLanguageCache(self):
-        self.lcd.cache_jpeg(self.Language_English)
-
-    def HMI_SetLanguage(self):
-        self.HMI_SetLanguageCache()
-
     def HMI_ShowBoot(self, mesg=None):
         if mesg:
             self.lcd.draw_text(
@@ -853,9 +844,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             time.sleep(.020)
 
     def HMI_Init(self):
-        # HMI_SDCardInit()
-
-        self.HMI_SetLanguage()
+        # Virtual display areas are owned exclusively by the managed atlas
+        # driver. Legacy language-JPEG caching used area 1 and could overwrite
+        # an atlas after a panel power-cycle/reconnect.
+        pass
 
     def _present_print_state(self):
         status = self.pd.status
@@ -2246,7 +2238,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.checkkey = self.MainMenu
         self.Clear_Main_Window()
 
-        self.lcd.copy_cache(1, 0, 2, 39, 12, 14, 9)
         if self.pd.mmu is None:
             self.lcd.show_icon(self.ICON, self.ICON_LOGO, 71, 52)
         else:
@@ -2637,7 +2628,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 if mmu_state != getattr(self, '_drawn_mmu_state', None):
                     self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 4, 31, 268, 125)
                     if mmu_state is None:
-                        self.lcd.copy_cache(1, 0, 2, 39, 12, 14, 9)
                         self.lcd.show_icon(self.ICON, self.ICON_LOGO, 71, 52)
                     else:
                         self.Draw_MMU_Status()
