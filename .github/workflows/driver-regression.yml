@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - refactor/t5uic1-complete-driver
+      - feature/global-power-button
 
 permissions:
   contents: read
