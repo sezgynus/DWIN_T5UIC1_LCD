@@ -2072,7 +2072,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if Percentrecord is None:
             Percentrecord = self.pd.getPercent()
         self.lcd.show_icon(self.ICON, self.ICON_Bar, 15, 93)
-        self.lcd.draw_rectangle(1, self.lcd.BarFill_Color, 16 + Percentrecord * 240 / 100, 93, 256, 113)
+        self.lcd.draw_rectangle(
+            1, self.lcd.BarFill_Color,
+            int(round(16 + Percentrecord * 240 / 100)), 93, 256, 113)
         self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 3, 109, 133, Percentrecord)
         self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 133, 133, "%")
 

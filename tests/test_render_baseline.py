@@ -42,6 +42,13 @@ class RenderBaselineTests(unittest.TestCase):
         self.assertIn((0x05, 1), metrics.opcodes)
         self.assertEqual(metrics.refreshes, 1)
 
+    def test_print_progress_periodic_redraw(self):
+        screen = self.screen()
+        metrics = self.measure(
+            'print_progress_periodic_redraw', screen,
+            lambda: (screen.Draw_Print_ProgressBar(42.0), screen.lcd.update()))
+        self.assertEqual(metrics.refreshes, 1)
+
     def test_print_time_periodic_redraw(self):
         screen = self.screen()
         screen.pd.job_Info = {
