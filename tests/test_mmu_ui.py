@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import Mock
 
 from test_capabilities import display
-from test_mmu_control import mmu_snapshot, hardware_status
+from test_mmu_control import mmu_snapshot, hardware_status, add_motor_status
 
 
 class MMUUITests(unittest.TestCase):
@@ -74,14 +74,41 @@ class MMUUITests(unittest.TestCase):
     def test_options_sync_is_guarded_and_capability_specific(self):
         v, _ = self.make()
         v._mmu_open('options')
-        self.assertEqual([i[1] for i in v._mmu_items(v.pd.mmu_session.state)], ['Sensors / status'])
+        self.assertEqual([i[1] for i in v._mmu_items(v.pd.mmu_session.state)], ['Disable MMU', 'Sensors / status'])
         v, _ = self.make_hardware(always=True, filament='Loaded', filament_pos=10)
         v._mmu_open('options')
         self.assertNotIn('Gear sync OFF', [i[1] for i in v._mmu_items(v.pd.mmu_session.state)])
         v, _ = self.make_hardware(filament='Loaded', filament_pos=10)
         v._mmu_open('options')
-        self.press(v, 1)
+        self.press(v, 2)
         self.assertEqual(v._mmu_confirmation.script, 'MMU_SYNC_GEAR_MOTOR SYNC=1')
+
+    def test_options_reenable_disabled_mmu_has_cancel_first_confirmation(self):
+        v, _ = self.make(enabled=False, filament='Unloaded', filament_pos=0)
+        v._mmu_open('options')
+        self.assertIn('Enable MMU', self.strings(v))
+        self.press(v, 1)
+        self.assertEqual(v._mmu_selection, 1)
+        self.assertEqual(v._mmu_confirmation.script, 'MMU ENABLE=1')
+        self.press(v, 1)
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, 1)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'status')
+        v.pd.subscription.request.assert_called_once()
+
+    def test_options_motor_release_hidden_without_driver_telemetry(self):
+        v, data = self.make_hardware()
+        v._mmu_open('options')
+        self.assertNotIn('Release MMU motors', self.strings(v))
+        add_motor_status(data)
+        v.Draw_MMU_Menu()
+        items = v._mmu_items(v.pd.mmu_session.state)
+        row = next(i + 1 for i, item in enumerate(items) if item[0][1] == 'motors_off')
+        self.press(v, row)
+        self.assertEqual(v._mmu_confirmation.script, 'MMU_MOTORS_OFF UNIT=ALL')
+        self.assertIn('All MMU units; home may be lost.', self.strings(v))
+        v.pd.subscription.request.assert_not_called()
 
     def test_maintenance_changed_capability_or_print_state_never_sends(self):
         for case in ('hardware', 'printing', 'epoch'):

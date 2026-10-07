@@ -245,7 +245,9 @@ Filament → Assign spool ID edits a positive numeric ID using press, rotate, pr
 
 Maintenance and Options read validated Happy Hare v4 `mmu_machine` unit metadata and live selector state. Unsupported controls are hidden; missing, busy, printing or paused state locks actions. Home is offered only for one known linear selector and confirms the tool selected afterwards. Grip/Release require unloaded filament; release is hidden for always-gripped units. Gear sync requires loaded filament on a known active unit; always-gripped units cannot unsync. Linear-selector drive controls require a known homed state. Each command has a Cancel-first confirmation and live postcondition checks. Check all gates uses global gate indices; metadata remains a capability declaration, not proof of calibration. Verify installed command behavior on hardware.
 
-This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). Motor release, MMU enable/disable, LED controls and unit selection remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
+Options also offers explicit MMU enable/disable and release of all MMU motors, with Cancel-first confirmation. Both require unloaded filament outside printing/pauses. Enabling resets Happy Hare state; a disabled MMU can be re-enabled from this page. Motor release appears only with known driver telemetry and effective MMU stepper configuration; it sends `MMU_MOTORS_OFF UNIT=ALL` and checks every configured MMU driver is off and gear sync is off. Homing may be lost. Driver flags cannot prove servo power or physical motion.
+
+This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). LED controls and unit selection remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
 
 
 ### Case Light
@@ -318,7 +320,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 ## Scope and limitations
 
 - The UI targets compatible 272×480 DWIN T5UIC1 assets; other display families require separate validation.
-- MMU motor release, enable/disable, LED controls and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
+- MMU LED controls and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
 - Preview shows up to four used tools; per-tool lengths, brand names and physical lane mapping are not displayed.
 - SRAM cache is volatile and limited to 32 KiB; it is rebuilt after reconnect/restart.
 - Screws Tilt requires four distinct corners and uses a fixed 0.05 mm peak-to-peak success threshold.

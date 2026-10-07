@@ -245,7 +245,9 @@ Filament → Assign spool ID ekranında pozitif sayısal kimliği bas, çevir, b
 
 Maintenance ve Options, doğrulanan Happy Hare v4 `mmu_machine` ünite bilgisini ve canlı selector durumunu okur. Desteklenmeyen kontroller gizlenir; eksik, meşgul, baskıda veya duraklamış durum işlemleri kilitler. Home yalnız tek ve bilinen lineer selector için açılır; sonrasında seçilecek takım onayda gösterilir. Grip/Release boş filament gerektirir; sürekli tutan ünitelerde Release gizlenir. Gear sync, bilinen aktif ünitede yüklü filament ister; sürekli tutan ünite senkronizasyondan çıkarılamaz. Lineer selector sürüş kontrolleri bilinen home durumu gerektirir. Her komutta Cancel odaklı onay ve canlı sonuç kontrolü vardır. Check all gates global kanal indekslerini kullanır; donanım bilgisi kalibrasyonun tamamlandığını kanıtlamaz. Kurulu komut davranışını gerçek donanımda doğrulayın.
 
-Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. Motor bırakma, MMU aç/kapat, LED kontrolleri ve ünite seçimi bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
+Options ayrıca Cancel odaklı onayla MMU aç/kapat ve tüm MMU motorlarını bırakma sunar. İkisi de baskı/duraklama dışında boş filament gerektirir. Açma Happy Hare durumunu sıfırlar; kapalı MMU bu sayfadan açılabilir. Motor bırakma yalnız bilinen sürücü telemetrisi ve etkin MMU stepper yapılandırmasıyla görünür; `MMU_MOTORS_OFF UNIT=ALL` gönderilip yapılandırılmış tüm MMU sürücülerinin ve gear sync durumunun kapalı olduğu kontrol edilir. Home bilgisi kaybolabilir. Sürücü bayrakları servo enerjisini veya fiziksel hareketi kanıtlamaz.
+
+Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. LED kontrolleri ve ünite seçimi bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
 
 
 ### Case Light
@@ -318,7 +320,7 @@ sudo systemctl restart KlipperDWIN.service
 ## Kapsam ve sınırlar
 
 - Arayüz uyumlu 272×480 DWIN T5UIC1 kaynaklarını hedefler; diğer ekran aileleri ayrıca doğrulanmalıdır.
-- MMU motor bırakma, aç/kapat, LED kontrolleri ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
+- MMU LED kontrolleri ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
 - Önizleme en fazla dört kullanılan tool gösterir; tool başına uzunluk, marka adı ve fiziksel kanal eşlemesi gösterilmez.
 - SRAM önbelleği geçicidir ve 32 KiB ile sınırlıdır; yeniden bağlantı/başlatma sonrası yeniden kurulur.
 - Screws Tilt dört ayrı köşe gerektirir; sabit 0,05 mm en yüksek/en düşük nokta farkı başarı eşiği kullanır.

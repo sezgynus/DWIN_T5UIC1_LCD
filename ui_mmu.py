@@ -224,12 +224,13 @@ class MMUViewMixin:
     def _mmu_tool_label(tool):
         return 'Bypass' if tool == -2 else 'T%d' % tool if tool is not None and tool >= 0 else 'T?'
 
-    def _mmu_action_item(self, action, label, gate=None):
+    def _mmu_action_item(self, action, label, gate=None, desired_enabled=None):
+        key = ('action', action, gate) if desired_enabled is None else ('action', action, gate, desired_enabled)
         try:
-            self.pd.mmu_session.prepare(action, gate=gate)
+            self.pd.mmu_session.prepare(action, gate=gate, enabled=desired_enabled)
         except ValueError:
-            return (('action', action, gate), label, 'LOCK', False)
-        return (('action', action, gate), label, '>', True)
+            return (key, label, 'LOCK', False)
+        return (key, label, '>', True)
 
     def _mmu_begin_map(self):
         m = self.pd.mmu_session.state
@@ -329,11 +330,15 @@ class MMUViewMixin:
             return items + [nav('bypass', 'Extruder / bypass')]
         if page == 'options':
             unit = m.active_unit if m else None
-            items = []
+            desired = not m.enabled if m and m.enabled is not None else None
+            label = 'MMU enable / disable' if desired is None else 'Enable MMU' if desired else 'Disable MMU'
+            items = [self._mmu_action_item('enable', label, desired_enabled=desired)]
             if unit and unit.always_gripped is not None:
                 items.append(self._mmu_action_item('sync_on', 'Gear sync ON'))
                 if not unit.always_gripped:
                     items.append(self._mmu_action_item('sync_off', 'Gear sync OFF'))
+            if m and m.motors and all(v is not None for _, v in m.motors):
+                items.append(self._mmu_action_item('motors_off', 'Release MMU motors'))
             return items + [nav('status', 'Sensors / status')]
         if page == 'filament':
             return [nav('spool', 'Assign spool ID')]
@@ -609,6 +614,10 @@ class MMUViewMixin:
                 message = 'Homes selector, then selects tool.'
             if op.action == 'check_all':
                 message = 'Moves filament across all gates.'
+            if op.action == 'enable':
+                message = 'Resets MMU state.' if op.enabled else 'Disables MMU and releases motors.'
+            if op.action == 'motors_off':
+                message = 'All MMU units; home may be lost.'
             self._mmu_text('effect', message, 12, 210, 40, small=True)
             if op.action == 'map':
                 old = m.ttg_map if m else ()
@@ -773,7 +782,7 @@ class MMUViewMixin:
                             raise ValueError('MMU changed; reopen editor')
                         self._mmu_confirmation = self.pd.mmu_session.prepare('map', values=self._mmu_map_draft)
                     else:
-                        self._mmu_confirmation = (self.pd.mmu_session.prepare(key[1], gate=key[2])
+                        self._mmu_confirmation = (self.pd.mmu_session.prepare(key[1], gate=key[2], enabled=key[3] if len(key) > 3 else None)
                             if key[0] == 'action' else self.pd.mmu_session.prepare('manual', **self._mmu_manual))
                 except ValueError as error:
                     self._mmu_notice = str(error)

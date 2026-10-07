@@ -118,6 +118,7 @@ class SubscriptionTests(unittest.TestCase):
             'virtual_sdcard': {'progress': 0.5},
             'webhooks': {'state': 'ready'},
             'unit1_mmu_exit_leds': {'color_data': [[0.0, 1.0, 0.0, 0.0]]},
+            'stepper_enable': {'steppers': {'mmu_stepper gear': True}},
         }
         client = self.subscription()
         connection = FakeSocket(snapshot_data)
@@ -125,6 +126,7 @@ class SubscriptionTests(unittest.TestCase):
         client._bootstrap()
         subscribed = connection.sent[-1]['params']['objects']
         self.assertIn('unit1_mmu_exit_leds', subscribed)
+        self.assertIn('stepper_enable', subscribed)
 
     def test_no_empty_auth_sent(self):
         client = self.subscription()

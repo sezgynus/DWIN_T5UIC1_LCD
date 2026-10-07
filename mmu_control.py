@@ -34,6 +34,7 @@ class MMUUnit:
     num_gates: int
     selector_type: str
     always_gripped: bool | None
+    config_name: str = ''
 
 
 def units_from_snapshot(snapshot, gates):
@@ -52,9 +53,39 @@ def units_from_snapshot(snapshot, gates):
         if integer(unit.get('first_gate')) != first or n is None or n <= 0 or first + n > gates:
             return ()
         units.append(MMUUnit(text(unit.get('display_name'), text(unit.get('name'), 'Unit %d' % (i + 1))),
-                             first, n, text(unit.get('selector_type')), boolean(unit.get('filament_always_gripped'))))
+                             first, n, text(unit.get('selector_type')), boolean(unit.get('filament_always_gripped')),
+                             text(unit.get('name'), '')))
         first += n
     return tuple(units) if first == gates else ()
+
+
+def motor_states(snapshot, units):
+    settings = snapshot.get('settings', {})
+    driver_status = snapshot.get('status', {}).get('stepper_enable', {})
+    drivers = driver_status.get('steppers', {}) if isinstance(driver_status, Mapping) else {}
+    if not isinstance(settings, Mapping) or not isinstance(drivers, Mapping) or not units:
+        return ()
+    names = set()
+    for unit in units:
+        config = settings.get('mmu_unit ' + unit.config_name)
+        if not isinstance(config, Mapping):
+            return ()
+        gears = config.get('gear_steppers', config.get('gear_stepper'))
+        if isinstance(gears, str):
+            gears = [v.strip() for v in gears.split(',')]
+        if (not isinstance(gears, (tuple, list)) or not gears
+                or any(not isinstance(v, str) or not v or any(c.isspace() for c in v) for v in gears)):
+            return ()
+        names.update('mmu_stepper ' + v for v in gears)
+        if unit.selector_type in {'LinearSelector', 'LinearServoSelector', 'LinearMGSelector',
+                                  'LinearMGServoSelector', 'RotarySelector', 'IndexedSelector'}:
+            selector = config.get('selector_stepper')
+            if not isinstance(selector, str) or not selector or any(c.isspace() for c in selector):
+                return ()
+            names.add('mmu_stepper ' + selector)
+        elif unit.selector_type not in {'ServoSelector', 'VirtualSelector'}:
+            return ()
+    return tuple((name, boolean(drivers.get(name))) for name in sorted(names))
 
 
 @dataclass(frozen=True)
@@ -86,6 +117,7 @@ class MMUState:
     unit: int | None
     homed: bool | None
     grip: bool | None
+    motors: tuple
 
     @classmethod
     def from_snapshot(cls, snapshot):
@@ -131,6 +163,7 @@ class MMUState:
         grip = {'Gripped': True, 'Released': False}.get(text(selector.get('grip')))
         if grip is None:
             grip = {'Down': True, 'Up': False}.get(text(selector.get('servo')))
+        units = units_from_snapshot(snapshot, count)
         return cls(snapshot.get('epoch', 0), count, index(raw.get('gate')),
                    index(raw.get('tool')), boolean(raw.get('enabled')),
                    text(raw.get('action')), status, filament, locked,
@@ -144,8 +177,8 @@ class MMUState:
                    text(raw.get('reason_for_pause'), ''), text(raw.get('spoolman_support')),
                    switch(raw.get('endless_spool_enabled', raw.get('endless_spool'))),
                    values('endless_spool_groups', lambda v: integer(v) if integer(v) is not None and v >= 0 else None),
-                   values('gate_color', lambda v: text(v, '--')), units_from_snapshot(snapshot, count),
-                   integer(raw.get('unit')), boolean(raw.get('is_homed')), grip)
+                   values('gate_color', lambda v: text(v, '--')), units,
+                   integer(raw.get('unit')), boolean(raw.get('is_homed')), grip, motor_states(snapshot, units))
 
     @property
     def busy(self):
@@ -157,7 +190,7 @@ class MMUState:
                 self.action, self.print_state, self.filament, self.locked,
                 self.gate_status, self.ttg_map, self.endless_enabled, self.endless_groups,
                 self.materials, self.colors, self.spool_ids, self.spoolman_support,
-                self.temperatures, self.units, self.unit, self.homed, self.grip, self.sync_drive)
+                self.temperatures, self.units, self.unit, self.homed, self.grip, self.sync_drive, self.motors)
 
     @property
     def active_unit(self):
@@ -211,7 +244,7 @@ class MMUSession:
             raise ValueError('Wait for MMU operation')
         if self.phase == 'error':
             raise ValueError('Acknowledge MMU result first')
-        if m.enabled is not True:
+        if m.enabled is not True and not (action == 'enable' and m.enabled is False and enabled is True):
             raise ValueError('MMU disabled or unknown')
         if m.busy or p.jog_recovery_required:
             raise ValueError('MMU busy or recovery needed')
@@ -237,11 +270,20 @@ class MMUSession:
             target = 'G%d' % (gate + 1)
         else:
             target = ''
-        if action in ('select', 'load', 'preload', 'check', 'bypass', 'home_selector', 'check_all', 'grip', 'release') and m.filament != 'unloaded':
+        if action in ('select', 'load', 'preload', 'check', 'bypass', 'home_selector', 'check_all', 'grip', 'release', 'enable', 'motors_off') and m.filament != 'unloaded':
             raise ValueError('Unload filament first')
         if action in ('unload', 'unload_extruder') and m.filament != 'loaded':
             raise ValueError('Loaded filament required')
-        if action == 'select':
+        if action == 'enable':
+            if not isinstance(enabled, bool) or m.enabled == enabled:
+                raise ValueError('Choose a different known MMU enable state')
+            script, label = 'MMU ENABLE=%d' % enabled, 'Enable MMU' if enabled else 'Disable MMU'
+        elif action == 'motors_off':
+            if not m.motors or any(v is None for _, v in m.motors) or m.sync_drive is None:
+                raise ValueError('Known MMU driver states required')
+            values = tuple(name for name, _ in m.motors)
+            script, label = 'MMU_MOTORS_OFF UNIT=ALL', 'Release all MMU motors'
+        elif action == 'select':
             script, label = 'MMU_SELECT GATE=%d' % gate, 'Select ' + target
         elif action == 'load':
             if gate != m.gate or m.gate_status[gate] not in (1, 2):
@@ -401,6 +443,8 @@ class MMUSession:
             return m.filament != 'unknown'
         if m.locked is not False:
             return False
+        if op.action == 'enable': return m.enabled == op.enabled
+        if op.action == 'motors_off': return tuple(name for name, _ in m.motors) == op.values and all(v is False for _, v in m.motors) and m.sync_drive is False and m.filament == 'unloaded'
         if op.action == 'map': return m.ttg_map == op.values
         if op.action == 'endless': return m.endless_enabled == op.enabled and m.endless_groups == op.values
         if op.action == 'spool':
@@ -439,8 +483,11 @@ class MMUSession:
         try:
             result = self.pending.result()
             if self.phase == 'running':
+                objects = {'mmu': None, 'print_stats': None}
+                if self.operation.action == 'motors_off':
+                    objects['stepper_enable'] = None
                 self.pending = p.subscription.request('printer.objects.query',
-                    {'objects': {'mmu': None, 'print_stats': None}})
+                    {'objects': objects})
                 self.phase, self.message = 'confirming', 'Checking MMU result'
                 return
             status = result['status']
@@ -449,7 +496,8 @@ class MMUSession:
             m = MMUState.from_snapshot(snap)
             if (m is None or m.epoch != self.operation.fingerprint[0]
                     or m.num_gates != self.operation.fingerprint[1]
-                    or m.enabled is not True or m.busy or not self._confirmed(m, status)):
+                    or (m.enabled != self.operation.enabled if self.operation.action == 'enable' else m.enabled is not True)
+                    or m.busy or not self._confirmed(m, status)):
                 self._fail(m.reason if m and m.reason else 'State unconfirmed; check MMU')
                 return
         except Exception:

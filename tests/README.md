@@ -96,7 +96,7 @@ actual LCD and installed Happy Hare configuration before merging the control UI:
 8. Disconnect/reconnect Moonraker and UART. Check retained operation errors,
    rebuilt current page, read-only offline navigation and no command replay.
 
-Motor release, MMU enable/disable, LED controls and unit selection are not exposed
+LED controls and unit selection are not exposed
 by this implementation. Use the web UI for these functions.
 
 Tool map: edit several tools to one gate, cancel the draft, cancel confirmation,
@@ -120,3 +120,9 @@ confirmed tool, check all gates, and verify actual homing/grip/sync/availability
 Hardware QA must establish calibration, selector travel, servo positions, command
 compatibility and safe behavior before merging. Never treat static homing data
 from mmu_machine as a live homing result.
+
+MMU enable/disable: unloaded-only off-print guards, re-enable from disabled,
+Cancel-first confirmation and actual enabled flag. Motor release: discover
+stepper_enable, resolve configured MMU drivers only, reject missing telemetry,
+query every driver plus sync state, and verify printer XYZ drivers stay untouched.
+On hardware verify servo behavior and re-home a linear selector if necessary.

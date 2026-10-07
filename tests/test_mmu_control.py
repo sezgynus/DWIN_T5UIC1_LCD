@@ -33,6 +33,12 @@ def hardware_status(selector='ServoSelector', always=False):
                        'filament_always_gripped': always, 'is_homed': False}}
 
 
+def add_motor_status(data):
+    data['settings']['mmu_unit pico'] = {'gear_stepper': 'gear', 'selector_stepper': 'selector'}
+    data['status']['stepper_enable'] = {'steppers': {
+        'mmu_stepper gear': True, 'mmu_stepper selector': True, 'stepper_x': True}}
+
+
 class MMUControlTests(unittest.TestCase):
     def make(self, **changes):
         data = mmu_snapshot(**changes)
@@ -48,6 +54,84 @@ class MMUControlTests(unittest.TestCase):
         p, data, s = self.make(**fields)
         data['status']['mmu_machine'] = hardware_status(selector_type, always)
         return p, data, s
+
+    def test_enable_disable_use_native_command_and_allow_reenable_only_when_disabled(self):
+        for current in (True, False):
+            p, _, s = self.make(enabled=current, filament='Unloaded', filament_pos=0)
+            op = s.prepare('enable', enabled=not current)
+            self.assertEqual(op.script, 'MMU ENABLE=%d' % (not current))
+            p.subscription.request.assert_not_called()
+            s.start(op)
+            self.assertTrue(p.subscription.request.call_args.kwargs['guard']())
+        for fields in ({'enabled': None}, {'filament': 'Loaded', 'filament_pos': 10}, {'action': 'Loading'}):
+            _, _, s = self.make(**fields)
+            with self.assertRaises(ValueError): s.prepare('enable', enabled=False)
+
+    def test_enable_result_checks_desired_flag_including_disabled_result(self):
+        for current in (True, False):
+            for changed in (True, False):
+                p, data, s = self.make(enabled=current, filament='Unloaded', filament_pos=0)
+                s.start(s.prepare('enable', enabled=not current))
+                status = copy.deepcopy(data['status'])
+                if changed: status['mmu']['enabled'] = not current
+                self.complete(s, p, status)
+                self.assertEqual(s.phase, 'complete' if changed else 'error')
+
+    def test_enable_print_pause_epoch_and_unknown_desired_value_are_guarded(self):
+        for ps in ('printing', 'paused'):
+            _, data, s = self.make(enabled=False, filament='Unloaded', filament_pos=0)
+            data['status']['print_stats']['state'] = ps
+            with self.assertRaises(ValueError): s.prepare('enable', enabled=True)
+        for value in (None, 1, '1', True):
+            _, _, s = self.make(enabled=True, filament='Unloaded', filament_pos=0)
+            with self.assertRaises(ValueError): s.prepare('enable', enabled=value)
+        p, data, s = self.make(enabled=False, filament='Unloaded', filament_pos=0)
+        op = s.prepare('enable', enabled=True)
+        data['epoch'] += 1
+        with self.assertRaises(ValueError): s.start(op)
+        p.subscription.request.assert_not_called()
+
+    def test_motors_off_uses_only_configured_mmu_drivers_and_global_native_release(self):
+        p, data, s = self.make_hardware(selector_type='LinearServoSelector')
+        add_motor_status(data)
+        self.assertEqual(s.state.motors, (('mmu_stepper gear', True), ('mmu_stepper selector', True)))
+        op = s.prepare('motors_off')
+        self.assertEqual(op.script, 'MMU_MOTORS_OFF UNIT=ALL')
+        self.assertNotIn('stepper_x', op.values)
+        p.subscription.request.assert_not_called()
+
+    def test_motors_missing_unknown_malformed_or_loaded_state_blocks_release(self):
+        for case in ('missing', 'unknown', 'malformed', 'loaded', 'config'):
+            p, data, s = self.make_hardware()
+            add_motor_status(data)
+            if case == 'missing': del data['status']['stepper_enable']
+            elif case == 'unknown': data['status']['stepper_enable']['steppers']['mmu_stepper gear'] = None
+            elif case == 'malformed': data['status']['stepper_enable'] = []
+            elif case == 'loaded': data['status']['mmu'].update(filament='Loaded', filament_pos=10)
+            else: data['settings']['mmu_unit pico']['gear_stepper'] = ''
+            with self.assertRaises(ValueError): s.prepare('motors_off')
+            p.subscription.request.assert_not_called()
+
+    def test_motor_release_queries_and_verifies_drivers_not_only_unsync(self):
+        for released in (True, False):
+            p, data, s = self.make_hardware(selector_type='LinearServoSelector')
+            add_motor_status(data)
+            s.start(s.prepare('motors_off'))
+            status = copy.deepcopy(data['status'])
+            if released:
+                status['stepper_enable']['steppers'].update({'mmu_stepper gear': False, 'mmu_stepper selector': False})
+            self.complete(s, p, status)
+            self.assertIn('stepper_enable', p.subscription.request.call_args.args[1]['objects'])
+            self.assertEqual(s.phase, 'complete' if released else 'error')
+
+    def test_motors_queue_guard_rejects_configuration_or_driver_changes(self):
+        for change in ('driver', 'config'):
+            p, data, s = self.make_hardware()
+            add_motor_status(data)
+            s.start(s.prepare('motors_off'))
+            if change == 'driver': data['status']['stepper_enable']['steppers']['mmu_stepper gear'] = False
+            else: data['settings']['mmu_unit pico']['gear_stepper'] = 'other'
+            self.assertFalse(p.subscription.request.call_args.kwargs['guard']())
 
     def test_hardware_partition_and_live_grip_homing_are_separate_from_static_data(self):
         _, _, s = self.make_hardware(selector_type='LinearServoSelector')
