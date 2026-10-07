@@ -14,6 +14,7 @@ source rectangles below use the runtime portrait virtual-area coordinate space
 ICON_MMU_HOME_NORMAL = 0x0100
 ICON_MMU_HOME_SELECTED = 0x0101
 ICON_FOLDER = 0x0102
+ICON_MCU = 0x0103
 
 # virtual_area: (repo-relative JPEG path, reserved Picture Flash ID)
 ATLAS_FILES = {
@@ -29,4 +30,5 @@ ICON_COORDINATES = {
     ICON_MMU_HOME_NORMAL: (0, 0, 0, 77, 47),
     ICON_MMU_HOME_SELECTED: (0, 80, 0, 77, 47),
     ICON_FOLDER: (0, 160, 0, 20, 18),
+    ICON_MCU: (0, 192, 0, 20, 20),
 }

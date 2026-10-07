@@ -3,6 +3,7 @@ name: Driver Branch Regression
 on:
   push:
     branches:
+      - master
       - refactor/t5uic1-complete-driver
 
 permissions:

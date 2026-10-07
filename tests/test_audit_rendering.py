@@ -7,7 +7,24 @@ class AuditRenderingTests(unittest.TestCase):
     def screen(self):
         result = display(snapshot())
         result.lcd = driver()
+        # Simulate startup having synchronized and loaded the managed atlas.
+        result.lcd._atlas_synced = True
+        result.lcd._atlas_virtual_areas_loaded = True
+        result.lcd._virtual_area_pictures = {0: 14}
         return result
+
+    def test_mcu_headings_copy_chip_from_atlas_including_unavailable_heading(self):
+        result = self.screen()
+        for label in ('MCU: mcu', 'MCU: mmu', 'MCU'):
+            with self.subTest(label=label):
+                result.lcd.serial.frames.clear()
+                result._draw_info_section(label, 140)
+                copies = [f for f in result.lcd.serial.frames if f[1] == 0x27]
+                self.assertEqual(copies, [bytes.fromhex(
+                    'AA 27 20 00 C0 00 00 00 D3 00 13 '
+                    '00 08 00 8A CC 33 C3 3C')])
+                # Custom IDs must never be sent to the stock 9.ICO renderer.
+                self.assertFalse(any(f[1] == 0x23 for f in result.lcd.serial.frames))
 
     def test_complete_progress_has_three_digits_before_percent_sign(self):
         result = self.screen()

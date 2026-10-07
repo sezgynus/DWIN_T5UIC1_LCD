@@ -15,7 +15,7 @@ from gpiozero import Button, Device
 from gpiozero.pins.lgpio import LGPIOFactory
 from printerInterface import PrinterData
 from t5uic1_driver import T5UIC1Display
-from lcd_atlas import ICON_FOLDER
+from lcd_atlas import ICON_FOLDER, ICON_MCU
 
 def _MAX(lhs, rhs):
     if lhs > rhs:
@@ -2112,6 +2112,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         key = text.upper()
         if key.startswith('MCU'):
             color, icon = 0x07E0, None
+            self.lcd.draw_atlas_icon(ICON_MCU, 8, y - 2)
         else:
             color, icon = palette.get(key, (self.lcd.Color_White, self.ICON_Info))
         if icon is not None:
