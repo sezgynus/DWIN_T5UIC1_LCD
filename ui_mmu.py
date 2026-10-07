@@ -1,17 +1,11 @@
 """MMU menu and Happy Hare home-screen rendering mixin."""
 
+from lcd_atlas import ICON_MMU_HOME_NORMAL, ICON_MMU_HOME_SELECTED
+
 class MMUViewMixin:
     def Draw_MMU_Home_Icon(self, x, y, selected):
-        # Three filament reels fit the same tile as the stock Home icons.
-        edge = self.lcd.Color_White if selected else 0x8410
-        colors = (0xF800, 0x07E0, 0x001F) if selected else (0x7800, 0x03E0, 0x0010)
-        for lane, color in enumerate(colors):
-            left = x + 16 + lane * 27
-            self.lcd.draw_rectangle(1, color, left+4, y+22, left+18, y+49)
-            for flange in (left, left+19):
-                self.lcd.draw_rectangle(1, edge, flange, y+16, flange+3, y+55)
-            self.lcd.draw_line(color, left+11, y+56, left+11, y+62)
-        self.lcd.draw_line(edge, x+27, y+62, x+81, y+62)
+        icon_id = ICON_MMU_HOME_SELECTED if selected else ICON_MMU_HOME_NORMAL
+        self.lcd.draw_atlas_icon(icon_id, x + 16, y + 16)
 
     def Draw_MMU_Menu(self):
         self.Clear_Main_Window()

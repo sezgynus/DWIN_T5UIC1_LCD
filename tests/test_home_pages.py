@@ -109,19 +109,15 @@ class HomePageTests(unittest.TestCase):
             self.assertEqual(view.select_page.now,index)
             view.pd.sendGCode.assert_not_called()
 
-    def test_mmu_icon_bounds_and_selection_colors(self):
+    def test_mmu_icon_uses_managed_atlas_for_both_selection_states(self):
+        from lcd_atlas import ICON_MMU_HOME_NORMAL, ICON_MMU_HOME_SELECTED
         view=self.make()
         for x,y in ((17,130),(145,246)):
-            for selected in (False,True):
+            for selected,icon_id in (
+                (False,ICON_MMU_HOME_NORMAL),
+                (True,ICON_MMU_HOME_SELECTED),
+            ):
                 view.lcd.reset_mock();view.Draw_MMU_Home_Icon(x,y,selected)
-                colors=set()
-                for call in view.lcd.draw_rectangle.call_args_list:
-                    _,color,x0,y0,x1,y1=call.args
-                    colors.add(color)
-                    self.assertTrue(x<=x0<=x1<=x+109)
-                    self.assertTrue(y<=y0<=y1<y+71)
-                self.assertIn(0xF800 if selected else 0x7800,colors)
-                for call in view.lcd.draw_line.call_args_list:
-                    _,x0,y0,x1,y1=call.args
-                    self.assertTrue(x<=x0<=x1<=x+109)
-                    self.assertTrue(y<=y0<=y1<y+71)
+                view.lcd.draw_atlas_icon.assert_called_once_with(icon_id,x+16,y+16)
+                view.lcd.draw_rectangle.assert_not_called()
+                view.lcd.draw_line.assert_not_called()
