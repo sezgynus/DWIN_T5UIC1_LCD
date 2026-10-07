@@ -22,7 +22,7 @@ printer connection or moving hardware. Preset writes use temporary directories.
 | State and capabilities | Immutable snapshots, effective configuration/limits, heater/fan combinations, active extruder, optional controls and epoch replacement |
 | Input and ownership | Concurrent producers, FIFO input, bounded overload, debounce, stale-event rejection, one UI owner for initialization/rendering/cleanup and UART writes |
 | Home menus | Forward/reverse four-icon paging, empty slots, Leveling/MMU/Info routes, return selection, capability removal and persistent dashboard/MMU areas |
-| MMU controls | Full-screen ownership, read-only browsing, gate scrolling, draft manual edits, target-specific Cancel-first confirmations, stale-menu/target rejection, print/busy/unknown guards, completion plus state queries, distinct sensors, bypass/recovery, calibration exclusion and UART/offline recovery |
+| MMU controls | Full-screen ownership, read-only browsing, gate scrolling, draft manual/map/EndlessSpool/spool-ID edits, target-specific Cancel-first confirmations, stale-menu/target rejection, print/busy/unknown guards, completion plus state queries, distinct sensors, bypass/recovery, calibration exclusion and UART/offline recovery |
 | Files and folders | Cached lists, nested/empty folders, folder-first sorting, basename labels, full-path print starts, deletion/replacement and selection preservation |
 | Mainsail sorting | Name/date/size in both directions, newest-first fallback, invalid preferences/timestamps, bounded polling and stale Enter rejection |
 | Print workflow | Duplicate suppression, command/status confirmation, failed starts, timeout without replay, paused/resumed/completed/cancelled states and retained errors |
@@ -96,7 +96,7 @@ actual LCD and installed Happy Hare configuration before merging the control UI:
 8. Disconnect/reconnect Moonraker and UART. Check retained operation errors,
    rebuilt current page, read-only offline navigation and no command replay.
 
-Spool assignment and hardware-specific maintenance
+Hardware-specific maintenance
 are not exposed by this first implementation. Use the web UI for these functions.
 
 Tool map: edit several tools to one gate, cancel the draft, cancel confirmation,
@@ -107,3 +107,9 @@ EndlessSpool: toggle enable, join/split gates (including the final member),
 check material/color metadata, Cancel and Save. Verify whole enable/group state,
 arbitrary existing group IDs, missing metadata, external changes, off-print locks,
 long lists and reconnect behavior. Physical compatibility still needs hardware QA.
+
+Spool assignment: edit/accept/Save/Cancel, first assignment, explicit clear,
+mode/temperature/print locks, duplicate-spool warning and whole-map verification.
+On hardware check that TEMP is preserved, the previous gate becomes unassigned,
+and any Spoolman synchronization completes. Local assignment confirmation does
+not establish spool-record existence or completion of external synchronization.

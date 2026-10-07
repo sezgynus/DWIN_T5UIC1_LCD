@@ -27,6 +27,116 @@ class MMUUITests(unittest.TestCase):
     def strings(self, view):
         return [c.args[-1] for c in view.lcd.Draw_String.call_args_list]
 
+    def open_spool(self, v):
+        v._mmu_gate = 0
+        v._mmu_open('filament')
+        self.press(v, 1)
+        self.assertEqual(v._mmu_page, 'spool')
+
+    def edit_spool(self, v):
+        self.press(v, 1)
+        v.get_encoder_state.return_value = v.ENCODER_DIFF_CW
+        v.HMI_MMU_Menu()
+        self.press(v, 1)
+
+    def test_spool_metadata_color_and_encoder_draft_cancel(self):
+        v, _ = self.make()
+        self.open_spool(v)
+        self.assertIn('Color: ff0000', self.strings(v))
+        self.edit_spool(v)
+        self.assertEqual(v._mmu_spool_draft, 102)
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, 4)
+        self.assertEqual(v._mmu_page, 'filament')
+        self.press(v, 1)
+        self.assertEqual(v._mmu_spool_draft, 101)
+
+    def test_spool_save_confirm_warns_about_moving_id_and_sends_once(self):
+        v, _ = self.make()
+        self.open_spool(v)
+        self.edit_spool(v)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'confirm')
+        self.assertEqual(v._mmu_selection, 1)
+        self.assertIn('Moves ID off: G2', self.strings(v))
+        self.press(v, 1)
+        self.assertEqual(v._mmu_spool_draft, 102)
+        self.press(v, 2)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'status')
+        v.pd.subscription.request.assert_called_once()
+        self.assertEqual(v.pd.subscription.request.call_args.args,
+                         ('printer.gcode.script', {'script': 'MMU_GATE_MAP GATE=0 SPOOLID=102 TEMP=205'}))
+
+    def test_spool_clear_has_separate_confirmation_and_no_zero_id(self):
+        v, _ = self.make()
+        self.open_spool(v)
+        self.press(v, 3)
+        self.assertEqual(v._mmu_page, 'confirm')
+        self.assertEqual(v._mmu_confirmation.values, (-1,))
+        self.assertIn('Clear spool on G1', self.strings(v))
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, 2)
+        self.assertEqual(v.pd.subscription.request.call_args.args[1]['script'],
+                         'MMU_GATE_MAP GATE=0 SPOOLID=-1 TEMP=205')
+
+    def test_spool_pull_unknown_and_missing_temperature_leave_readonly_editor(self):
+        for fields in ({'spoolman_support': 'pull'}, {'spoolman_support': None},
+                       {'gate_temperature': []}, {'gate_spool_id': []}):
+            v, _ = self.make(**fields)
+            self.open_spool(v)
+            self.press(v, 1)
+            self.assertIsNone(v._mmu_edit)
+            self.press(v, 2)
+            self.assertEqual(v._mmu_page, 'spool')
+            self.press(v, 3)
+            self.assertEqual(v._mmu_page, 'spool')
+            v.pd.subscription.request.assert_not_called()
+
+    def test_spool_first_assignment_bounds_and_noop_save_lock(self):
+        v, _ = self.make(gate_spool_id=[-1]*4)
+        self.open_spool(v)
+        self.assertEqual(v._mmu_spool_draft, 1)
+        self.press(v, 1)
+        v.get_encoder_state.return_value = v.ENCODER_DIFF_CCW
+        v.HMI_MMU_Menu()
+        self.assertEqual(v._mmu_spool_draft, 1)
+        self.press(v, 1)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_confirmation.values, (1,))
+        v, _ = self.make()
+        self.open_spool(v)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'spool')
+        v.pd.subscription.request.assert_not_called()
+
+    def test_spool_external_update_pause_disconnect_epoch_lock_save(self):
+        for case in ('ids', 'mode', 'paused', 'printing', 'offline', 'epoch'):
+            v, data = self.make()
+            self.open_spool(v)
+            self.edit_spool(v)
+            if case == 'ids': data['status']['mmu']['gate_spool_id'] = [500]*4
+            elif case == 'mode': data['status']['mmu']['spoolman_support'] = 'pull'
+            elif case == 'offline': data['state'] = 'disconnected'
+            elif case == 'epoch': data['epoch'] += 1
+            else: data['status']['print_stats']['state'] = case
+            self.press(v, 2)
+            self.assertEqual(v._mmu_page, 'spool')
+            v.pd.subscription.request.assert_not_called()
+
+    def test_spool_confirm_and_open_editor_survive_removed_gate(self):
+        for page in ('spool', 'confirm'):
+            v, data = self.make()
+            v._mmu_gate = 3
+            v._mmu_open('filament')
+            self.press(v, 1)
+            if page == 'confirm': self.press(v, 2)
+            data['status']['mmu']['num_gates'] = 2
+            v.Draw_MMU_Menu()
+            self.press(v, 2)
+            self.assertEqual(v._mmu_page, page)
+            v.pd.subscription.request.assert_not_called()
+
     def edit_map(self, v):
         self.press(v, 3)
         self.press(v, 1)

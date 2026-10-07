@@ -223,7 +223,7 @@ Spoolman percentages come from each gate’s `gate_spool_id` through Moonraker�
 |---|---|
 | Home | Up to four spools on the active gate page, selected tool/gate, filament path, nozzle temperature and six menu entries |
 | Gates / gate details | Scrollable physical-gate list; Select only, Load selected, mapped Load/change, Unload, Eject spool, Preload and Check |
-| Filament | Read-only name, material, spool ID, remaining percentage, recommended temperature and Spoolman mode |
+| Filament / Assign spool | Name, material, color, spool ID, remaining percentage, temperature and mode; draft ID assignment or explicit clearing |
 | Tool map | Draft tool-to-gate editor; press, rotate, press to accept; Save/Cancel |
 | EndlessSpool (from Tool map) | Draft enable switch, groups and gate membership; material/color compatibility, Save/Cancel |
 | Bypass | Unload the current MMU gate, select bypass, then use extruder-only load/unload |
@@ -240,7 +240,9 @@ Tool map edits are available only outside printing/pauses while the MMU is idle.
 
 EndlessSpool uses the same idle, off-print guards. Edit the Enabled value by pressing, rotating and pressing again. Open a group and press gates to add them; removing a member gives it a separate group (the final member stays). Group pages show each gate’s material/color and report matching, mixed or unknown metadata; verify physical spool compatibility. Save sends the complete enable/group draft in one `MMU_ENDLESS_SPOOL ENABLE=... GROUPS=...` command and verifies both fields. Back from members retains the draft; Cancel from EndlessSpool discards it.
 
-This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). Spool-ID assignment and hardware-specific maintenance/options remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
+Filament → Assign spool ID edits a positive numeric ID using press, rotate, press, then Save and confirmation. Clear assignment has its own confirmation; Cancel discards the draft. Local assignments are allowed in known `off`, `readonly` and `push` modes; `pull` and unknown modes stay locked. A complete spool-ID map and known positive integer filament temperature are required. The command preserves that temperature, and confirmation warns when the ID will move off another gate. Actual-state verification checks the entire assignment map, including duplicate removal; it does not validate that a spool record exists or that asynchronous Spoolman synchronization finished.
+
+This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). Hardware-specific maintenance/options remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
 
 
 ### Case Light
@@ -313,7 +315,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 ## Scope and limitations
 
 - The UI targets compatible 272×480 DWIN T5UIC1 assets; other display families require separate validation.
-- MMU spool-ID assignment, hardware-specific maintenance/options and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
+- MMU hardware-specific maintenance/options and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
 - Preview shows up to four used tools; per-tool lengths, brand names and physical lane mapping are not displayed.
 - SRAM cache is volatile and limited to 32 KiB; it is rebuilt after reconnect/restart.
 - Screws Tilt requires four distinct corners and uses a fixed 0.05 mm peak-to-peak success threshold.

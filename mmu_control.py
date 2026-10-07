@@ -102,7 +102,7 @@ class MMUState:
                    values('gate_spool_id', integer),
                    tuple(sorted((str(k), boolean(v)) for k, v in sensors.items())),
                    boolean(raw.get('sync_drive')), progress,
-                   text(raw.get('reason_for_pause'), ''), text(raw.get('spoolman_support'), 'off'),
+                   text(raw.get('reason_for_pause'), ''), text(raw.get('spoolman_support')),
                    switch(raw.get('endless_spool_enabled', raw.get('endless_spool'))),
                    values('endless_spool_groups', lambda v: integer(v) if integer(v) is not None and v >= 0 else None),
                    values('gate_color', lambda v: text(v, '--')))
@@ -116,7 +116,8 @@ class MMUState:
         return (self.epoch, self.num_gates, self.gate, self.tool, self.enabled,
                 self.action, self.print_state, self.filament, self.locked,
                 self.gate_status, self.ttg_map, self.endless_enabled, self.endless_groups,
-                self.materials, self.colors)
+                self.materials, self.colors, self.spool_ids, self.spoolman_support,
+                self.temperatures)
 
     def tools_for_gate(self, gate):
         return tuple(i for i, mapped in enumerate(self.ttg_map) if mapped == gate)
@@ -133,6 +134,7 @@ class MMUOperation:
     label: str
     values: tuple = ()
     enabled: bool | None = None
+    expected_spool_ids: tuple = ()
 
 
 class MMUSession:
@@ -153,6 +155,7 @@ class MMUSession:
 
     def prepare(self, action, gate=None, tool=None, loaded=None, snapshot=None, ignore_pending=False, values=(), enabled=None):
         p = self.printer
+        expected_spool_ids = ()
         snap = p.subscription.snapshot() if snapshot is None else snapshot
         m = MMUState.from_snapshot(snap)
         if (p.connection_error or not p.state.ready or snap.get('epoch') != p.state.epoch
@@ -182,7 +185,7 @@ class MMUSession:
                 raise ValueError('MMU lock state unknown')
         elif m.locked is None:
             raise ValueError('MMU lock state unknown')
-        if action in self.GATE_ACTIONS:
+        if action in self.GATE_ACTIONS or action == 'spool':
             if integer(gate) is None or not 0 <= gate < m.num_gates:
                 raise ValueError('Invalid gate')
             target = 'G%d' % (gate + 1)
@@ -253,13 +256,28 @@ class MMUSession:
             values = tuple(values)
             script = 'MMU_ENDLESS_SPOOL ENABLE=%d GROUPS=%s' % (enabled, ','.join(str(v) for v in values))
             label = 'Save EndlessSpool'
+        elif action == 'spool':
+            if m.spoolman_support not in ('off', 'readonly', 'push'):
+                raise ValueError('Spoolman mode blocks local assignment')
+            if (not isinstance(values, (tuple, list)) or len(values) != 1
+                    or integer(values[0]) is None or (values[0] != -1 and values[0] < 1)
+                    or any(sid is None or (sid != -1 and sid < 1) for sid in m.spool_ids)):
+                raise ValueError('Known spool IDs and valid assignment required')
+            temperature = integer(m.temperatures[gate])
+            if temperature is None or temperature <= 0:
+                raise ValueError('Known filament temperature required')
+            values = tuple(values)
+            script = 'MMU_GATE_MAP GATE=%d SPOOLID=%d TEMP=%d' % (gate, values[0], temperature)
+            label = ('Clear spool on ' if values[0] == -1 else 'Assign #%d to ' % values[0]) + target
+            expected_spool_ids = tuple(values[0] if i == gate else -1 if values[0] > 0 and sid == values[0] else sid
+                                       for i, sid in enumerate(m.spool_ids))
         elif action == 'resume':
             if ps != 'paused' or m.locked is not False or m.filament != 'loaded':
                 raise ValueError('Recover and unlock first')
             script, label = 'RESUME', 'Resume print'
         else:
             raise ValueError('Unsupported MMU operation')
-        return MMUOperation(action, gate, tool, loaded, m.fingerprint, script, label, tuple(values), enabled)
+        return MMUOperation(action, gate, tool, loaded, m.fingerprint, script, label, tuple(values), enabled, expected_spool_ids)
 
     def start(self, operation):
         fresh = self.prepare(operation.action, operation.gate, operation.tool, operation.loaded,
@@ -303,6 +321,8 @@ class MMUSession:
             return False
         if op.action == 'map': return m.ttg_map == op.values
         if op.action == 'endless': return m.endless_enabled == op.enabled and m.endless_groups == op.values
+        if op.action == 'spool':
+            return m.spool_ids == op.expected_spool_ids
         if op.action == 'select': return m.gate == op.gate and m.filament == 'unloaded'
         if op.action == 'bypass': return m.gate == -2 and m.filament == 'unloaded'
         if op.action in ('load', 'change'): return m.gate == op.gate and m.filament == 'loaded' and (op.action != 'change' or m.tool == op.tool)

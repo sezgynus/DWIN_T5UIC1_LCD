@@ -19,7 +19,8 @@ def mmu_snapshot(**changes):
                sensors={'toolhead': True, 'extruder': False, 'mmu_shared_exit': None},
                sync_drive=False, bowden_progress=-1)
     raw.update(endless_spool_enabled=0, endless_spool_groups=[0, 1, 2, 3],
-               gate_color=['ff0000', 'ffffff', '0000ff', 'ffff00'])
+               gate_color=['ff0000', 'ffffff', '0000ff', 'ffff00'],
+               spoolman_support='push', gate_temperature=[205, 210, 215, 230])
     raw.update(changes)
     data['status']['mmu'] = raw
     return data
@@ -152,6 +153,80 @@ class MMUControlTests(unittest.TestCase):
             if result != 'enabled': status['mmu']['endless_spool_groups'] = [0]*4
             self.complete(s, p, status)
             self.assertEqual(s.phase, 'complete' if result == 'both' else 'error')
+
+    def test_spool_assignment_and_clear_preserve_temperature_and_global_indices(self):
+        for mode in ('off', 'readonly', 'push'):
+            p, _, s = self.make(spoolman_support=mode)
+            op = s.prepare('spool', gate=1, values=(501,))
+            self.assertEqual(op.script, 'MMU_GATE_MAP GATE=1 SPOOLID=501 TEMP=210')
+            self.assertIn('G2', op.label)
+            self.assertEqual(op.expected_spool_ids, (101, 501, 104, -1))
+            self.assertEqual(s.prepare('spool', gate=1, values=(-1,)).script,
+                             'MMU_GATE_MAP GATE=1 SPOOLID=-1 TEMP=210')
+            p.subscription.request.assert_not_called()
+
+    def test_spool_invalid_id_gate_mode_and_metadata_never_enable_assignment(self):
+        for sid in (0, -2, True, '45', None, 1.5):
+            _, _, s = self.make()
+            with self.subTest(sid=sid), self.assertRaises(ValueError):
+                s.prepare('spool', gate=0, values=(sid,))
+        for gate in (-1, 4, None, True):
+            _, _, s = self.make()
+            with self.assertRaises(ValueError): s.prepare('spool', gate=gate, values=(1,))
+        for fields in ({'spoolman_support': 'pull'}, {'spoolman_support': None},
+                       {'spoolman_support': 'unexpected'}, {'gate_spool_id': [101]},
+                       {'gate_temperature': [0]*4}, {'gate_temperature': [205.5]*4},
+                       {'gate_temperature': []}):
+            p, _, s = self.make(**fields)
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                s.prepare('spool', gate=0, values=(501,))
+            p.subscription.request.assert_not_called()
+        p, data, s = self.make()
+        del data['status']['mmu']['spoolman_support']
+        with self.assertRaises(ValueError): s.prepare('spool', gate=0, values=(501,))
+
+    def test_spool_confirmation_and_queue_guard_revalidate_ids_mode_temperature(self):
+        for field, value in (('gate_spool_id', [5]*4), ('spoolman_support', 'pull'),
+                             ('gate_temperature', [230]*4)):
+            p, data, s = self.make()
+            op = s.prepare('spool', gate=0, values=(501,))
+            data['status']['mmu'][field] = value
+            with self.assertRaises(ValueError): s.start(op)
+            p.subscription.request.assert_not_called()
+            p, data, s = self.make()
+            s.start(s.prepare('spool', gate=0, values=(501,)))
+            data['status']['mmu'][field] = value
+            self.assertFalse(p.subscription.request.call_args.kwargs['guard']())
+
+    def test_spool_result_checks_assignment_and_duplicate_removal(self):
+        for ids, success in (([102, -1, 104, -1], True), ([102, 102, 104, -1], False),
+                             ([101, 102, 104, -1], False), ([102, -1, -1, -1], False)):
+            p, data, s = self.make()
+            s.start(s.prepare('spool', gate=0, values=(102,)))
+            status = copy.deepcopy(data['status'])
+            status['mmu']['gate_spool_id'] = ids
+            self.complete(s, p, status)
+            self.assertEqual(s.phase, 'complete' if success else 'error')
+
+    def test_spool_clear_verifies_other_gate_assignments_are_unchanged(self):
+        p, data, s = self.make()
+        s.start(s.prepare('spool', gate=0, values=(-1,)))
+        status = copy.deepcopy(data['status'])
+        status['mmu']['gate_spool_id'][0] = -1
+        self.complete(s, p, status)
+        self.assertEqual(s.phase, 'complete')
+
+    def test_spool_printing_pause_busy_disabled_and_pending_are_locked(self):
+        for ps in ('printing', 'paused'):
+            p, data, s = self.make()
+            data['status']['print_stats']['state'] = ps
+            with self.assertRaises(ValueError): s.prepare('spool', gate=0, values=(501,))
+        for fields in ({'action': 'Loading'}, {'enabled': False}):
+            _, _, s = self.make(**fields)
+            with self.assertRaises(ValueError): s.prepare('spool', gate=0, values=(501,))
+        _, _, s = self.make()
+        s.start(s.prepare('spool', gate=0, values=(501,)))
+        with self.assertRaises(ValueError): s.prepare('spool', gate=1, values=(502,))
 
     def test_commands_use_zero_based_gates_and_explicit_eject(self):
         for action, script in [('unload', 'MMU_UNLOAD'), ('eject', 'MMU_EJECT GATE=2 FORCE=1')]:
