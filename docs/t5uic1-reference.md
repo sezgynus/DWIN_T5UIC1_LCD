@@ -232,9 +232,18 @@ The T5UIC1 exposes two data-memory regions to the runtime protocol:
 | SRAM | `0x5A` | 32 KiB | Volatile |
 | Data Flash | `0xA5` | 16 KiB | Non-volatile |
 
-`read_memory()` chunks reads to the protocol's `0xF0` byte maximum. Writes
-are split into bounded packets. Data-Flash writes wait for the panel
-acknowledgement instead of assuming completion.
+`read_memory()` uses conservative `0x3F`-byte transactions. The T5UIC1 guide
+documents an opcode `0x32` length range of `0x01..0xF0`; the current smaller
+chunk is an implementation choice pending a separate low-address physical
+length sweep. Writes are split into bounded packets and Data-Flash writes wait
+for the panel acknowledgement instead of assuming completion.
+
+The guide documents Data Flash as 16 KiB (`0x0000..0x3FFF`). On the reference
+T5UIC1 panel, physical testing showed `0x0000..0x3FFE` is readable and writable,
+while a one-byte read at `0x3FFF` receives no response and a write transaction
+that spans `0x3FFF` receives no acknowledgement. KlipperDWIN therefore keeps
+the documented 16 KiB physical size but exposes only `0x0000..0x3FFE` through
+the Data Flash API.
 
 Picture Flash is separate from the 16 KiB Data Flash.
 `store_sram_as_picture()` uses opcode `0x33` to copy the panel's 32 KiB SRAM
@@ -279,8 +288,9 @@ tracks that change and automatically restores the required atlas on the next
 
 An active atlas is hashed on the host with SHA-256; the first 16 digest bytes,
 JPEG size, Picture Flash ID and virtual-area ID form its persistent version
-record. KlipperDWIN reserves Data Flash range **0x3FC0..0x3FFF** (64 bytes) for
-this metadata, with magic `KDWATLS1`.
+record. KlipperDWIN reserves Data Flash range **0x0000..0x003F** (64 bytes) for
+this metadata, with magic `KDWATLS1`. The record intentionally starts at zero
+and avoids the physically non-responsive `0x3FFF` boundary.
 
 On LCD connection the driver:
 

@@ -37,18 +37,26 @@ class T5UIC1Display:
     HEIGHT = 480
     SRAM_SIZE = 32 * 1024
     FLASH_SIZE = 16 * 1024
+    # Physical validation on the reference panel shows that address 0x3FFF
+    # does not respond to 0x32 reads and causes writes spanning it to receive
+    # no acknowledgement. Keep the documented 16 KiB size, but expose only
+    # 0x0000..0x3FFE through the runtime Data Flash API.
+    FLASH_USABLE_SIZE = FLASH_SIZE - 1
     MEMORY_SRAM = 0x5A
     MEMORY_FLASH = 0xA5
     MAX_DATA_LENGTH = 248
     MEMORY_WRITE_CHUNK = 128
-    # Physical T5UIC1 validation: opcode 0x32 accepts at most 0x3F bytes.
-    # A 0x40-byte request receives no response, so longer reads are chunked.
+    # Use conservative read transactions on the reference panel. The earlier
+    # 0x40-byte failure was observed at 0x3FC0 and therefore crossed the
+    # non-responsive 0x3FFF boundary; it does not establish a 0x3F protocol
+    # maximum. The T5UIC1 guide documents 0x01..0xF0 for opcode 0x32.
     MEMORY_READ_CHUNK = 0x3F
 
-    # The final 64 bytes of Data Flash are reserved for KlipperDWIN's atlas
-    # ownership/version record. Picture Flash itself remains separate.
+    # KlipperDWIN owns the beginning of Data Flash for atlas version metadata.
+    # Keeping this record away from the panel's non-responsive 0x3FFF address
+    # also makes the 64-byte verification read unambiguous.
     ATLAS_METADATA_SIZE = 64
-    ATLAS_METADATA_ADDRESS = FLASH_SIZE - ATLAS_METADATA_SIZE
+    ATLAS_METADATA_ADDRESS = 0x0000
     ATLAS_METADATA_MAGIC = b"KDWATLS1"
     ATLAS_METADATA_VERSION = 1
     ATLAS_DIGEST_SIZE = 16
@@ -675,7 +683,7 @@ class T5UIC1Display:
         if memory == cls.MEMORY_SRAM:
             return cls.SRAM_SIZE
         if memory == cls.MEMORY_FLASH:
-            return cls.FLASH_SIZE
+            return cls.FLASH_USABLE_SIZE
         raise ValueError("memory must be MEMORY_SRAM or MEMORY_FLASH")
 
     def write_memory(self, memory, address, data, *, timeout=1.25):

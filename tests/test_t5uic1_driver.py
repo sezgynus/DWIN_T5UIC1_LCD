@@ -130,7 +130,11 @@ class T5UIC1DriverPackets(unittest.TestCase):
         with self.assertRaises(ValueError):
             lcd.write_sram(T5UIC1Display.SRAM_SIZE, b"x")
         with self.assertRaises(ValueError):
-            lcd.write_flash(T5UIC1Display.FLASH_SIZE, b"x")
+            lcd.write_flash(T5UIC1Display.FLASH_USABLE_SIZE, b"x")
+        with self.assertRaises(ValueError):
+            lcd.write_flash(T5UIC1Display.FLASH_USABLE_SIZE - 1, b"xx")
+        with self.assertRaises(ValueError):
+            lcd.read_flash(T5UIC1Display.FLASH_USABLE_SIZE, 1)
 
     def test_memory_read_response_is_length_driven_not_tail_delimited(self):
         lcd = driver()
@@ -160,18 +164,18 @@ class T5UIC1DriverPackets(unittest.TestCase):
         first = bytes(range(63))
         second = b"\xA5"
         lcd.serial.chunks.append(
-            b"\xAA\x32\xA5\x3F\xC0\x3F" + first + T5UIC1Display.TAIL
+            b"\xAA\x32\x5A\x01\x00\x3F" + first + T5UIC1Display.TAIL
         )
         lcd.serial.chunks.append(
-            b"\xAA\x32\xA5\x3F\xFF\x01" + second + T5UIC1Display.TAIL
+            b"\xAA\x32\x5A\x01\x3F\x01" + second + T5UIC1Display.TAIL
         )
 
-        self.assertEqual(lcd.read_flash(0x3FC0, 64), first + second)
+        self.assertEqual(lcd.read_sram(0x0100, 64), first + second)
         self.assertEqual(
             lcd.serial.frames,
             [
-                bytes.fromhex("AA 32 A5 3F C0 3F CC 33 C3 3C"),
-                bytes.fromhex("AA 32 A5 3F FF 01 CC 33 C3 3C"),
+                bytes.fromhex("AA 32 5A 01 00 3F CC 33 C3 3C"),
+                bytes.fromhex("AA 32 5A 01 3F 01 CC 33 C3 3C"),
             ],
         )
 
