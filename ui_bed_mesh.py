@@ -71,7 +71,11 @@ class BedMeshMixin:
                 self._mesh_profile_selection = 0
                 self._open_mesh_profiles()
             return
-        self.Draw_Bed_Mesh_Menu()
+        updated = getattr(self, '_mesh_menu_selection', choice)
+        if updated != choice:
+            self.Erase_Menu_Cursor(choice)
+            self.Draw_Menu_Cursor(updated)
+            self.lcd.update()
 
     def _return_to_mesh_menu(self):
         self.checkkey = self.BedMeshMenu

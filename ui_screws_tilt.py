@@ -81,7 +81,11 @@ class ScrewsTiltMixin:
             self.Draw_Screws_Result()
             return
         if event != self.ENCODER_DIFF_NO:
-            self.Draw_Screws_Menu()
+            updated = getattr(self, '_screws_selection', selection)
+            if updated != selection:
+                self.Erase_Menu_Cursor(selection)
+                self.Draw_Menu_Cursor(updated)
+                self.lcd.update()
 
     def _poll_screws_tilt(self):
         session = self.pd.screws_tilt
