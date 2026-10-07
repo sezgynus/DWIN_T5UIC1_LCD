@@ -15,7 +15,7 @@ from gpiozero import Button, Device
 from gpiozero.pins.lgpio import LGPIOFactory
 from printerInterface import PrinterData
 from t5uic1_driver import T5UIC1Display
-from lcd_atlas import ICON_FOLDER, ICON_MCU
+from lcd_atlas import ICON_FOLDER, ICON_MCU, ICON_MACHINE, ICON_HOST, ICON_SOFTWARE
 
 def _MAX(lhs, rhs):
     if lhs > rhs:
@@ -2105,18 +2105,19 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def _draw_info_section(self, label, y):
         text = T5UIC1Display._panel_text(label)[:24]
         palette = {
-            'MACHINE': (0x07FF, self.ICON_PrintSize),
-            'HOST': (0xF81F, self.ICON_Info),
-            'SOFTWARE': (0xA81F, self.ICON_Version),
+            'MACHINE': (0x07FF, ICON_MACHINE),
+            'HOST': (0xF81F, ICON_HOST),
+            'SOFTWARE': (0xA81F, ICON_SOFTWARE),
         }
         key = text.upper()
         if key.startswith('MCU'):
-            color, icon = 0x07E0, None
-            self.lcd.draw_atlas_icon(ICON_MCU, 8, y - 2)
+            color, icon = 0x07E0, ICON_MCU
         else:
-            color, icon = palette.get(key, (self.lcd.Color_White, self.ICON_Info))
+            color, icon = palette.get(key, (self.lcd.Color_White, None))
         if icon is not None:
-            self.lcd.show_icon(self.ICON, icon, 8, y - 2)
+            self.lcd.draw_atlas_icon(icon, 8, y - 2)
+        else:
+            self.lcd.show_icon(self.ICON, self.ICON_Info, 8, y - 2)
         self.lcd.draw_text(False, False, self.lcd.font10x20, color,
                              self.lcd.Color_Bg_Black, 40, y, key)
         self.lcd.draw_rectangle(1, color, 40, y + 21, 255, y + 22)

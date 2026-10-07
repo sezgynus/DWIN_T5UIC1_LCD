@@ -37,28 +37,34 @@ def configured_driver(directory, data_a=JPEG_A, data_b=JPEG_B):
 
 
 class AtlasDriverTests(unittest.TestCase):
-    def test_shipped_mcu_atlas_is_baseline_and_has_a_visible_chip(self):
+    def test_shipped_info_atlas_is_baseline_and_has_visible_icons(self):
         from PIL import Image
 
-        area, x, y, width, height = lcd_atlas.ICON_COORDINATES[lcd_atlas.ICON_MCU]
-        path = Path(lcd_atlas.__file__).parent / lcd_atlas.ATLAS_FILES[area][0]
-        self.assertLessEqual(path.stat().st_size, T5UIC1Display.SRAM_SIZE)
-        with Image.open(path) as atlas:
-            self.assertEqual(atlas.format, 'JPEG')
-            self.assertEqual(atlas.size, (480, 272))
-            self.assertFalse(atlas.info.get('progressive'))
-            portrait = atlas.transpose(Image.Transpose.ROTATE_270)
-            chip = portrait.crop((x, y, x + width, y + height)).convert('RGB')
-            # Catch missing pixels and an incorrectly rotated/placed JPEG asset.
-            lit = sum(max(pixel) > 100 for pixel in chip.getdata())
-            self.assertGreater(lit, 80)
-            self.assertLess(lit, width * height)
+        for icon_id in (lcd_atlas.ICON_MCU, lcd_atlas.ICON_MACHINE,
+                        lcd_atlas.ICON_HOST, lcd_atlas.ICON_SOFTWARE):
+            with self.subTest(icon_id=icon_id):
+                area, x, y, width, height = lcd_atlas.ICON_COORDINATES[icon_id]
+                path = Path(lcd_atlas.__file__).parent / lcd_atlas.ATLAS_FILES[area][0]
+                self.assertLessEqual(path.stat().st_size, T5UIC1Display.SRAM_SIZE)
+                with Image.open(path) as atlas:
+                    self.assertEqual(atlas.format, 'JPEG')
+                    self.assertEqual(atlas.size, (480, 272))
+                    self.assertFalse(atlas.info.get('progressive'))
+                    portrait = atlas.transpose(Image.Transpose.ROTATE_270)
+                    icon = portrait.crop((x, y, x + width, y + height)).convert('RGB')
+                    # Catch missing pixels and incorrectly rotated/placed assets.
+                    lit = sum(max(pixel) > 100 for pixel in icon.getdata())
+                    self.assertGreater(lit, 80)
+                    self.assertLess(lit, width * height)
 
     def test_manifest_coordinates_match_current_custom_static_icons(self):
         self.assertEqual(lcd_atlas.ICON_MMU_HOME_NORMAL, 0x0100)
         self.assertEqual(lcd_atlas.ICON_MMU_HOME_SELECTED, 0x0101)
         self.assertEqual(lcd_atlas.ICON_FOLDER, 0x0102)
         self.assertEqual(lcd_atlas.ICON_MCU, 0x0103)
+        self.assertEqual(lcd_atlas.ICON_MACHINE, 0x0104)
+        self.assertEqual(lcd_atlas.ICON_HOST, 0x0105)
+        self.assertEqual(lcd_atlas.ICON_SOFTWARE, 0x0106)
         self.assertEqual(
             lcd_atlas.ICON_COORDINATES,
             {
@@ -66,6 +72,9 @@ class AtlasDriverTests(unittest.TestCase):
                 0x0101: (0, 80, 0, 77, 47),
                 0x0102: (0, 160, 0, 20, 18),
                 0x0103: (0, 192, 0, 20, 20),
+                0x0104: (0, 224, 0, 20, 20),
+                0x0105: (0, 160, 32, 20, 20),
+                0x0106: (0, 192, 32, 20, 20),
             },
         )
         self.assertEqual(
