@@ -315,7 +315,7 @@ Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başa
 | `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Tam T5UIC1 protokol sürücüsü, GPIO girdileri ve olay döngüsü |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset kaydı, çalışma zamanı sınırları ve sistem telemetrisi |
 
-Protokol kapsamı ve düşük seviye API ayrıntıları [`docs/t5uic1-driver.md`](docs/t5uic1-driver.md) içinde belgelenmiştir.
+T5UIC1 LCD'nin donanım yapılandırması, firmware/görsel kaynakları, bellek düzeni ve çalışma zamanı protokolü [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md) içinde birlikte belgelenmiştir.
 
 ### Regresyon testleri
 

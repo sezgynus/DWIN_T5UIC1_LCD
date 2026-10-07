@@ -315,7 +315,7 @@ Connection epochs reject stale input and queued commands. Failed printer command
 | `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Complete T5UIC1 protocol driver, GPIO input and event loop |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset persistence, runtime limits and system telemetry |
 
-Protocol coverage and low-level API details are documented in [`docs/t5uic1-driver.md`](docs/t5uic1-driver.md).
+Complete T5UIC1 LCD configuration, firmware/assets, memory layout and runtime protocol details are documented in [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md).
 
 ### Regression tests
 
