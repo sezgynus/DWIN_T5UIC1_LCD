@@ -191,6 +191,15 @@ class T5UIC1DriverPackets(unittest.TestCase):
         with self.assertRaises(ValueError):
             lcd.draw_rectangle(1, 0, 12.5, 0, 20, 20)
 
+    def test_native_number_accepts_special_font_selectors(self):
+        lcd = driver()
+        lcd.draw_number(42, font=0x0A, integer_digits=2, byte_length=1)
+        self.assertEqual(lcd.serial.frames[-1][2] & 0x0F, 0x0A)
+        lcd.draw_number(42, font=0x0F, integer_digits=2, byte_length=1)
+        self.assertEqual(lcd.serial.frames[-1][2] & 0x0F, 0x0F)
+        with self.assertRaises(ValueError):
+            lcd.draw_number(42, font=0x10, integer_digits=2, byte_length=1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,8 @@ class T5UIC1Display:
     FONT_24X48 = 0x07
     FONT_28X56 = 0x08
     FONT_32X64 = 0x09
+    FONT_NUM_64X120 = 0x0A
+    FONT_NUM_44X80 = 0x0B
 
     # Compatibility names used by the current UI.  These are constants only;
     # production call sites use the new snake_case driver API.
@@ -468,8 +470,8 @@ class T5UIC1Display:
                     zero_fill=False, zero_mode=False, font=FONT_8X16,
                     color=0xFFFF, background=0, integer_digits=1,
                     fractional_digits=0, x=0, y=0, byte_length=4):
-        if not isinstance(font, int) or not 0 <= font <= 9:
-            raise ValueError("font must be 0..9")
+        if not isinstance(font, int) or not 0 <= font <= 0x0F:
+            raise ValueError("native numeric font selector must be 0x00..0x0F")
         if not isinstance(integer_digits, int) or not 1 <= integer_digits <= 20:
             raise ValueError("integer_digits must be 1..20")
         if not isinstance(fractional_digits, int) or not 0 <= fractional_digits <= 20:

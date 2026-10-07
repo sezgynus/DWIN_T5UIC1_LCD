@@ -312,8 +312,10 @@ Connection epochs reject stale input and queued commands. Failed printer command
 | `moonraker_client.py`, `moonraker_subscription.py`, `command_feedback.py` | HTTP/WebSocket transport and command confirmation |
 | `screws_tilt.py`, `bed_mesh.py`, `probe_wizard.py` | Calibration state machines and result/config guards |
 | `thumbnail_preview.py`, `thumbnail_cache.py`, `preview_metadata.py` | JPEG preparation, SRAM allocation and optional metadata |
-| `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Display packets, GPIO input and event loop |
+| `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Complete T5UIC1 protocol driver, GPIO input and event loop |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset persistence, runtime limits and system telemetry |
+
+Protocol coverage and low-level API details are documented in [`docs/t5uic1-driver.md`](docs/t5uic1-driver.md).
 
 ### Regression tests
 

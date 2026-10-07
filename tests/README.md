@@ -36,7 +36,7 @@ printer connection or moving hardware. Preset writes use temporary directories.
 | Screws Tilt | Four-corner geometry, homing/print guards, fresh and identical repeated results, largest-turn instruction, tolerance/colors, rollover, failures and label bounds |
 | Bed Mesh | Completion and fresh query, probe sample deduplication, profile viewing without LOAD, exact pending-profile save guards, explicit stop/restart confirmation and map bounds |
 | System/integrations | Host/software/MCU information, Happy Hare/Spoolman data, light state and configured encoder power behavior |
-| UART/display | Handshake/ACK fragmentation, framing, short writes, retries, numeric/text bounds, RGB565, asset coordinates and SRAM/JPEG command/address bounds |
+| UART/display | Full T5UIC1 opcode framing, handshake/ACK fragmentation, RX parsing, SRAM/Data Flash read-write, picture Flash, extended UART, numeric/text bounds, RGB565, asset coordinates and compatibility rendering |
 
 Failure/epoch tests verify that uncertain actions are not replayed. Acceptance of
 a transport request is tested separately from the expected printer-state change.

@@ -312,8 +312,10 @@ Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başa
 | `moonraker_client.py`, `moonraker_subscription.py`, `command_feedback.py` | HTTP/WebSocket iletişimi ve komut onayı |
 | `screws_tilt.py`, `bed_mesh.py`, `probe_wizard.py` | Kalibrasyon durum makineleri ve sonuç/yapılandırma korumaları |
 | `thumbnail_preview.py`, `thumbnail_cache.py`, `preview_metadata.py` | JPEG hazırlığı, SRAM alan yönetimi ve isteğe bağlı metadata |
-| `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Ekran paketleri, GPIO girdileri ve olay döngüsü |
+| `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Tam T5UIC1 protokol sürücüsü, GPIO girdileri ve olay döngüsü |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset kaydı, çalışma zamanı sınırları ve sistem telemetrisi |
+
+Protokol kapsamı ve düşük seviye API ayrıntıları [`docs/t5uic1-driver.md`](docs/t5uic1-driver.md) içinde belgelenmiştir.
 
 ### Regresyon testleri
 
