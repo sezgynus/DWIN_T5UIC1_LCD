@@ -6,13 +6,17 @@ onto the T5UIC1 v2.3 instruction set, with a small set of compatibility
 renderers used by KlipperDWIN to preserve its current visual output.
 """
 
+import hashlib
 import math
+import struct
 import time
 import unicodedata
 from collections import deque
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from pathlib import Path
 from threading import Lock
 
+import lcd_atlas
 import serial
 
 
@@ -37,6 +41,17 @@ class T5UIC1Display:
     MAX_DATA_LENGTH = 248
     MEMORY_WRITE_CHUNK = 128
     MEMORY_READ_CHUNK = 0xF0
+
+    # The final 64 bytes of Data Flash are reserved for KlipperDWIN's atlas
+    # ownership/version record. Picture Flash itself remains separate.
+    ATLAS_METADATA_SIZE = 64
+    ATLAS_METADATA_ADDRESS = FLASH_SIZE - ATLAS_METADATA_SIZE
+    ATLAS_METADATA_MAGIC = b"KDWATLS1"
+    ATLAS_METADATA_VERSION = 1
+    ATLAS_DIGEST_SIZE = 16
+    _ATLAS_METADATA_STRUCT = struct.Struct(
+        ">8sBB6xBBBBI16sBBBBI16s"
+    )
 
     FONT_SIZES = (
         (6, 12), (8, 16), (10, 20), (12, 24), (14, 28),
@@ -119,6 +134,8 @@ class T5UIC1Display:
         self._aux_rx = deque()
         self._crc_errors = 0
         self._transaction_lock = Lock()
+        self._virtual_area_pictures = {}
+        self._atlas_specs, self._atlas_icons = self._build_atlas_config()
 
         try:
             time.sleep(wake_delay)
@@ -130,6 +147,10 @@ class T5UIC1Display:
             # Preserve the existing Ender 3 V2 portrait orientation and startup
             # traffic.  Do not wait for the optional 0x34 acknowledgement here.
             self.set_orientation(1, wait_ack=False)
+            # Atlas Picture Flash is synchronized here, but virtual areas are
+            # populated lazily by draw_atlas_icon(). This avoids presenting the
+            # Area-0 atlas sheet during startup.
+            self.sync_atlases()
             self.update()
         except BaseException:
             self.close()
@@ -563,6 +584,9 @@ class T5UIC1Display:
         if not isinstance(jpeg_id, int) or not 0 <= jpeg_id <= 15:
             raise ValueError("JPEG ID must be 0..15")
         self._send(0x22, bytes((0, jpeg_id)))
+        if not hasattr(self, "_virtual_area_pictures"):
+            self._virtual_area_pictures = {}
+        self._virtual_area_pictures[0] = jpeg_id
 
     def show_icon(self, library_id, icon_ids, x, y, *, background=True,
                   restore=False, enhanced=False):
@@ -585,6 +609,9 @@ class T5UIC1Display:
         if not isinstance(jpeg_id, int) or not 0 <= jpeg_id <= 15:
             raise ValueError("JPEG ID must be 0..15")
         self._send(0x25, bytes((1, jpeg_id)))
+        if not hasattr(self, "_virtual_area_pictures"):
+            self._virtual_area_pictures = {}
+        self._virtual_area_pictures[1] = jpeg_id
 
     def copy_cache1(self, x0, y0, x1, y1, x, y):
         self._send(0x26, self._words(x0, y0, x1, y1, x, y))
@@ -710,6 +737,218 @@ class T5UIC1Display:
             payload = self._wait_response(0x33, timeout, self._ok)
             if payload != b"OK":
                 raise T5UIC1ProtocolError("Invalid picture Flash acknowledgement")
+
+
+    # ------------------------------------------------------------------
+    # Managed KlipperDWIN custom-atlas layer
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _build_atlas_config(cls, atlas_files=None, icon_coordinates=None,
+                            base_dir=None):
+        """Validate and normalize the host-side atlas manifest.
+
+        atlas_files maps virtual-area IDs to (JPEG path, Picture Flash ID).
+        icon_coordinates maps icon IDs to (area, x, y, width, height).
+        Coordinates are in the portrait virtual-area coordinate space after
+        the panel's runtime orientation has been applied.
+        """
+        if atlas_files is None:
+            atlas_files = lcd_atlas.ATLAS_FILES
+        if icon_coordinates is None:
+            icon_coordinates = lcd_atlas.ICON_COORDINATES
+        if not isinstance(atlas_files, dict) or not isinstance(icon_coordinates, dict):
+            raise ValueError("atlas files and icon coordinates must be dictionaries")
+
+        root = Path(base_dir) if base_dir is not None else Path(__file__).resolve().parent
+        specs = {}
+        picture_ids = set()
+        for area, definition in atlas_files.items():
+            if area not in (0, 1):
+                raise ValueError("atlas virtual area must be 0 or 1")
+            if not isinstance(definition, (tuple, list)) or len(definition) != 2:
+                raise ValueError("atlas definition must be (jpeg_path, picture_id)")
+            filename, picture_id = definition
+            if not isinstance(filename, (str, Path)) or not str(filename):
+                raise ValueError("atlas JPEG path must be non-empty")
+            if not isinstance(picture_id, int) or not 0 <= picture_id <= 15:
+                raise ValueError("atlas Picture Flash ID must be 0..15")
+            if picture_id in picture_ids:
+                raise ValueError("atlas Picture Flash IDs must be unique")
+            picture_ids.add(picture_id)
+            path = Path(filename)
+            if not path.is_absolute():
+                path = root / path
+            specs[area] = (picture_id, path)
+
+        icons = {}
+        for icon_id, definition in icon_coordinates.items():
+            if not isinstance(icon_id, int) or not 0 <= icon_id <= 0xFFFF:
+                raise ValueError("atlas icon ID must be 0..65535")
+            if not isinstance(definition, (tuple, list)) or len(definition) != 5:
+                raise ValueError(
+                    "atlas icon definition must be (area, x, y, width, height)"
+                )
+            area, x, y, width, height = definition
+            if area not in specs:
+                raise ValueError("atlas icon references an undefined virtual area")
+            values = (x, y, width, height)
+            if any(not isinstance(value, int) for value in values):
+                raise ValueError("atlas icon coordinates and dimensions must be integers")
+            if x < 0 or y < 0 or width <= 0 or height <= 0:
+                raise ValueError("atlas icon rectangle must have positive dimensions")
+            if x + width > cls.WIDTH or y + height > cls.HEIGHT:
+                raise ValueError("atlas icon rectangle exceeds virtual-area bounds")
+            icons[icon_id] = (area, x, y, width, height)
+        return specs, icons
+
+    def _atlas_runtime_config(self):
+        if not hasattr(self, "_atlas_specs") or not hasattr(self, "_atlas_icons"):
+            self._atlas_specs, self._atlas_icons = self._build_atlas_config()
+        if not hasattr(self, "_virtual_area_pictures"):
+            self._virtual_area_pictures = {}
+        return self._atlas_specs, self._atlas_icons
+
+    def _active_atlas_areas(self):
+        _, icons = self._atlas_runtime_config()
+        return tuple(sorted({definition[0] for definition in icons.values()}))
+
+    @classmethod
+    def _pack_atlas_metadata(cls, entries):
+        values = [cls.ATLAS_METADATA_MAGIC, cls.ATLAS_METADATA_VERSION,
+                  len(entries)]
+        zero_digest = bytes(cls.ATLAS_DIGEST_SIZE)
+        for area in (0, 1):
+            if area in entries:
+                picture_id, size, digest = entries[area]
+                if not isinstance(digest, bytes) or len(digest) != cls.ATLAS_DIGEST_SIZE:
+                    raise ValueError("atlas digest must be exactly 16 bytes")
+                values.extend((1, area, picture_id, 0, size, digest))
+            else:
+                values.extend((0, area, 0, 0, 0, zero_digest))
+        return cls._ATLAS_METADATA_STRUCT.pack(*values)
+
+    @classmethod
+    def _unpack_atlas_metadata(cls, data):
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            return {}
+        data = bytes(data)
+        if len(data) != cls.ATLAS_METADATA_SIZE:
+            return {}
+        try:
+            values = cls._ATLAS_METADATA_STRUCT.unpack(data)
+        except struct.error:
+            return {}
+        magic, version, count = values[:3]
+        if magic != cls.ATLAS_METADATA_MAGIC or version != cls.ATLAS_METADATA_VERSION:
+            return {}
+        rest = values[3:]
+        entries = {}
+        for offset in (0, 6):
+            enabled, area, picture_id, flags, size, digest = rest[offset:offset + 6]
+            if enabled not in (0, 1) or flags != 0:
+                return {}
+            if not enabled:
+                continue
+            if area not in (0, 1) or area in entries:
+                return {}
+            if not 0 <= picture_id <= 15 or not 0 < size <= cls.SRAM_SIZE:
+                return {}
+            entries[area] = (picture_id, size, digest)
+        if count != len(entries):
+            return {}
+        return entries
+
+    def _atlas_payloads(self):
+        specs, _ = self._atlas_runtime_config()
+        payloads = {}
+        entries = {}
+        for area in self._active_atlas_areas():
+            picture_id, path = specs[area]
+            try:
+                data = path.read_bytes()
+            except OSError as error:
+                raise OSError(f"Unable to read atlas JPEG: {path}") from error
+            if not 4 <= len(data) <= self.SRAM_SIZE:
+                raise ValueError(
+                    f"atlas JPEG for area {area} must fit in 32 KiB SRAM"
+                )
+            if not data.startswith(b"\xFF\xD8") or not data.endswith(b"\xFF\xD9"):
+                raise ValueError(f"atlas JPEG for area {area} is not a complete JPEG")
+            digest = hashlib.sha256(data).digest()[:self.ATLAS_DIGEST_SIZE]
+            payloads[area] = data
+            entries[area] = (picture_id, len(data), digest)
+        return payloads, entries
+
+    def sync_atlases(self):
+        """Synchronize changed host atlas JPEGs into reserved Picture Flash.
+
+        The persistent record is written only after every required Picture
+        Flash update succeeds. A failed/interrupted update therefore remains
+        dirty and is retried on the next connection.
+        """
+        payloads, desired = self._atlas_payloads()
+        if not desired:
+            return False
+
+        raw_metadata = self.read_flash(
+            self.ATLAS_METADATA_ADDRESS, self.ATLAS_METADATA_SIZE
+        )
+        current = self._unpack_atlas_metadata(raw_metadata)
+        changed = [
+            area for area in sorted(desired)
+            if current.get(area) != desired[area]
+        ]
+
+        specs, _ = self._atlas_runtime_config()
+        for area in changed:
+            picture_id, _ = specs[area]
+            self.write_sram(0, payloads[area])
+            self.store_sram_as_picture(picture_id)
+
+        metadata = self._pack_atlas_metadata(desired)
+        if raw_metadata != metadata:
+            self.write_flash(self.ATLAS_METADATA_ADDRESS, metadata)
+        return bool(changed)
+
+    def _load_atlas_area(self, area):
+        specs, _ = self._atlas_runtime_config()
+        if area not in specs:
+            raise ValueError("atlas virtual area is not configured")
+        picture_id, _ = specs[area]
+        if area == 0:
+            self.show_jpeg(picture_id)
+        else:
+            self.cache_jpeg(picture_id)
+
+    def load_atlases(self):
+        """Populate every active virtual area from its reserved Picture slot."""
+        for area in self._active_atlas_areas():
+            self._load_atlas_area(area)
+
+    def _ensure_atlas_area(self, area):
+        specs, _ = self._atlas_runtime_config()
+        picture_id, _ = specs[area]
+        if self._virtual_area_pictures.get(area) != picture_id:
+            self._load_atlas_area(area)
+
+    def draw_atlas_icon(self, icon_id, x, y):
+        """Draw one custom icon by ID without exposing atlas layout to the UI."""
+        self._u16(x, "x")
+        self._u16(y, "y")
+        _, icons = self._atlas_runtime_config()
+        if icon_id not in icons:
+            raise ValueError(f"unknown atlas icon ID: {icon_id}")
+        area, source_x, source_y, width, height = icons[icon_id]
+        if x + width > self.WIDTH or y + height > self.HEIGHT:
+            raise ValueError("atlas icon destination exceeds display bounds")
+        self._ensure_atlas_area(area)
+        self.copy_cache(
+            area,
+            source_x, source_y,
+            source_x + width - 1, source_y + height - 1,
+            x, y,
+        )
 
 
 # Transitional class alias.  The application import is migrated separately.

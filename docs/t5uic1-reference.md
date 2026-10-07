@@ -240,6 +240,70 @@ Picture Flash is separate from the 16 KiB Data Flash.
 `store_sram_as_picture()` uses opcode `0x33` to copy the panel's 32 KiB SRAM
 image content into picture slot `0x00..0x0F`.
 
+## Managed custom icon atlases
+
+KlipperDWIN reserves Picture Flash IDs **14** and **15** for up to two
+host-managed custom JPEG atlases. Stock assets already available through
+`9.ICO` remain on the normal `0x23 show_icon()` path and are intentionally
+not duplicated into these atlases.
+
+The host manifest lives in `lcd_atlas.py`:
+
+```python
+# virtual_area: (JPEG path, reserved Picture Flash ID)
+ATLAS_FILES = {
+    0: ("assets/klipperdwin_atlas_0.jpg", 14),
+    1: ("assets/klipperdwin_atlas_1.jpg", 15),
+}
+
+# icon_id: (virtual_area, source_x, source_y, width, height)
+ICON_COORDINATES = {
+    # ...
+}
+```
+
+UI code does not know source coordinates, dimensions, Picture Flash IDs or
+virtual-area assignments. It renders a custom asset only by ID:
+
+```python
+lcd.draw_atlas_icon(icon_id, x, y)
+```
+
+The driver resolves the coordinate table, ensures that the required atlas is
+resident in virtual area 0 or 1, then emits the corresponding `0x27` copy.
+If another low-level JPEG/cache operation replaces a virtual area, the driver
+tracks that change and automatically restores the required atlas on the next
+`draw_atlas_icon()`.
+
+### Atlas synchronization and versioning
+
+An active atlas is hashed on the host with SHA-256; the first 16 digest bytes,
+JPEG size, Picture Flash ID and virtual-area ID form its persistent version
+record. KlipperDWIN reserves Data Flash range **0x3FC0..0x3FFF** (64 bytes) for
+this metadata, with magic `KDWATLS1`.
+
+On LCD connection the driver:
+
+1. reads the persistent atlas metadata;
+2. compares it with the current host JPEG fingerprints;
+3. uploads only changed JPEGs through SRAM;
+4. commits each changed JPEG to its reserved Picture Flash slot with `0x33`;
+5. writes the new metadata **only after all required Picture Flash writes
+   succeed**.
+
+Therefore a power loss or failed transfer cannot mark a partially updated atlas
+as current; it is retried on the next connection. If host and panel versions
+already match, no JPEG is uploaded again.
+
+Atlas JPEGs must be complete JPEG files and fit inside the T5UIC1's 32 KiB SRAM
+transfer limit. The default coordinate table is intentionally empty until the
+production atlas artwork is finalized, so this infrastructure does not alter
+the current UI rendering or startup traffic yet.
+
+Virtual areas are populated lazily by `draw_atlas_icon()`; `load_atlases()`
+is also available to preload all active atlases. Lazy loading avoids flushing
+the Area-0 atlas sheet to the visible screen during driver startup.
+
 ## Rendering compatibility
 
 The complete-driver migration deliberately does **not** change the current UI
