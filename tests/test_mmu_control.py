@@ -64,6 +64,25 @@ class MMUControlTests(unittest.TestCase):
         p.subscription.request.return_value = Future()
         return p, data, p.mmu_session
 
+    def test_control_without_optional_home_metadata_preserves_dispatch_guards(self):
+        for colors in (None, [], [[1, 0, 0]], 'invalid'):
+            p, data, session = self.make(gate_color_rgb=colors)
+            self.assertIsNone(p.mmu)
+            op = session.prepare('unload', gate=2)
+            session.start(op)
+            guard = p.subscription.request.call_args.kwargs['guard']
+            self.assertTrue(guard())
+            data['status']['print_stats']['state'] = 'printing'
+            self.assertFalse(guard())
+
+    def test_missing_home_metadata_does_not_relax_physical_state_requirements(self):
+        for changes in ({'enabled': None}, {'action': 'Loading'}, {'filament_pos': None},
+                        {'filament': 'unknown'}, {'num_gates': 0}):
+            p, data, session = self.make(gate_color_rgb=[], **changes)
+            with self.assertRaises(ValueError):
+                session.prepare('unload', gate=2)
+            p.subscription.request.assert_not_called()
+
     def make_hardware(self, selector_type='ServoSelector', always=False, **changes):
         fields = dict(unit=0, is_homed=True, selector={'grip': 'Released'},
                       filament='Unloaded', filament_pos=0)

@@ -19,6 +19,23 @@ class MMUUITests(unittest.TestCase):
         view.Enter_MMU_Menu()
         return view, data
 
+    def test_menu_controls_work_without_optional_rgb_metadata(self):
+        v, data = self.make(gate_color_rgb=[])
+        self.assertIsNone(v.pd.mmu)
+        self.assertEqual(v._mmu_selection, 1)
+        v._mmu_open('gate')
+        v._mmu_gate = 2
+        v.Draw_MMU_Menu()
+        items = v._mmu_items(v.pd.mmu_session.state)
+        unload = next(i for i, item in enumerate(items) if item[0] == ('action', 'unload', 2))
+        self.assertTrue(items[unload][3])
+        self.press(v, unload + 1)
+        self.assertEqual(v._mmu_page, 'confirm')
+        self.assertEqual(v._mmu_selection, 1)
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, 2)
+        v.pd.subscription.request.assert_called_once()
+
     def press(self, view, selection):
         view._mmu_selection = selection
         view.get_encoder_state.return_value = view.ENCODER_DIFF_ENTER

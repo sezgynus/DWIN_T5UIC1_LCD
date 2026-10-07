@@ -362,6 +362,8 @@ Preset, file-list, directory, sorting and Info HTTP reads run in a bounded backg
 
 Command feedback has a deadline even while its transport Future remains unresolved. Expired actions stay unconfirmed and are never accepted by a late result; inspect the printer before retrying.
 
+MMU controls use the validated live control state independently of optional Home RGB telemetry. Missing or malformed gate colors can hide the Home strip without disabling otherwise valid menu actions; print, busy, physical-state and dispatch guards still apply.
+
 ### Regression tests
 
 ```bash

@@ -136,7 +136,7 @@ class MMUViewMixin:
     def Enter_MMU_Menu(self, page='home'):
         self.checkkey = self.MMUMenu
         self._mmu_page = page
-        self._mmu_selection = 1 if self.pd.mmu else 0
+        self._mmu_selection = 1 if self.pd.mmu_session.state is not None else 0
         self._mmu_gate = 0
         self._mmu_history = []
         self._mmu_notice = ''

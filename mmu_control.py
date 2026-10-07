@@ -265,7 +265,7 @@ class MMUSession:
         snap = p.subscription.snapshot() if snapshot is None else snapshot
         m = MMUState.from_snapshot(snap)
         if (p.connection_error or not p.state.ready or snap.get('epoch') != p.state.epoch
-                or m is None or not p.mmu):
+                or m is None):
             raise ValueError('MMU unavailable')
         if self.pending is not None and not ignore_pending:
             raise ValueError('Wait for MMU operation')

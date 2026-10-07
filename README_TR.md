@@ -362,6 +362,8 @@ Preset, dosya listesi, klasör, sıralama ve Info HTTP okumaları sınırlı bir
 
 Komut geri bildirimi, taşıma Future sonucu gelmese de süre sınırına tabidir. Süresi dolan işlem geç gelen sonuçla başarılı sayılmaz; tekrar denemeden önce yazıcı durumunu kontrol edin.
 
+MMU kontrolleri, isteğe bağlı ana ekran RGB verisinden bağımsız olarak doğrulanmış canlı kontrol durumunu kullanır. Eksik veya bozuk gate renkleri ana ekran şeridini gizleyebilir; geçerli menü işlemlerini kapatmaz. Baskı, meşguliyet, fiziksel durum ve gönderim kontrolleri uygulanmaya devam eder.
+
 ### Regresyon testleri
 
 ```bash
