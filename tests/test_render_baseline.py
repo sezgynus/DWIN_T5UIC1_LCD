@@ -90,6 +90,29 @@ class RenderBaselineTests(unittest.TestCase):
             ))
         self.assertEqual(metrics.refreshes, 1)
 
+    def test_print_periodic_unchanged_emits_nothing(self):
+        screen = self.screen()
+        screen.pd.job_Info = {
+            'virtual_sdcard': {'is_active': True, 'progress': .42},
+            'print_stats': {'state': 'printing', 'print_duration': 3600},
+        }
+        screen.pd.remain = lambda: 7200
+        screen.Draw_Print_ProgressBar(42.0)
+        screen.Draw_Print_ProgressElapsed()
+        screen.Draw_Print_ProgressRemain()
+        screen.lcd.update()
+        metrics = RenderMetrics.measure(
+            screen.lcd,
+            lambda: (
+                screen.Draw_Print_ProgressBar(42.0),
+                screen.Draw_Print_ProgressElapsed(),
+                screen.Draw_Print_ProgressRemain(),
+                screen.lcd.update(),
+            ))
+        self.assertEqual(metrics.packets, 0)
+        self.assertEqual(metrics.bytes, 0)
+        self.assertEqual(metrics.refreshes, 0)
+
     def test_prepare_menu_full_draw(self):
         screen = self.screen()
         metrics = self.measure(

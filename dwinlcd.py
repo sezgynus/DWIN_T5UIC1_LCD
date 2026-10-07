@@ -2095,28 +2095,49 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._draw_menu_text('Pause', 41, 188)
         self._draw_menu_text('Stop', 176, 188)
 
+    def _print_render_changed(self, name, value):
+        epoch = getattr(self, '_uart_epoch', 0)
+        if getattr(self, '_print_render_epoch', None) != epoch:
+            self._print_render_epoch = epoch
+            self._print_render_cache = {}
+        cache = getattr(self, '_print_render_cache', None)
+        if cache is None:
+            cache = {}
+            self._print_render_cache = cache
+        if cache.get(name) == value:
+            return False
+        cache[name] = value
+        return True
+
     def Draw_Print_ProgressBar(self, Percentrecord=None):
         if Percentrecord is None:
             Percentrecord = self.pd.getPercent()
+        if not self._print_render_changed('progress', Percentrecord):
+            return
         self.lcd.show_icon(self.ICON, self.ICON_Bar, 15, 93)
         self.lcd.draw_rectangle(
             1, self.lcd.BarFill_Color,
             int(round(16 + Percentrecord * 240 / 100)), 93, 256, 113)
-        self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 3, 109, 133, Percentrecord)
-        self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 133, 133, "%")
+        self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16,
+            self.lcd.Percent_Color, self.lcd.Color_Bg_Black,
+            3, 109, 133, Percentrecord)
+        self.lcd.draw_text(False, False, self.lcd.font8x16,
+            self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 133, 133, "%")
 
-    def _draw_print_time(self, seconds, x):
-        # Format completed minutes, not rounded fractional hours/minutes.
+    def _draw_print_time(self, seconds, x, cache_key):
+        # The display only changes once per completed minute.
         minutes = max(0, int(seconds)) // 60
+        if not self._print_render_changed(cache_key, minutes):
+            return
         text = '{:02d}:{:02d}'.format(minutes // 60, minutes % 60)
         self.lcd.draw_text(False, True, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, x, 212, text)
 
     def Draw_Print_ProgressElapsed(self):
-        self._draw_print_time(self.pd.duration(), 42)
+        self._draw_print_time(self.pd.duration(), 42, 'elapsed_minute')
 
     def Draw_Print_ProgressRemain(self):
-        self._draw_print_time(self.pd.remain(), 176)
+        self._draw_print_time(self.pd.remain(), 176, 'remain_minute')
 
     def Draw_Print_File_Menu(self):
         self.Clear_Title_Bar()
@@ -2309,6 +2330,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
+        self._print_render_cache = {}
+        self._print_render_epoch = getattr(self, '_uart_epoch', 0)
         self.Clear_Main_Window()
         self.Draw_Printing_Screen()
 
