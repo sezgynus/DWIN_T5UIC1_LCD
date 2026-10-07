@@ -279,7 +279,7 @@ class DirectoryBrowserTests(unittest.TestCase):
         self.assertEqual(view._file_paths,('parts/','empty/','root.gcode'))
         self.choose(view,'empty/')
         self.assertEqual(view._file_directory,'empty');self.assertEqual(view._file_paths,())
-        self.assertIn('No files',[c.args[-1] for c in view.lcd.Draw_String.call_args_list])
+        self.assertIn('No files',[c.args[-1] for c in view.lcd.draw_text.call_args_list])
         view.HMI_SelectFile()
         self.assertEqual(view._file_directory,'')
         self.assertEqual(view._file_paths[view.select_file.now-1],'empty/')
@@ -342,7 +342,7 @@ class DirectoryBrowserTests(unittest.TestCase):
         view.Draw_Menu_Line=Mock();view.lcd.reset_mock()
         view.Draw_SDItem(0,0)
         view.Draw_Menu_Line.assert_called_once_with(0,False,'inner')
-        self.assertEqual(view.lcd.Draw_Rectangle.call_count,2)
+        self.assertEqual(view.lcd.draw_rectangle.call_count,2)
         view.Draw_SDItem(1,1)
         self.assertEqual(view.Draw_Menu_Line.call_args.args,(1,view.ICON_File,'A.gcode'))
 

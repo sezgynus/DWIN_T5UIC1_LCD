@@ -220,7 +220,7 @@ class MeshViewTests(unittest.TestCase):
         self.assertEqual(view.checkkey,view.BedMeshScreen)
         self.assertTrue(view.pd.bed_mesh.pending)
         self.complete(view)
-        labels=[c.args[-1] for c in view.lcd.Draw_String.call_args_list]
+        labels=[c.args[-1] for c in view.lcd.draw_text.call_args_list]
         self.assertIn('Save',labels);self.assertIn('Continue',labels)
         self.event(view,view.ENCODER_DIFF_CW);self.event(view,view.ENCODER_DIFF_ENTER)
         self.assertEqual(view.checkkey,view.BedMeshMenu)
@@ -283,7 +283,7 @@ class MeshViewTests(unittest.TestCase):
         view=self.make();view._start_bed_mesh(view.Prepare);self.complete(view)
         self.event(view,view.ENCODER_DIFF_ENTER)
         self.assertEqual(view._mesh_confirmation,'save')
-        labels=[c.args[-1] for c in view.lcd.Draw_String.call_args_list]
+        labels=[c.args[-1] for c in view.lcd.draw_text.call_args_list]
         self.assertIn(view.pd.bed_mesh.profile_name,labels)
         self.assertIn('Klipper will restart',labels)
         self.assertEqual(view.pd.subscription.request.call_count,2)
@@ -299,7 +299,7 @@ class MeshViewTests(unittest.TestCase):
         session.pending.set_result(result);session.update()
         view.checkkey=view.MeshProfiles;view._mesh_profile_selection=13
         view.lcd.reset_mock();view.Draw_Mesh_Profiles()
-        labels=[c.args for c in view.lcd.Draw_String.call_args_list if c.args[5]==view.LBLX]
+        labels=[c.args for c in view.lcd.draw_text.call_args_list if c.args[5]==view.LBLX]
         self.assertEqual(len(labels),6)
         for args in labels:
             self.assertLessEqual(args[5]+len(args[-1])*8,272)
@@ -317,7 +317,7 @@ class MeshViewTests(unittest.TestCase):
         self.assertLess(point_style(-.2,5)[1],point_style(.2,5)[1])
         view=self.make()
         view._draw_mesh_grid(3,3,{(0,0):-.12,(2,2):.12})
-        strings=view.lcd.Draw_String.call_args_list
+        strings=view.lcd.draw_text.call_args_list
         negative=next(c.args for c in strings if c.args[-1]=='-0.12')
         positive=next(c.args for c in strings if c.args[-1]=='+0.12')
         self.assertEqual(negative[6],271) # low Y at the bottom
@@ -326,16 +326,16 @@ class MeshViewTests(unittest.TestCase):
         for columns,rows in ((3,3),(5,7),(9,9),(15,15),(25,25)):
             view.lcd.reset_mock()
             view._draw_mesh_grid(columns,rows,{(x,y):(-.2+(x+y)/10) for x in range(columns) for y in range(rows)})
-            for call in view.lcd.Draw_String.call_args_list:
+            for call in view.lcd.draw_text.call_args_list:
                 args=call.args;self.assertGreaterEqual(args[5],0)
                 self.assertLessEqual(args[5]+len(args[-1])*6,272)
                 self.assertGreaterEqual(args[6],31);self.assertLessEqual(args[6]+12,300)
             boxes=[(call.args[5],call.args[6],call.args[5]+len(call.args[-1])*6,call.args[6]+12)
-                   for call in view.lcd.Draw_String.call_args_list]
+                   for call in view.lcd.draw_text.call_args_list]
             for index,(x1,y1,x2,y2) in enumerate(boxes):
                 for a1,b1,a2,b2 in boxes[index+1:]:
                     self.assertFalse(x1<a2 and a1<x2 and y1<b2 and b1<y2, 'overlapping mesh labels')
-            for call in view.lcd.Draw_Rectangle.call_args_list:
+            for call in view.lcd.draw_rectangle.call_args_list:
                 _,_,x1,y1,x2,y2=call.args
                 self.assertGreaterEqual(x1,0);self.assertLessEqual(x2,271)
                 self.assertGreaterEqual(y1,31);self.assertLessEqual(y2,300)
@@ -481,7 +481,7 @@ class MeshMenuTests(unittest.TestCase):
         for name in ('prepare','control'):
             self.assertNotIn('MESH',[e[0] for e in view._menus[name]])
             self.assertFalse(any(e[1] in ('Bed Mesh Calibrate','Mesh Viewer') for e in view._menus[name]))
-        labels=[c.args[-1] for c in view.lcd.Draw_String.call_args_list]
+        labels=[c.args[-1] for c in view.lcd.draw_text.call_args_list]
         self.assertIn('Bed Mesh Calibrate',labels);self.assertIn('Mesh Viewer',labels)
         view.pd.subscription.request.assert_not_called()
 

@@ -31,7 +31,7 @@ class AuditRenderingTests(unittest.TestCase):
 
     def test_near_zero_negative_does_not_leave_minus_sign(self):
         result = self.screen()
-        result.lcd.Draw_Signed_Float(1, 0, 2, 2, 100, 20, -.1)
+        result.lcd.draw_signed_scaled_float_text(1, 0, 2, 2, 100, 20, -.1)
         self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'  0.00')
 
     def test_thermal_editor_draw_is_flushed_by_input_owner(self):
@@ -40,7 +40,7 @@ class AuditRenderingTests(unittest.TestCase):
         result = self.screen()
         result._closed = False
         result._encoder_event = result.ENCODER_DIFF_NO
-        result._dispatch_input = lambda: result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 216, 50, 205)
+        result._dispatch_input = lambda: result.lcd.draw_integer_text(True, True, 0, 1, 0xFFFF, 0, 3, 216, 50, 205)
         result._process_input(InputEvent('press', 1, 1))
         self.assertEqual([frame[1] for frame in result.lcd.MYSERIAL1.frames], [0x11, 0x3D])
 
@@ -76,15 +76,15 @@ class AuditRenderingTests(unittest.TestCase):
         self.assertTrue(any(frame[11:-4] == b'###' for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11))
         self.assertEqual(result.pd.feedrate_percentage, 1000)
         self.assertEqual(result.pd.thermalManager['temp_hotend'][0]['target'], 1200)
-        result.lcd.Draw_Signed_Float(1, 0, 3, 1, 216, 50, 1234567890)
+        result.lcd.draw_signed_scaled_float_text(1, 0, 3, 1, 216, 50, 1234567890)
         self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'######')
-        result.lcd.Draw_Signed_Float(1, 0, 3, 1, 216, 50, 5)
+        result.lcd.draw_signed_scaled_float_text(1, 0, 3, 1, 216, 50, 5)
         self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'   0.5')
 
     def test_negative_integer_sign_transition_clears_entire_field(self):
         result = self.screen()
         for value, expected in ((-5, b' -5'), (5, b'  5'), (-999, b'###')):
-            result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
+            result.lcd.draw_integer_text(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
             self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], expected)
 
     def test_motion_value_is_complete_scientific_text_with_fixed_padding(self):
@@ -100,7 +100,7 @@ class AuditRenderingTests(unittest.TestCase):
     def test_extreme_finite_numbers_render_marker_without_decimal_overflow(self):
         result = self.screen()
         for value in (1e300, -1e300, 10**100):
-            result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
+            result.lcd.draw_integer_text(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
             self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'###')
 
     def test_move_menu_and_editor_use_same_command_coordinates(self):
@@ -125,21 +125,21 @@ class AuditRenderingTests(unittest.TestCase):
     def test_move_menu_without_hotend_draws_only_xyz(self):
         result = display(snapshot(hotend=False))
         result.Draw_Move_Menu()
-        self.assertEqual(result.lcd.Draw_FloatValue.call_count, 3)
-        result.lcd.Draw_Signed_Float.assert_not_called()
+        self.assertEqual(result.lcd.draw_scaled_float_text.call_count, 3)
+        result.lcd.draw_signed_scaled_float_text.assert_not_called()
 
 
 def test_user_visible_labels_do_not_depend_on_frame_copy_assets():
     source = Path(__file__).resolve().parents[1].joinpath('dwinlcd.py').read_text()
     legacy_text_fragments = (
         'Frame_TitleCopy(',
-        'Frame_AreaCopy(1, 226, 179, 256, 189',  # Back
-        'Frame_AreaCopy(1, 69, 61, 102, 71',     # Move
-        'Frame_AreaCopy(1, 1, 451, 31, 463',     # Print
-        'Frame_AreaCopy(1, 33, 451, 82, 466',    # Prepare
-        'Frame_AreaCopy(1, 85, 451, 132, 463',   # Control
-        'Frame_AreaCopy(1, 132, 451, 159, 466',  # Info
-        'Frame_AreaCopy(1, 103, 59, 200, 74',    # Disable steppers
-        'Frame_AreaCopy(1, 202, 61, 271, 71',    # Auto home
+        'copy_cache(1, 226, 179, 256, 189',  # Back
+        'copy_cache(1, 69, 61, 102, 71',     # Move
+        'copy_cache(1, 1, 451, 31, 463',     # Print
+        'copy_cache(1, 33, 451, 82, 466',    # Prepare
+        'copy_cache(1, 85, 451, 132, 463',   # Control
+        'copy_cache(1, 132, 451, 159, 466',  # Info
+        'copy_cache(1, 103, 59, 200, 74',    # Disable steppers
+        'copy_cache(1, 202, 61, 271, 71',    # Auto home
     )
     assert not any(fragment in source for fragment in legacy_text_fragments)

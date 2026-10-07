@@ -27,7 +27,7 @@ class AssetContracts(unittest.TestCase):
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
                 continue
-            if node.func.attr not in ('Frame_AreaCopy', 'Frame_TitleCopy'):
+            if node.func.attr not in ('copy_cache', 'copy_cache'):
                 continue
             try:
                 cache, x1, y1, x2, y2 = [ast.literal_eval(arg) for arg in node.args[:5]]

@@ -1,9 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from test_regressions import ui
+from t5uic1_driver import T5UIC1Display as Driver, T5UIC1TimeoutError
 
-Driver = ui.T5UIC1_LCD
 serial_module = Driver.__init__.__globals__['serial']
 
 
@@ -42,10 +41,11 @@ class UARTTests(unittest.TestCase):
             return Driver('/dev/fake', **kwargs)
 
     def test_first_handshake_frame_and_fragmented_ack_with_noise(self):
-        port = Port([b'noise\xAA', b'\x00', b'O', b'K'])
+        tail = Driver.TAIL
+        port = Port([b'noise\xAA', b'\x00', b'O', b'K', tail[:2], tail[2:]])
         result = self.open(port)
         self.assertEqual(port.frames[0], b'\xAA\x00\xCC\x33\xC3\x3C')
-        self.assertTrue(all(frame.startswith(b'\xAA') and frame.endswith(b'\xCC\x33\xC3\x3C')
+        self.assertTrue(all(frame.startswith(Driver.HEADER) and frame.endswith(Driver.TAIL)
                             for frame in port.frames))
         result.close()
         result.close()
@@ -53,18 +53,22 @@ class UARTTests(unittest.TestCase):
 
     def test_no_screen_has_bounded_retries_and_closes_port(self):
         port = Port()
-        with self.assertRaises(TimeoutError):
+        with self.assertRaises(T5UIC1TimeoutError):
             self.open(port, handshake_timeout=.005, handshake_attempts=2)
         self.assertEqual(len(port.frames), 2)
         self.assertEqual(port.closed, 1)
 
-    def test_three_byte_ack_is_incomplete_and_noise_is_bounded(self):
+    def test_noise_is_discarded_and_partial_frame_is_retained(self):
         result = Driver.__new__(Driver)
-        result._receive_buffer = bytearray()
-        self.assertFalse(result._consume_handshake(b'\xAA\x00O'))
-        self.assertTrue(result._consume_handshake(b'K'))
-        self.assertFalse(result._consume_handshake(b'x' * 10000))
-        self.assertLessEqual(len(result._receive_buffer), 3)
+        result._rx = bytearray(b'x' * 10000)
+        result._frames = __import__('collections').deque()
+        result._aux_rx = __import__('collections').deque()
+        result._crc_errors = 0
+        result._parse_rx()
+        self.assertEqual(result._rx, bytearray())
+        result._rx.extend(b'\xAA\x00O')
+        result._parse_rx()
+        self.assertEqual(result._rx, bytearray(b'\xAA\x00O'))
 
     def test_short_write_is_not_retried_and_constructor_closes(self):
         port = Port()
@@ -74,25 +78,25 @@ class UARTTests(unittest.TestCase):
         self.assertEqual(len(port.frames), 1)
         self.assertEqual(port.closed, 1)
 
-    def test_serial_read_and_backlight_validation_do_not_corrupt_next_frame(self):
-        port = Port([b'\xAA\x00OK'])
+    def test_backlight_validation_does_not_corrupt_next_frame(self):
+        port = Port([b'\xAA\x00OK' + Driver.TAIL])
         result = self.open(port)
-        port.chunks = [b'abc']
-        self.assertEqual(result.Read(2), b'ab')
-        self.assertEqual(result.Read(), b'c')
         with self.assertRaises(ValueError):
-            result.Backlight_SetLuminance(256)
-        result.Backlight_SetLuminance(0)
+            result.set_backlight(256)
+        result.set_backlight(0)
         self.assertEqual(port.frames[-1], b'\xAA\x30\x00\xCC\x33\xC3\x3C')
         result.close()
         with self.assertRaises(RuntimeError):
-            result.UpdateLCD()
+            result.update()
 
-    def test_instance_buffers_are_independent(self):
-        first = self.open(Port([b'\xAA\x00OK']))
-        second = self.open(Port([b'\xAA\x00OK']))
-        first.Byte(0x30)
-        second.UpdateLCD()
-        self.assertEqual(second.MYSERIAL1.frames[-1], b'\xAA\x3D\xCC\x33\xC3\x3C')
+    def test_instance_receive_buffers_are_independent(self):
+        first = self.open(Port([b'\xAA\x00OK' + Driver.TAIL]))
+        second = self.open(Port([b'\xAA\x00OK' + Driver.TAIL]))
+        first._rx.extend(b'abc')
+        self.assertEqual(second._rx, bytearray())
         first.close()
         second.close()
+
+
+if __name__ == '__main__':
+    unittest.main()

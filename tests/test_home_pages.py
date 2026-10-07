@@ -21,7 +21,7 @@ class HomePageTests(unittest.TestCase):
             self.step(view,view.ENCODER_DIFF_CW)
             self.assertEqual(view.select_page.now,index)
         view.lcd.reset_mock();view._draw_home_page()
-        icons=[c.args[1:] for c in view.lcd.ICON_Show.call_args_list]
+        icons=[c.args[1:] for c in view.lcd.show_icon.call_args_list]
         self.assertEqual(icons,[(view.ICON_Info_0,145,130)])
         self.step(view,view.ENCODER_DIFF_CW)
         self.assertEqual(view.select_page.now,5)
@@ -31,7 +31,7 @@ class HomePageTests(unittest.TestCase):
         self.assertEqual(view.select_page.now,4)
         self.step(view,view.ENCODER_DIFF_CCW)
         self.assertEqual(view.select_page.now,3)
-        self.assertIn((view.ICON_Leveling_1,145,246),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
+        self.assertIn((view.ICON_Leveling_1,145,246),[c.args[1:] for c in view.lcd.show_icon.call_args_list])
         for _ in range(8):self.step(view,view.ENCODER_DIFF_CCW)
         self.assertEqual(view.select_page.now,0)
         view.pd.sendGCode.assert_not_called()
@@ -42,8 +42,8 @@ class HomePageTests(unittest.TestCase):
         for _ in range(8):self.step(view,view.ENCODER_DIFF_CW)
         self.assertEqual(view.select_page.now,4)
         view.lcd.reset_mock();view._draw_home_page()
-        self.assertIn((view.ICON_Info_1,17,130),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
-        self.assertFalse(any(c.args[-1]=='1/1' for c in view.lcd.Draw_String.call_args_list))
+        self.assertIn((view.ICON_Info_1,17,130),[c.args[1:] for c in view.lcd.show_icon.call_args_list])
+        self.assertFalse(any(c.args[-1]=='1/1' for c in view.lcd.draw_text.call_args_list))
 
     def test_home_info_enter_returns_to_same_page(self):
         view=self.make();view.select_page.set(5);view.Draw_Info_Menu=Mock()
@@ -54,7 +54,7 @@ class HomePageTests(unittest.TestCase):
         view.HMI_Info()
         self.assertEqual(view.checkkey,view.MainMenu)
         self.assertEqual(view.select_page.now,5)
-        self.assertIn((view.ICON_Info_1,145,130),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
+        self.assertIn((view.ICON_Info_1,145,130),[c.args[1:] for c in view.lcd.show_icon.call_args_list])
 
     def test_control_info_returns_to_control(self):
         view=self.make();view.checkkey=view.Control
@@ -79,16 +79,16 @@ class HomePageTests(unittest.TestCase):
         view=self.make();view.select_page.set(3)
         view.Draw_Status_Area=Mock();view.Draw_MMU_Status=Mock()
         self.step(view,view.ENCODER_DIFF_CW)
-        for c in view.lcd.Draw_Rectangle.call_args_list:
+        for c in view.lcd.draw_rectangle.call_args_list:
             self.assertGreaterEqual(c.args[3],126)
             self.assertLess(c.args[5],view.STATUS_Y)
         view.Draw_Status_Area.assert_not_called();view.Draw_MMU_Status.assert_not_called()
-        self.assertIn('2/2',[c.args[-1] for c in view.lcd.Draw_String.call_args_list])
+        self.assertIn('2/2',[c.args[-1] for c in view.lcd.draw_text.call_args_list])
 
     def test_capability_removal_clamps_cursor_to_existing_info(self):
         view=self.make();view.select_page.set(5);view.pd.HAS_ONESTEP_LEVELING=False
         view._draw_home_page();self.assertEqual(view.select_page.now,4)
-        self.assertIn((view.ICON_Info_1,17,130),[c.args[1:] for c in view.lcd.ICON_Show.call_args_list])
+        self.assertIn((view.ICON_Info_1,17,130),[c.args[1:] for c in view.lcd.show_icon.call_args_list])
 
     def test_mmu_placeholder_back_preserves_home_selection(self):
         for mesh in (True, False):
@@ -115,13 +115,13 @@ class HomePageTests(unittest.TestCase):
             for selected in (False,True):
                 view.lcd.reset_mock();view.Draw_MMU_Home_Icon(x,y,selected)
                 colors=set()
-                for call in view.lcd.Draw_Rectangle.call_args_list:
+                for call in view.lcd.draw_rectangle.call_args_list:
                     _,color,x0,y0,x1,y1=call.args
                     colors.add(color)
                     self.assertTrue(x<=x0<=x1<=x+109)
                     self.assertTrue(y<=y0<=y1<y+71)
                 self.assertIn(0xF800 if selected else 0x7800,colors)
-                for call in view.lcd.Draw_Line.call_args_list:
+                for call in view.lcd.draw_line.call_args_list:
                     _,x0,y0,x1,y1=call.args
                     self.assertTrue(x<=x0<=x1<=x+109)
                     self.assertTrue(y<=y0<=y1<y+71)

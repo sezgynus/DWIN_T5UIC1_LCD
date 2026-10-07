@@ -24,7 +24,7 @@ class UARTReconnectTests(unittest.TestCase):
         result = self.display()
         result.lcd = None
         port = Mock()
-        with patch.object(ui, 'T5UIC1_LCD', side_effect=[TimeoutError('no panel'), port]) as factory:
+        with patch.object(ui, 'T5UIC1Display', side_effect=[TimeoutError('no panel'), port]) as factory:
             with patch.object(ui.time, 'monotonic', return_value=0):
                 self.assertFalse(result._ensure_uart())
             with patch.object(ui.time, 'monotonic', return_value=4):
@@ -82,12 +82,12 @@ class UARTReconnectTests(unittest.TestCase):
         self.assertFalse(result._uart_online)
         self.assertIsNone(result.lcd)
         old.close.assert_called_once()
-        old.UpdateLCD.assert_not_called()
+        old.update.assert_not_called()
 
     def test_closed_display_does_not_reopen_port(self):
         result = self.display()
         result._closed = True
-        with patch.object(ui, 'T5UIC1_LCD') as factory:
+        with patch.object(ui, 'T5UIC1Display') as factory:
             self.assertFalse(result._ensure_uart())
         factory.assert_not_called()
 
@@ -101,16 +101,17 @@ class UARTReconnectTests(unittest.TestCase):
         self.assertTrue(result._uart_online)
 
     def test_current_screen_is_flushed_immediately_after_reconnect(self):
-        from test_uart import Driver, Port
+        from test_t5uic1_driver import driver
         result = self.display()
-        driver = Driver.__new__(Driver)
-        driver.MYSERIAL1 = Port()
-        driver.DWIN_SendBuf = driver.FHONE
-        driver._closed = False
-        driver._needs_update = False
-        result.HMI_Init = lambda: driver.JPG_CacheTo1(1)
-        result.HMI_StartFrame = lambda update: driver.Frame_Clear(0)
-        with patch.object(ui, 'T5UIC1_LCD', return_value=driver):
+        lcd = driver()
+        lcd._needs_update = False
+        result.HMI_Init = lambda: lcd.cache_jpeg(1)
+        result.HMI_StartFrame = lambda update: lcd.clear(0)
+        with patch.object(ui, 'T5UIC1Display', return_value=lcd):
             self.assertTrue(result._ensure_uart())
-        self.assertEqual([frame[1] for frame in driver.MYSERIAL1.frames], [0x25, 1, 0x3D])
-        self.assertFalse(driver._needs_update)
+        self.assertEqual([frame[1] for frame in lcd.serial.frames], [0x25, 1, 0x3D])
+        self.assertFalse(lcd._needs_update)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -144,7 +144,7 @@ class ThumbnailCache:
             task = self.upload
             stop = min(len(task['data']), task['index']+chunks*128)
             for offset in range(task['index'], stop, 128):
-                lcd.Write_SRAM(task['address']+offset, task['data'][offset:min(offset+128, stop)])
+                lcd.write_sram(task['address']+offset, task['data'][offset:min(offset+128, stop)])
             task['index'] = stop
             if stop == len(task['data']):
                 self.entries[task['key']] = (task['address'], stop)

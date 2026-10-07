@@ -7,11 +7,11 @@ class MMUViewMixin:
         colors = (0xF800, 0x07E0, 0x001F) if selected else (0x7800, 0x03E0, 0x0010)
         for lane, color in enumerate(colors):
             left = x + 16 + lane * 27
-            self.lcd.Draw_Rectangle(1, color, left+4, y+22, left+18, y+49)
+            self.lcd.draw_rectangle(1, color, left+4, y+22, left+18, y+49)
             for flange in (left, left+19):
-                self.lcd.Draw_Rectangle(1, edge, flange, y+16, flange+3, y+55)
-            self.lcd.Draw_Line(color, left+11, y+56, left+11, y+62)
-        self.lcd.Draw_Line(edge, x+27, y+62, x+81, y+62)
+                self.lcd.draw_rectangle(1, edge, flange, y+16, flange+3, y+55)
+            self.lcd.draw_line(color, left+11, y+56, left+11, y+62)
+        self.lcd.draw_line(edge, x+27, y+62, x+81, y+62)
 
     def Draw_MMU_Menu(self):
         self.Clear_Main_Window()
@@ -21,7 +21,7 @@ class MMUViewMixin:
     def HMI_MMU_Menu(self):
         if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
             self.Goto_MainMenu()
-            self.lcd.UpdateLCD()
+            self.lcd.update()
 
     @staticmethod
     def _rgb565(rgb):
@@ -46,7 +46,7 @@ class MMUViewMixin:
         start = left + max(0, (width - total) // 2)
         title = str(mmu.get('name') or 'MMU')[:22]
         title_x = max(4, (self.lcd.DWIN_WIDTH - 6 * len(title)) // 2)
-        self.lcd.Draw_String(False, True, self.lcd.font6x12,
+        self.lcd.draw_text(False, True, self.lcd.font6x12,
                              self.lcd.Color_White, self.lcd.Color_Bg_Black,
                              title_x, 32, title)
 
@@ -68,19 +68,19 @@ class MMUViewMixin:
             y0, y1 = top + 13, top + 52
 
             # Warm cardboard/wood flanges stand out against the black UI.
-            self.lcd.Draw_Rectangle(1, flange, reel_x + 1, top + 7,
+            self.lcd.draw_rectangle(1, flange, reel_x + 1, top + 7,
                                     reel_x + flange_w, top + 58)
-            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + 1, top + 7,
+            self.lcd.draw_rectangle(0, flange_edge, reel_x + 1, top + 7,
                                     reel_x + flange_w, top + 58)
-            self.lcd.Draw_Rectangle(1, flange, reel_x + reel_w - flange_w - 1, top + 7,
+            self.lcd.draw_rectangle(1, flange, reel_x + reel_w - flange_w - 1, top + 7,
                                     reel_x + reel_w - 2, top + 58)
-            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + reel_w - flange_w - 1, top + 7,
+            self.lcd.draw_rectangle(0, flange_edge, reel_x + reel_w - flange_w - 1, top + 7,
                                     reel_x + reel_w - 2, top + 58)
-            self.lcd.Draw_Rectangle(1, color, body_left, y0, body_right, y1)
+            self.lcd.draw_rectangle(1, color, body_left, y0, body_right, y1)
 
             winding = self.lcd.Color_White if sum(mmu['gate_color_rgb'][gate]) < 0.7 else flange
             for line_x in range(body_left + 5, body_right, 7):
-                self.lcd.Draw_Line(winding, line_x, y0, line_x, y1)
+                self.lcd.draw_line(winding, line_x, y0, line_x, y1)
 
             percent = percentages[gate] if gate < len(percentages) else None
             # Percent text needs enough horizontal room. Compact high-gate
@@ -89,10 +89,10 @@ class MMUViewMixin:
                 pct = '--' if percent is None else '%d%%' % percent
                 # Black backing keeps the percentage readable on white/yellow filament.
                 pct_w = 6 * len(pct) + 4
-                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black,
+                self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black,
                                         cx - pct_w // 2, top + 27,
                                         cx + pct_w // 2, top + 41)
-                self.lcd.Draw_String(False, True, self.lcd.font6x12,
+                self.lcd.draw_text(False, True, self.lcd.font6x12,
                                      self.lcd.Color_White, self.lcd.Color_Bg_Black,
                                      cx - 3 * len(pct), top + 28, pct)
 
@@ -117,8 +117,8 @@ class MMUViewMixin:
             # Black/off LEDs therefore render as black rather than falling back.
             label_bg = indicator
             border = indicator
-            self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
-            self.lcd.Draw_Rectangle(0, border, lx0, top + 64, lx1, top + 78)
+            self.lcd.draw_rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
+            self.lcd.draw_rectangle(0, border, lx0, top + 64, lx1, top + 78)
             # Choose black or white text for maximum contrast against
             # the live lane color.  This keeps bright green/yellow/cyan lane
             # numbers readable without sacrificing dark-color visibility.
@@ -129,7 +129,7 @@ class MMUViewMixin:
                          587 * g6 * 255 // 63 +
                          114 * b5 * 255 // 31) // 1000
             label_fg = 0x0000 if luminance >= 140 else self.lcd.Color_White
-            self.lcd.Draw_String(False, True, self.lcd.font6x12,
+            self.lcd.draw_text(False, True, self.lcd.font6x12,
                                  label_fg, label_bg,
                                  cx - 3 * len(label), top + 65, label)
 
