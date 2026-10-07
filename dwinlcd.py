@@ -15,7 +15,7 @@ from gpiozero import Button, Device
 from gpiozero.pins.lgpio import LGPIOFactory
 from printerInterface import PrinterData
 from t5uic1_driver import T5UIC1Display
-from lcd_atlas import ICON_FOLDER, ICON_MCU, ICON_MACHINE, ICON_HOST, ICON_SOFTWARE
+from lcd_atlas import ICON_FOLDER, ICON_MCU, ICON_MACHINE, ICON_HOST, ICON_SOFTWARE, ICON_POWER
 
 def _MAX(lhs, rhs):
     if lhs > rhs:
@@ -124,6 +124,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     BedMeshMenu = 43
     MMUMenu = 44
     FilePreview = 45
+    PowerConfirm = 46
 
     MINUNITMULT = 10
 
@@ -310,6 +311,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._live_jog_future = None
         self._live_jog_pending = None
         self._info_scroll = 0
+        self._power_focus = False
+        self._power_origin = None
+        self._power_confirm_yes = True
         self._loop = UIEventLoop(self._initialize, self._process_input,
                                  self._ui_tick, self._close_resources)
         self._loop.start()
@@ -1970,8 +1974,16 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.lcd.DWIN_FONT_STAT, self.lcd.Color_Bg_Black,
                 3, 1, value_x, y3, position * 10)
 
+    def _draw_power_icon(self, selected=False, clear=False):
+        if clear:
+            self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Blue, 241, 2, 268, 29)
+        self.lcd.draw_atlas_icon(ICON_POWER, 244, 5)
+        if selected:
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 241, 2, 267, 28)
+
     def Draw_Title(self, title):
         self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_HEAD, self.lcd.Color_White, self.lcd.Color_Bg_Blue, 14, 4, title)
+        self._draw_power_icon(getattr(self, '_power_focus', False))
 
     def Draw_Popup_Bkgd_105(self):
         self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Window, 14, 105, 258, 374)
@@ -2256,6 +2268,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def Goto_MainMenu(self):
         self.checkkey = self.MainMenu
         self.Clear_Main_Window()
+        self._draw_power_icon(getattr(self, '_power_focus', False))
 
         if self.pd.mmu is None:
             self.lcd.show_icon(self.ICON, self.ICON_LOGO, 71, 52)
@@ -2654,6 +2667,99 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.Draw_Status_Area(update)
         self.lcd.update()
 
+    def _power_at_first_item(self):
+        selections = {
+            self.MainMenu: 'select_page', self.SelectFile: 'select_file',
+            self.Prepare: 'select_prepare', self.Control: 'select_control',
+            self.AxisMove: 'select_axis', self.TemperatureID: 'select_temp',
+            self.Motion: 'select_motion', self.Tune: 'select_tune',
+            self.PLAPreheat: 'select_PLA', self.ABSPreheat: 'select_ABS',
+            self.CaseLight: 'select_light',
+        }
+        name = selections.get(self.checkkey)
+        if name is not None:
+            return getattr(self, name).now == 0
+        custom = {
+            self.BedMeshMenu: '_mesh_menu_selection',
+            self.MeshProfiles: '_mesh_profile_selection',
+            self.ScrewsTiltMenu: '_screws_selection',
+            self.FilePreview: '_preview_choice',
+            self.Info: '_info_scroll',
+        }
+        if self.checkkey == self.MMUMenu:
+            return True
+        attr = custom.get(self.checkkey)
+        return attr is not None and getattr(self, attr, 0) == 0
+
+    def _draw_power_confirmation(self):
+        self.Clear_Popup_Area()
+        self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_HEAD, self.lcd.Color_White,
+                           self.lcd.Color_Bg_Blue, 14, 4, 'Power')
+        self.Draw_Popup_Bkgd_105()
+        self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Popup_Text_Color,
+                           self.lcd.Color_Bg_Window, 42, 150, 'Turn off printer?')
+        for yes, label, x in ((True, 'Yes', 42), (False, 'No', 164)):
+            color = self.lcd.Select_Color if self._power_confirm_yes == yes else self.lcd.Color_Bg_Window
+            self.lcd.draw_rectangle(0, color, x - 12, 224, x + 52, 264)
+            self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Popup_Text_Color,
+                               self.lcd.Color_Bg_Window, x, 236, label)
+
+    def _restore_power_origin(self):
+        origin = self._power_origin
+        self._power_origin = None
+        self._power_focus = False
+        self.checkkey = origin if origin is not None else self.MainMenu
+        redraw = {
+            self.MainMenu: self.Goto_MainMenu,
+            self.SelectFile: self.Draw_Print_File_Menu,
+            self.Prepare: self.Draw_Prepare_Menu,
+            self.Control: self.Draw_Control_Menu,
+            self.AxisMove: self.Draw_Move_Menu,
+            self.TemperatureID: self.Draw_Temperature_Menu,
+            self.Motion: self.Draw_Motion_Menu,
+            self.Info: self.Draw_Info_Menu,
+            self.Tune: self.Draw_Tune_Menu,
+            self.MMUMenu: self.Draw_MMU_Menu,
+            self.BedMeshMenu: self.Draw_Bed_Mesh_Menu,
+            self.BedMeshScreen: self.Draw_Bed_Mesh,
+            self.MeshProfiles: self.Draw_Mesh_Profiles,
+            self.FilePreview: self.Draw_File_Preview,
+        }.get(self.checkkey)
+        if redraw is not None:
+            redraw()
+        else:
+            self._restore_action_screen()
+
+    def _handle_power_navigation(self):
+        event = self.get_encoder_state()
+        if self.checkkey == self.PowerConfirm:
+            if event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+                self._power_confirm_yes = not self._power_confirm_yes
+                self._draw_power_confirmation()
+            elif event == self.ENCODER_DIFF_ENTER:
+                if self._power_confirm_yes:
+                    self.pd.power_off_if_on()
+                    self._show_message('Powering off...')
+                else:
+                    self._restore_power_origin()
+            return True
+        if getattr(self, '_power_focus', False):
+            if event == self.ENCODER_DIFF_CW:
+                self._power_focus = False
+                self._draw_power_icon(False, clear=True)
+            elif event == self.ENCODER_DIFF_ENTER:
+                self._power_origin = self.checkkey
+                self._power_confirm_yes = True
+                self._power_focus = False
+                self.checkkey = self.PowerConfirm
+                self._draw_power_confirmation()
+            return True
+        if event == self.ENCODER_DIFF_CCW and self._power_at_first_item():
+            self._power_focus = True
+            self._draw_power_icon(True, clear=True)
+            return True
+        return False
+
     def _dispatch_input(self):
         feedback = getattr(self, '_action_feedback', None)
         if feedback is not None:
@@ -2675,6 +2781,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self._print_error_visible = False
                 self.Goto_MainMenu()
                 self.lcd.update()
+            return
+        if self._handle_power_navigation():
             return
         if self.checkkey == self.MainMenu:
             self.HMI_MainMenu()

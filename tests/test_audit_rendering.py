@@ -42,6 +42,16 @@ class AuditRenderingTests(unittest.TestCase):
                     'AA 27 20 ' + rectangle + ' 00 08 00 8A CC 33 C3 3C')])
                 self.assertFalse(any(f[1] == 0x23 for f in result.lcd.serial.frames))
 
+    def test_title_draws_global_power_icon_from_managed_atlas(self):
+        result = self.screen()
+        result.lcd.serial.frames.clear()
+        result.Draw_Title('Prepare')
+        copies = [f for f in result.lcd.serial.frames if f[1] == 0x27]
+        self.assertEqual(copies, [bytes.fromhex(
+            'AA 27 20 00 E0 00 20 00 F3 00 33 '
+            '00 F4 00 05 CC 33 C3 3C')])
+        self.assertFalse(any(f[1] == 0x23 for f in result.lcd.serial.frames))
+
     def test_complete_progress_has_three_digits_before_percent_sign(self):
         result = self.screen()
         result.Draw_Print_ProgressBar(100)

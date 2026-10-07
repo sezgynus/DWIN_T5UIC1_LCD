@@ -100,9 +100,13 @@ class HomePageTests(unittest.TestCase):
             self.assertEqual(view.checkkey,view.MMUMenu)
             view.Draw_Title.assert_called_once_with('MMU')
             view.Draw_Back_First.assert_called_once_with(True)
-            for event in (view.ENCODER_DIFF_CW,view.ENCODER_DIFF_CCW,view.ENCODER_DIFF_NO):
+            for event in (view.ENCODER_DIFF_CW,view.ENCODER_DIFF_NO):
                 view.get_encoder_state.return_value=event;view._dispatch_input()
                 self.assertEqual(view.checkkey,view.MMUMenu)
+            view.get_encoder_state.return_value=view.ENCODER_DIFF_CCW;view._dispatch_input()
+            self.assertTrue(view._power_focus)
+            view.get_encoder_state.return_value=view.ENCODER_DIFF_CW;view._dispatch_input()
+            self.assertFalse(view._power_focus)
             view.get_encoder_state.return_value=view.ENCODER_DIFF_ENTER
             view._dispatch_input()
             self.assertEqual(view.checkkey,view.MainMenu)

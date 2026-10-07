@@ -458,6 +458,25 @@ class PrinterData:
         return self.client.post('/machine/device_power/device', payload,
                                 guard=device_is_off, report_error=False)
 
+    def power_off_if_on(self):
+        """Turn off the configured Moonraker power device only when it is on."""
+        payload = {'device': self.power_device, 'action': 'off'}
+
+        def device_is_on():
+            result = self.client.get('/machine/device_power/devices').get('result', {})
+            devices = result.get('devices', []) if isinstance(result, dict) else []
+            target = next((item for item in devices
+                           if str(item.get('device', '')).casefold() == self.power_device.casefold()), None)
+            if target is None:
+                raise MoonrakerError('Configured power device was not found')
+            if target.get('status') != 'on':
+                raise MoonrakerError('Configured power device is not on')
+            payload['device'] = target['device']
+            return True
+
+        return self.client.post('/machine/device_power/device', payload,
+                                guard=device_is_on, report_error=False)
+
     def init_Webservices(self):
         # Bootstrap and reconnection run on the subscription thread.
         return self.update_variable()

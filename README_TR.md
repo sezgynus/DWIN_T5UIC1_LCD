@@ -34,7 +34,7 @@ Uygulama, Ender 3 V2’de kullanılan 4,3 inç paneli ve görsel kaynak düzenin
 | Yazıcı ayarları | Homing, Move/Live Jog, ısıtıcı/fan hedefleri, çalışma zamanı Z offset ve hareket sınırları |
 | Tabla kalibrasyonu | Dört köşe Screws Tilt Adjust, Bed Mesh Calibrate, kayıtlı Mesh Viewer ve Probe calibration |
 | Entegrasyonlar | Düzenlenebilir Mainsail sıcaklık presetleri, Happy Hare kanal görünümü, Spoolman yüzdeleri ve M355 kabin ışığı |
-| Sistem bilgileri | Kaydırılabilir host, yazılım ve MCU bilgileri; encoder ile güç açma |
+| Sistem bilgileri | Kaydırılabilir host, yazılım ve MCU bilgileri; encoder ile güç açma/kapatma |
 
 Menüler algılanan yazıcı yeteneklerine göre şekillenir. **MMU menüsü yalnızca Back içeren bir yer tutucudur**; ana ekrandaki Happy Hare görünümü çalışır. Diğer sınırlar [aşağıda](#kapsam-ve-sınırlar) listelenmiştir.
 
@@ -230,9 +230,11 @@ M355 P0..255
 Light is ON, Brightness=128
 ```
 
-### Encoder ile güç açma
+### Encoder ile güç kontrolü
 
 Encoder düğmesini basılı tutarak Moonraker güç aygıtı açılabilir; Klipper veya LCD UART çevrimdışı olsa da çalışır. Aygıt adı ve basılı tutma süresini `./configure.sh` ile ayarlayın. Varsayılanlar `Printer` ve **2 saniye**; `0` ms, basıldığında hemen güç açma ister.
+
+Her menünün sağ üstünde aynı güç ikonu bulunur. İlk menü öğesindeyken encoderi saat yönünün tersine çevirerek ikona odaklanın; saat yönünde çevirerek menüye dönün. Odaklanmış ikonda encoder düğmesine basmak **Turn off printer?** onay penceresini açar ve **Yes varsayılan seçilidir**. Yes onaylandığında yalnızca yapılandırılmış Moonraker güç aygıtının bildirilen durumu `on` ise kapatma komutu gönderilir; No, gelinen menüye döner.
 
 ## Yapılandırma
 
