@@ -136,6 +136,7 @@ class T5UIC1Display:
         self._transaction_lock = Lock()
         self._virtual_area_pictures = {}
         self._atlas_specs, self._atlas_icons = self._build_atlas_config()
+        self._atlas_synced = False
 
         try:
             time.sleep(wake_delay)
@@ -149,8 +150,10 @@ class T5UIC1Display:
             self.set_orientation(1, wait_ack=False)
             # Atlas Picture Flash is synchronized here, but virtual areas are
             # populated lazily by draw_atlas_icon(). This avoids presenting the
-            # Area-0 atlas sheet during startup.
-            self.sync_atlases()
+            # Area-0 atlas sheet during startup. Missing host JPEGs are tolerated
+            # so a coordinate-table commit can land before binary assets are
+            # uploaded; draw_atlas_icon() remains strict and will retry sync.
+            self.sync_atlases(allow_missing=True)
             self.update()
         except BaseException:
             self.close()
@@ -859,7 +862,7 @@ class T5UIC1Display:
             return {}
         return entries
 
-    def _atlas_payloads(self):
+    def _atlas_payloads(self, *, allow_missing=False):
         specs, _ = self._atlas_runtime_config()
         payloads = {}
         entries = {}
@@ -868,6 +871,8 @@ class T5UIC1Display:
             try:
                 data = path.read_bytes()
             except OSError as error:
+                if allow_missing:
+                    return None, None
                 raise OSError(f"Unable to read atlas JPEG: {path}") from error
             if not 4 <= len(data) <= self.SRAM_SIZE:
                 raise ValueError(
@@ -880,15 +885,23 @@ class T5UIC1Display:
             entries[area] = (picture_id, len(data), digest)
         return payloads, entries
 
-    def sync_atlases(self):
+    def sync_atlases(self, *, allow_missing=False):
         """Synchronize changed host atlas JPEGs into reserved Picture Flash.
 
         The persistent record is written only after every required Picture
         Flash update succeeds. A failed/interrupted update therefore remains
         dirty and is retried on the next connection.
+
+        allow_missing is used only by startup to tolerate a repository update
+        where the manifest has landed before its binary JPEG assets. Explicit
+        sync and icon drawing remain strict.
         """
-        payloads, desired = self._atlas_payloads()
+        self._atlas_synced = False
+        payloads, desired = self._atlas_payloads(allow_missing=allow_missing)
+        if payloads is None:
+            return False
         if not desired:
+            self._atlas_synced = True
             return False
 
         raw_metadata = self.read_flash(
@@ -909,6 +922,7 @@ class T5UIC1Display:
         metadata = self._pack_atlas_metadata(desired)
         if raw_metadata != metadata:
             self.write_flash(self.ATLAS_METADATA_ADDRESS, metadata)
+        self._atlas_synced = True
         return bool(changed)
 
     def _load_atlas_area(self, area):
@@ -923,6 +937,8 @@ class T5UIC1Display:
 
     def load_atlases(self):
         """Populate every active virtual area from its reserved Picture slot."""
+        if not getattr(self, "_atlas_synced", False):
+            self.sync_atlases()
         for area in self._active_atlas_areas():
             self._load_atlas_area(area)
 
@@ -942,6 +958,8 @@ class T5UIC1Display:
         area, source_x, source_y, width, height = icons[icon_id]
         if x + width > self.WIDTH or y + height > self.HEIGHT:
             raise ValueError("atlas icon destination exceeds display bounds")
+        if not getattr(self, "_atlas_synced", False):
+            self.sync_atlases()
         self._ensure_atlas_area(area)
         self.copy_cache(
             area,

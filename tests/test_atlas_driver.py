@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+import lcd_atlas
 from test_t5uic1_driver import driver
 from t5uic1_driver import T5UIC1Display
 
@@ -30,10 +31,31 @@ def configured_driver(directory, data_a=JPEG_A, data_b=JPEG_B):
         },
     )
     lcd._virtual_area_pictures = {}
+    lcd._atlas_synced = True
     return lcd, path_a, path_b
 
 
 class AtlasDriverTests(unittest.TestCase):
+    def test_manifest_coordinates_match_current_custom_static_icons(self):
+        self.assertEqual(lcd_atlas.ICON_MMU_HOME_NORMAL, 0x0100)
+        self.assertEqual(lcd_atlas.ICON_MMU_HOME_SELECTED, 0x0101)
+        self.assertEqual(lcd_atlas.ICON_FOLDER, 0x0102)
+        self.assertEqual(
+            lcd_atlas.ICON_COORDINATES,
+            {
+                0x0100: (0, 0, 0, 77, 47),
+                0x0101: (0, 80, 0, 77, 47),
+                0x0102: (0, 160, 0, 20, 18),
+            },
+        )
+        self.assertEqual(
+            lcd_atlas.ATLAS_FILES,
+            {
+                0: ("assets/klipperdwin_atlas_0.jpg", 14),
+                1: ("assets/klipperdwin_atlas_1.jpg", 15),
+            },
+        )
+
     def test_coordinate_table_is_validated_once_at_driver_boundary(self):
         with self.assertRaises(ValueError):
             T5UIC1Display._build_atlas_config(
@@ -199,10 +221,38 @@ class AtlasDriverTests(unittest.TestCase):
         lcd._atlas_specs, lcd._atlas_icons = lcd._build_atlas_config(
             {0: ("missing-a.jpg", 14), 1: ("missing-b.jpg", 15)}, {}
         )
+        lcd._atlas_synced = False
         lcd.read_flash = Mock()
 
         self.assertFalse(lcd.sync_atlases())
+        self.assertTrue(lcd._atlas_synced)
         lcd.read_flash.assert_not_called()
+
+    def test_startup_can_defer_sync_until_binary_atlases_are_present(self):
+        lcd = driver()
+        lcd._atlas_specs, lcd._atlas_icons = lcd._build_atlas_config(
+            {0: ("missing-a.jpg", 14), 1: ("missing-b.jpg", 15)},
+            {0x100: (0, 0, 0, 10, 10)},
+        )
+        lcd._atlas_synced = False
+        lcd.read_flash = Mock()
+
+        self.assertFalse(lcd.sync_atlases(allow_missing=True))
+        self.assertFalse(lcd._atlas_synced)
+        lcd.read_flash.assert_not_called()
+        with self.assertRaises(OSError):
+            lcd.sync_atlases()
+
+    def test_draw_is_strict_if_manifest_exists_but_jpeg_is_missing(self):
+        lcd = driver()
+        lcd._atlas_specs, lcd._atlas_icons = lcd._build_atlas_config(
+            {0: ("missing-a.jpg", 14)},
+            {0x100: (0, 0, 0, 10, 10)},
+        )
+        lcd._atlas_synced = False
+        with self.assertRaises(OSError):
+            lcd.draw_atlas_icon(0x100, 0, 0)
+        self.assertFalse(lcd.serial.frames)
 
 
 if __name__ == "__main__":
