@@ -142,6 +142,39 @@ class T5UIC1DriverPackets(unittest.TestCase):
         self.assertEqual(lcd.serial.frames[-1],
                          bytes.fromhex("AA 32 5A 01 00 06 CC 33 C3 3C"))
 
+    def test_memory_read_uses_single_transaction_at_63_byte_limit(self):
+        lcd = driver()
+        data = bytes(range(63))
+        lcd.serial.chunks.append(
+            b"\xAA\x32\x5A\x01\x00\x3F" + data + T5UIC1Display.TAIL
+        )
+
+        self.assertEqual(lcd.read_sram(0x0100, 63), data)
+        self.assertEqual(
+            lcd.serial.frames,
+            [bytes.fromhex("AA 32 5A 01 00 3F CC 33 C3 3C")],
+        )
+
+    def test_memory_read_chunks_64_bytes_as_63_plus_1(self):
+        lcd = driver()
+        first = bytes(range(63))
+        second = b"\xA5"
+        lcd.serial.chunks.append(
+            b"\xAA\x32\xA5\x3F\xC0\x3F" + first + T5UIC1Display.TAIL
+        )
+        lcd.serial.chunks.append(
+            b"\xAA\x32\xA5\x3F\xFF\x01" + second + T5UIC1Display.TAIL
+        )
+
+        self.assertEqual(lcd.read_flash(0x3FC0, 64), first + second)
+        self.assertEqual(
+            lcd.serial.frames,
+            [
+                bytes.fromhex("AA 32 A5 3F C0 3F CC 33 C3 3C"),
+                bytes.fromhex("AA 32 A5 3F FF 01 CC 33 C3 3C"),
+            ],
+        )
+
     def test_flash_write_picture_write_and_orientation_ack_parsing(self):
         lcd = driver()
         lcd.serial.chunks.append(b"\xAA\x31\xA5OK" + T5UIC1Display.TAIL)

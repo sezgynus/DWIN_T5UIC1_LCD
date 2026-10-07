@@ -41,7 +41,7 @@ class T5UIC1Display:
     MEMORY_FLASH = 0xA5
     MAX_DATA_LENGTH = 248
     MEMORY_WRITE_CHUNK = 128
-    MEMORY_READ_CHUNK = 0xF0
+    # Physical T5UIC1 validation: opcode 0x32 accepts at most 0x3F bytes.\n    # A 0x40-byte request receives no response, so longer reads are chunked.\n    MEMORY_READ_CHUNK = 0x3F
 
     # The final 64 bytes of Data Flash are reserved for KlipperDWIN's atlas
     # ownership/version record. Picture Flash itself remains separate.
