@@ -96,8 +96,8 @@ actual LCD and installed Happy Hare configuration before merging the control UI:
 8. Disconnect/reconnect Moonraker and UART. Check retained operation errors,
    rebuilt current page, read-only offline navigation and no command replay.
 
-Hardware-specific maintenance
-are not exposed by this first implementation. Use the web UI for these functions.
+Motor release, MMU enable/disable, LED controls and unit selection are not exposed
+by this implementation. Use the web UI for these functions.
 
 Tool map: edit several tools to one gate, cancel the draft, cancel confirmation,
 then Save and verify the actual Happy Hare mapping. Check long lists, gate bounds,
@@ -113,3 +113,10 @@ mode/temperature/print locks, duplicate-spool warning and whole-map verification
 On hardware check that TEMP is preserved, the previous gate becomes unassigned,
 and any Spoolman synchronization completes. Local assignment confirmation does
 not establish spool-record existence or completion of external synchronization.
+
+Maintenance/options: validate unit partitions and selector types, hide unsupported
+controls, check unloaded grip/release and loaded sync guards, home then select the
+confirmed tool, check all gates, and verify actual homing/grip/sync/availability.
+Hardware QA must establish calibration, selector travel, servo positions, command
+compatibility and safe behavior before merging. Never treat static homing data
+from mmu_machine as a live homing result.

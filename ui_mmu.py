@@ -129,7 +129,8 @@ class MMUViewMixin:
                   'filament': 'FILAMENT', 'map': 'TOOL MAP', 'manage': 'MANAGE',
                   'status': 'MMU STATUS', 'bypass': 'BYPASS', 'recover': 'RECOVER STATE',
                   'manual': 'SET MMU STATE', 'confirm': 'CONFIRM',
-                  'endless': 'ENDLESS SPOOL', 'group': 'GROUP MEMBERS', 'spool': 'ASSIGN SPOOL'}
+                  'endless': 'ENDLESS SPOOL', 'group': 'GROUP MEMBERS', 'spool': 'ASSIGN SPOOL',
+                  'maintenance': 'MAINTENANCE', 'options': 'MMU OPTIONS'}
 
     def Enter_MMU_Menu(self, page='home'):
         self.checkkey = self.MMUMenu
@@ -313,7 +314,27 @@ class MMUViewMixin:
                     self._mmu_action_item('unload_extruder', 'Unload extruder')]
         if page == 'manage':
             return [nav('recover', 'Recover state'), nav('status', 'Sensors / status'),
-                    nav('bypass', 'Extruder / bypass'), (('web',), 'Calibration', 'WEB', False)]
+                    nav('bypass', 'Extruder / bypass'), (('web',), 'Calibration', 'WEB', False),
+                    nav('maintenance', 'Maintenance'), nav('options', 'Options')]
+        if page == 'maintenance':
+            items = [self._mmu_action_item('check_all', 'Check all gates')]
+            unit = m.active_unit if m else None
+            session = self.pd.mmu_session
+            if unit and len(m.units) == 1 and unit.selector_type in session.HOME_SELECTORS:
+                items.insert(0, self._mmu_action_item('home_selector', 'Home selector'))
+            if unit and unit.selector_type in session.GRIP_SELECTORS:
+                items += [self._mmu_action_item('grip', 'Grip')]
+                if unit.always_gripped is False:
+                    items += [self._mmu_action_item('release', 'Release')]
+            return items + [nav('bypass', 'Extruder / bypass')]
+        if page == 'options':
+            unit = m.active_unit if m else None
+            items = []
+            if unit and unit.always_gripped is not None:
+                items.append(self._mmu_action_item('sync_on', 'Gear sync ON'))
+                if not unit.always_gripped:
+                    items.append(self._mmu_action_item('sync_off', 'Gear sync OFF'))
+            return items + [nav('status', 'Sensors / status')]
         if page == 'filament':
             return [nav('spool', 'Assign spool ID')]
         if page == 'spool':
@@ -505,6 +526,16 @@ class MMUViewMixin:
             self._mmu_text('spoolhint', 'Press ID, turn number, press again', 12, 124, 40, small=True)
             self._mmu_text('spooldraft', 'Changes wait for Save' if writable else 'Locked; check mode/state/metadata', 12, 148, 40, small=True, color=0x8410 if writable else 0xFD20)
             first_y, visible = 180, 6
+        elif page in ('maintenance', 'options'):
+            unit = m.active_unit if m else None
+            self._mmu_text('unitname', unit.name if unit else 'Hardware data unavailable', 12, 66)
+            self._mmu_text('unittype', unit.selector_type if unit else 'Unsupported controls hidden', 12, 94, 40, small=True)
+            self._mmu_text('maintstate', 'Filament: ' + (m.filament.upper() if m else 'UNKNOWN'), 12, 123)
+            detail = ('Grip: ' + {True: 'GRIPPED', False: 'RELEASED', None: '--'}[m.grip]
+                      if page == 'maintenance' and m else 'Gear sync: ' + {True: 'ON', False: 'OFF', None: '--'}[m.sync_drive]
+                      if m else 'Live state unavailable')
+            self._mmu_text('maintdetail', detail, 12, 152)
+            first_y, visible = 191, 5
         elif page == 'map':
             writable = self._mmu_map_writable(m)
             self._mmu_text('maphint', 'Press row, turn gate, press again', 12, 66, 40, small=True)
@@ -570,6 +601,14 @@ class MMUViewMixin:
                        'endless': 'Saves groups; no filament movement.', 'resume': 'Print motion will resume.'}.get(op.action, 'This may move filament/motors.')
             if op.action == 'spool':
                 message = 'Saves spool ID; no filament movement.'
+            if op.action in ('grip', 'release'):
+                message = 'Moves grip/selector at current gate.'
+            if op.action in ('sync_on', 'sync_off'):
+                message = 'Changes gear drive and grip state.'
+            if op.action == 'home_selector':
+                message = 'Homes selector, then selects tool.'
+            if op.action == 'check_all':
+                message = 'Moves filament across all gates.'
             self._mmu_text('effect', message, 12, 210, 40, small=True)
             if op.action == 'map':
                 old = m.ttg_map if m else ()

@@ -227,7 +227,8 @@ Spoolman yüzdeleri tek bir aktif makaradan değil, Moonraker Spoolman proxy’s
 | Tool map | Taslak takım–kanal düzenleyici; bas, çevir, bas ile kabul; Save/Cancel |
 | EndlessSpool (Tool map içinden) | Taslak aç/kapat, gruplar ve kanal üyeliği; malzeme/renk uyumu, Save/Cancel |
 | Bypass | Mevcut MMU kanalını boşaltma, bypass seçimi ve ardından yalnız ekstrüder yükleme/boşaltma |
-| Manage / Recover | Otomatik filament durumu kurtarma, taslak takım/kanal/yüklü durum editörü, ayrı kilit açma/ısıtma ve Resume print |
+| Manage / Recover | Kurtarma, manuel durum editörü, kilit açma/ısıtma ve Resume; bakım/seçenek girişleri |
+| Maintenance / Options | Tüm kanalları kontrol, tek lineer selector için Home, desteklenen Grip/Release, yüklü filamentte gear sync ve sensör durumu |
 | Status | Gerçek işlem ve varsa Bowden aşama yüzdesi, ayrıştırılmış sensör durumları, gear sync, nozzle sıcaklığı ve işlem sonucu |
 
 Ekrandaki **G1, Happy Hare tarafında `GATE=0`** anlamına gelir; takım numaraları T0'dan başlar. Birden fazla takıma eşlenen makara `T*` gösterir. Load selected mevcut dolu kanalı kullanır; Load/change ilişkili mantıksal takımı seçerek Happy Hare eşlemesini izler. Unload filamenti MMU'da park eder; Eject spool gerçek çıkarmayı açıkça ister ve gerektiğinde aktif kanalı önce boşaltır.
@@ -242,7 +243,9 @@ EndlessSpool aynı boşta ve baskı dışı koşulları kullanır. Enabled değe
 
 Filament → Assign spool ID ekranında pozitif sayısal kimliği bas, çevir, bas ile düzenleyip Save ve onayla kaydedin. Clear assignment ayrı onayla atamayı kaldırır; Cancel taslağı siler. Yerel atama yalnız bilinen `off`, `readonly` ve `push` modlarında açılır; `pull` ve bilinmeyen modlarda kilitlidir. Eksiksiz makara kimliği eşlemesi ve bilinen pozitif tam sayı filament sıcaklığı gerekir. Komut mevcut sıcaklığı korur; kimlik başka kanaldan taşınacaksa onayda gösterilir. Gerçek durum doğrulaması, önceki kanalın atamasının kaldırılması dahil tüm kimlik eşlemesini kontrol eder; makara kaydının varlığını veya asenkron Spoolman senkronizasyonunun tamamlandığını doğrulamaz.
 
-Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. Donanıma özel bakım/seçenekler bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
+Maintenance ve Options, doğrulanan Happy Hare v4 `mmu_machine` ünite bilgisini ve canlı selector durumunu okur. Desteklenmeyen kontroller gizlenir; eksik, meşgul, baskıda veya duraklamış durum işlemleri kilitler. Home yalnız tek ve bilinen lineer selector için açılır; sonrasında seçilecek takım onayda gösterilir. Grip/Release boş filament gerektirir; sürekli tutan ünitelerde Release gizlenir. Gear sync, bilinen aktif ünitede yüklü filament ister; sürekli tutan ünite senkronizasyondan çıkarılamaz. Lineer selector sürüş kontrolleri bilinen home durumu gerektirir. Her komutta Cancel odaklı onay ve canlı sonuç kontrolü vardır. Check all gates global kanal indekslerini kullanır; donanım bilgisi kalibrasyonun tamamlandığını kanıtlamaz. Kurulu komut davranışını gerçek donanımda doğrulayın.
+
+Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. Motor bırakma, MMU aç/kapat, LED kontrolleri ve ünite seçimi bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
 
 
 ### Case Light
@@ -315,7 +318,7 @@ sudo systemctl restart KlipperDWIN.service
 ## Kapsam ve sınırlar
 
 - Arayüz uyumlu 272×480 DWIN T5UIC1 kaynaklarını hedefler; diğer ekran aileleri ayrıca doğrulanmalıdır.
-- MMU donanıma özel bakım/seçenekler ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
+- MMU motor bırakma, aç/kapat, LED kontrolleri ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
 - Önizleme en fazla dört kullanılan tool gösterir; tool başına uzunluk, marka adı ve fiziksel kanal eşlemesi gösterilmez.
 - SRAM önbelleği geçicidir ve 32 KiB ile sınırlıdır; yeniden bağlantı/başlatma sonrası yeniden kurulur.
 - Screws Tilt dört ayrı köşe gerektirir; sabit 0,05 mm en yüksek/en düşük nokta farkı başarı eşiği kullanır.

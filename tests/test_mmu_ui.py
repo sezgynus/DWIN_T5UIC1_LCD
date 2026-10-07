@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import Mock
 
 from test_capabilities import display
-from test_mmu_control import mmu_snapshot
+from test_mmu_control import mmu_snapshot, hardware_status
 
 
 class MMUUITests(unittest.TestCase):
@@ -26,6 +26,82 @@ class MMUUITests(unittest.TestCase):
 
     def strings(self, view):
         return [c.args[-1] for c in view.lcd.Draw_String.call_args_list]
+
+    def make_hardware(self, selector_type='ServoSelector', always=False, **changes):
+        fields = dict(unit=0, is_homed=True, selector={'grip': 'Released'},
+                      filament='Unloaded', filament_pos=0)
+        fields.update(changes)
+        v, data = self.make(**fields)
+        data['status']['mmu_machine'] = hardware_status(selector_type, always)
+        return v, data
+
+    def test_maintenance_hides_unsupported_selector_and_release(self):
+        v, _ = self.make()
+        v._mmu_open('maintenance')
+        self.assertEqual([i[1] for i in v._mmu_items(v.pd.mmu_session.state)],
+                         ['Check all gates', 'Extruder / bypass'])
+        v, _ = self.make_hardware(always=True)
+        v._mmu_open('maintenance')
+        labels = [i[1] for i in v._mmu_items(v.pd.mmu_session.state)]
+        self.assertIn('Grip', labels)
+        self.assertNotIn('Release', labels)
+        self.assertNotIn('Home selector', labels)
+
+    def test_maintenance_navigation_is_readonly_home_has_cancel_first_confirmation(self):
+        v, _ = self.make_hardware(selector_type='LinearServoSelector')
+        v._mmu_open('manage')
+        self.press(v, 5)
+        self.assertEqual(v._mmu_page, 'maintenance')
+        self.assertIn('Pico MMU', self.strings(v))
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, 1)
+        self.assertEqual(v._mmu_confirmation.script, 'MMU_HOME UNIT=0 TOOL=2')
+        self.assertEqual(v._mmu_selection, 1)
+        self.press(v, 1)
+        self.assertEqual(v._mmu_page, 'maintenance')
+        v.pd.subscription.request.assert_not_called()
+
+    def test_grip_and_check_all_confirm_exact_command_before_live_status(self):
+        for selection, script in ((1, 'MMU_CHECK_GATE ALL=1'), (2, 'MMU_GRIP'), (3, 'MMU_RELEASE')):
+            v, _ = self.make_hardware()
+            v._mmu_open('maintenance')
+            self.press(v, selection)
+            self.assertEqual(v._mmu_confirmation.script, script)
+            self.press(v, 2)
+            self.assertEqual(v._mmu_page, 'status')
+            v.pd.subscription.request.assert_called_once()
+
+    def test_options_sync_is_guarded_and_capability_specific(self):
+        v, _ = self.make()
+        v._mmu_open('options')
+        self.assertEqual([i[1] for i in v._mmu_items(v.pd.mmu_session.state)], ['Sensors / status'])
+        v, _ = self.make_hardware(always=True, filament='Loaded', filament_pos=10)
+        v._mmu_open('options')
+        self.assertNotIn('Gear sync OFF', [i[1] for i in v._mmu_items(v.pd.mmu_session.state)])
+        v, _ = self.make_hardware(filament='Loaded', filament_pos=10)
+        v._mmu_open('options')
+        self.press(v, 1)
+        self.assertEqual(v._mmu_confirmation.script, 'MMU_SYNC_GEAR_MOTOR SYNC=1')
+
+    def test_maintenance_changed_capability_or_print_state_never_sends(self):
+        for case in ('hardware', 'printing', 'epoch'):
+            v, data = self.make_hardware()
+            v._mmu_open('maintenance')
+            self.press(v, 2)
+            if case == 'hardware': data['status']['mmu_machine']['unit_0']['selector_type'] = 'VirtualSelector'
+            elif case == 'printing': data['status']['print_stats']['state'] = 'printing'
+            else: data['epoch'] += 1
+            self.press(v, 2)
+            v.pd.subscription.request.assert_not_called()
+
+    def test_full_maintenance_rows_stay_inside_lcd(self):
+        v, _ = self.make_hardware(selector_type='LinearServoSelector')
+        v.lcd.reset_mock()
+        v._mmu_open('maintenance')
+        for c in v.lcd.Draw_Rectangle.call_args_list:
+            _, _, x0, y0, x1, y1 = c.args
+            self.assertTrue(0 <= x0 <= x1 < 272)
+            self.assertTrue(0 <= y0 <= y1 < 480)
 
     def open_spool(self, v):
         v._mmu_gate = 0

@@ -26,6 +26,13 @@ def mmu_snapshot(**changes):
     return data
 
 
+def hardware_status(selector='ServoSelector', always=False):
+    return {'num_units': 1, 'num_gates': 4,
+            'unit_0': {'name': 'pico', 'display_name': 'Pico MMU', 'num_gates': 4,
+                       'first_gate': 0, 'selector_type': selector,
+                       'filament_always_gripped': always, 'is_homed': False}}
+
+
 class MMUControlTests(unittest.TestCase):
     def make(self, **changes):
         data = mmu_snapshot(**changes)
@@ -33,6 +40,139 @@ class MMUControlTests(unittest.TestCase):
         p.subscription.responses_since.return_value = (0, ())
         p.subscription.request.return_value = Future()
         return p, data, p.mmu_session
+
+    def make_hardware(self, selector_type='ServoSelector', always=False, **changes):
+        fields = dict(unit=0, is_homed=True, selector={'grip': 'Released'},
+                      filament='Unloaded', filament_pos=0)
+        fields.update(changes)
+        p, data, s = self.make(**fields)
+        data['status']['mmu_machine'] = hardware_status(selector_type, always)
+        return p, data, s
+
+    def test_hardware_partition_and_live_grip_homing_are_separate_from_static_data(self):
+        _, _, s = self.make_hardware(selector_type='LinearServoSelector')
+        self.assertTrue(s.state.homed)  # Static unit is deliberately not homed.
+        self.assertFalse(s.state.grip)
+        self.assertEqual(s.state.active_unit.name, 'Pico MMU')
+        _, _, s = self.make_hardware(selector={'servo': 'Down'})
+        self.assertTrue(s.state.grip)
+
+    def test_malformed_hardware_partition_and_grip_are_unknown(self):
+        for fields in ({'num_units': True}, {'num_units': 2}, {'num_gates': 5},
+                       {'unit_0': {'first_gate': 1, 'num_gates': 4}},
+                       {'unit_0': []}):
+            _, data, s = self.make_hardware()
+            data['status']['mmu_machine'].update(fields)
+            self.assertEqual(s.state.units, ())
+            with self.assertRaises(ValueError): s.prepare('grip')
+        _, _, s = self.make_hardware(selector={'grip': [], 'servo': {}})
+        self.assertIsNone(s.state.grip)
+        with self.assertRaises(ValueError): s.prepare('grip')
+
+    def test_home_and_check_all_have_explicit_targets(self):
+        p, _, s = self.make_hardware(selector_type='LinearServoSelector')
+        op = s.prepare('home_selector')
+        self.assertEqual(op.script, 'MMU_HOME UNIT=0 TOOL=2')
+        self.assertEqual(op.tool, 2)
+        self.assertEqual(s.prepare('check_all').script, 'MMU_CHECK_GATE ALL=1')
+        p.subscription.request.assert_not_called()
+        _, _, s = self.make_hardware()
+        with self.assertRaises(ValueError): s.prepare('home_selector')
+        _, _, s = self.make_hardware(gate=-2, tool=-2)
+        with self.assertRaises(ValueError): s.prepare('check_all')
+
+    def test_grip_release_capability_and_loaded_filament_guards(self):
+        for kind in ('ServoSelector', 'RotarySelector', 'LinearServoSelector', 'LinearMGServoSelector'):
+            _, _, s = self.make_hardware(selector_type=kind)
+            self.assertEqual(s.prepare('grip').script, 'MMU_GRIP')
+            self.assertEqual(s.prepare('release').script, 'MMU_RELEASE')
+        for fields in ({'always': True}, {'always': None}, {'selector_type': 'VirtualSelector'},
+                       {'filament': 'Loaded', 'filament_pos': 10}, {'unit': 1}, {'gate': -2}):
+            _, _, s = self.make_hardware(**fields)
+            with self.assertRaises(ValueError): s.prepare('release')
+
+    def test_gear_sync_requires_loaded_active_unit_and_allows_no_unsafe_unsync(self):
+        _, _, s = self.make_hardware(filament='Loaded', filament_pos=10)
+        self.assertEqual(s.prepare('sync_on').script, 'MMU_SYNC_GEAR_MOTOR SYNC=1')
+        self.assertEqual(s.prepare('sync_off').script, 'MMU_SYNC_GEAR_MOTOR SYNC=0')
+        for fields in ({}, {'always': True, 'filament': 'Loaded', 'filament_pos': 10},
+                       {'always': None, 'filament': 'Loaded', 'filament_pos': 10},
+                       {'unit': None, 'filament': 'Loaded', 'filament_pos': 10}):
+            _, _, s = self.make_hardware(**fields)
+            with self.assertRaises(ValueError): s.prepare('sync_off')
+
+    def test_maintenance_confirmation_guard_rejects_changed_hardware_and_current_gate(self):
+        for field in ('hardware', 'gate', 'grip'):
+            p, data, s = self.make_hardware()
+            s.start(s.prepare('grip'))
+            if field == 'hardware': data['status']['mmu_machine']['unit_0']['selector_type'] = 'VirtualSelector'
+            elif field == 'gate': data['status']['mmu']['gate'] = 1
+            else: data['status']['mmu']['selector']['grip'] = 'Gripped'
+            self.assertFalse(p.subscription.request.call_args.kwargs['guard']())
+
+    def test_maintenance_completion_checks_each_live_postcondition(self):
+        for action in ('grip', 'release', 'home_selector', 'check_all', 'sync_on', 'sync_off'):
+            for matches in (True, False):
+                fields = dict(selector={'grip': 'Gripped' if action == 'release' else 'Released'},
+                              is_homed=action != 'home_selector', gate_status=[-1]*4, sync_drive=action == 'sync_off')
+                if action.startswith('sync_'): fields.update(filament='Loaded', filament_pos=10)
+                p, data, s = self.make_hardware(selector_type='LinearServoSelector', **fields)
+                s.start(s.prepare(action))
+                status = copy.deepcopy(data['status'])
+                if matches:
+                    if action in ('grip', 'release'): status['mmu']['selector'] = {'grip': 'Gripped' if action == 'grip' else 'Released'}
+                    elif action == 'home_selector': status['mmu']['is_homed'] = True
+                    elif action == 'check_all': status['mmu']['gate_status'] = [0, 1, 2, 1]
+                    else: status['mmu']['sync_drive'] = action == 'sync_on'
+                self.complete(s, p, status)
+                with self.subTest(action=action, matches=matches):
+                    self.assertEqual(s.phase, 'complete' if matches else 'error')
+
+    def test_unhomed_linear_selector_cannot_grip_or_change_drive_sync(self):
+        for homed in (False, None):
+            _, _, s = self.make_hardware(selector_type='LinearServoSelector', is_homed=homed)
+            with self.assertRaises(ValueError): s.prepare('grip')
+            _, _, s = self.make_hardware(selector_type='LinearServoSelector', is_homed=homed,
+                                         filament='Loaded', filament_pos=10)
+            with self.assertRaises(ValueError): s.prepare('sync_on')
+
+    def test_grip_query_with_changed_hardware_does_not_confirm_success(self):
+        p, data, s = self.make_hardware()
+        s.start(s.prepare('grip'))
+        status = copy.deepcopy(data['status'])
+        status['mmu']['selector']['grip'] = 'Gripped'
+        status['mmu_machine']['unit_0']['selector_type'] = 'VirtualSelector'
+        self.complete(s, p, status)
+        self.assertEqual(s.phase, 'error')
+
+    def test_multiple_units_keep_global_gate_target_and_reject_ambiguous_home(self):
+        _, data, s = self.make_hardware(unit=1)
+        machine = hardware_status()
+        machine['num_units'] = 2
+        machine['unit_0']['num_gates'] = 2
+        machine['unit_1'] = dict(machine['unit_0'], name='second', display_name='Second MMU', first_gate=2)
+        data['status']['mmu_machine'] = machine
+        self.assertEqual(s.state.active_unit.name, 'Second MMU')
+        op = s.prepare('grip')
+        self.assertEqual(op.gate, 2)
+        self.assertEqual(op.label, 'Grip G3')
+        self.assertEqual(op.values[0], 1)
+        with self.assertRaises(ValueError): s.prepare('home_selector')
+        data['status']['mmu']['gate'] = 0
+        with self.assertRaises(ValueError): s.prepare('grip')
+
+    def test_grip_result_at_other_gate_and_maintenance_during_print_are_rejected(self):
+        p, data, s = self.make_hardware()
+        s.start(s.prepare('grip'))
+        status = copy.deepcopy(data['status'])
+        status['mmu'].update(gate=1, selector={'grip': 'Gripped'})
+        self.complete(s, p, status)
+        self.assertEqual(s.phase, 'error')
+        for state in ('printing', 'paused'):
+            _, data, s = self.make_hardware()
+            data['status']['print_stats']['state'] = state
+            for action in ('grip', 'release', 'check_all', 'home_selector'):
+                with self.assertRaises(ValueError): s.prepare(action)
 
     def test_missing_and_malformed_fields_stay_unknown(self):
         data = mmu_snapshot()
@@ -164,6 +304,11 @@ class MMUControlTests(unittest.TestCase):
             self.assertEqual(s.prepare('spool', gate=1, values=(-1,)).script,
                              'MMU_GATE_MAP GATE=1 SPOOLID=-1 TEMP=210')
             p.subscription.request.assert_not_called()
+
+    def test_spool_accepts_exact_whole_temperature_reported_as_float(self):
+        _, _, s = self.make(gate_temperature=[200.0]*4)
+        self.assertEqual(s.prepare('spool', gate=0, values=(501,)).script,
+                         'MMU_GATE_MAP GATE=0 SPOOLID=501 TEMP=200')
 
     def test_spool_invalid_id_gate_mode_and_metadata_never_enable_assignment(self):
         for sid in (0, -2, True, '45', None, 1.5):

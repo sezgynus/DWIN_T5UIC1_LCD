@@ -28,6 +28,36 @@ def text(value, default='Unknown'):
 
 
 @dataclass(frozen=True)
+class MMUUnit:
+    name: str
+    first_gate: int
+    num_gates: int
+    selector_type: str
+    always_gripped: bool | None
+
+
+def units_from_snapshot(snapshot, gates):
+    raw = snapshot.get('status', {}).get('mmu_machine')
+    if not isinstance(raw, Mapping):
+        return ()
+    count = integer(raw.get('num_units'))
+    if count is None or not 1 <= count <= gates or integer(raw.get('num_gates')) != gates:
+        return ()
+    units, first = [], 0
+    for i in range(count):
+        unit = raw.get('unit_%d' % i)
+        if not isinstance(unit, Mapping):
+            return ()
+        n = integer(unit.get('num_gates'))
+        if integer(unit.get('first_gate')) != first or n is None or n <= 0 or first + n > gates:
+            return ()
+        units.append(MMUUnit(text(unit.get('display_name'), text(unit.get('name'), 'Unit %d' % (i + 1))),
+                             first, n, text(unit.get('selector_type')), boolean(unit.get('filament_always_gripped'))))
+        first += n
+    return tuple(units) if first == gates else ()
+
+
+@dataclass(frozen=True)
 class MMUState:
     epoch: int
     num_gates: int
@@ -52,6 +82,10 @@ class MMUState:
     endless_enabled: bool | None
     endless_groups: tuple
     colors: tuple
+    units: tuple
+    unit: int | None
+    homed: bool | None
+    grip: bool | None
 
     @classmethod
     def from_snapshot(cls, snapshot):
@@ -92,6 +126,11 @@ class MMUState:
         sensors = raw.get('sensors', {})
         if not isinstance(sensors, Mapping):
             sensors = {}
+        selector = raw.get('selector', {})
+        selector = selector if isinstance(selector, Mapping) else {}
+        grip = {'Gripped': True, 'Released': False}.get(text(selector.get('grip')))
+        if grip is None:
+            grip = {'Down': True, 'Up': False}.get(text(selector.get('servo')))
         return cls(snapshot.get('epoch', 0), count, index(raw.get('gate')),
                    index(raw.get('tool')), boolean(raw.get('enabled')),
                    text(raw.get('action')), status, filament, locked,
@@ -105,7 +144,8 @@ class MMUState:
                    text(raw.get('reason_for_pause'), ''), text(raw.get('spoolman_support')),
                    switch(raw.get('endless_spool_enabled', raw.get('endless_spool'))),
                    values('endless_spool_groups', lambda v: integer(v) if integer(v) is not None and v >= 0 else None),
-                   values('gate_color', lambda v: text(v, '--')))
+                   values('gate_color', lambda v: text(v, '--')), units_from_snapshot(snapshot, count),
+                   integer(raw.get('unit')), boolean(raw.get('is_homed')), grip)
 
     @property
     def busy(self):
@@ -117,7 +157,11 @@ class MMUState:
                 self.action, self.print_state, self.filament, self.locked,
                 self.gate_status, self.ttg_map, self.endless_enabled, self.endless_groups,
                 self.materials, self.colors, self.spool_ids, self.spoolman_support,
-                self.temperatures)
+                self.temperatures, self.units, self.unit, self.homed, self.grip, self.sync_drive)
+
+    @property
+    def active_unit(self):
+        return self.units[self.unit] if self.unit is not None and 0 <= self.unit < len(self.units) else None
 
     def tools_for_gate(self, gate):
         return tuple(i for i, mapped in enumerate(self.ttg_map) if mapped == gate)
@@ -141,6 +185,8 @@ class MMUSession:
     TIMEOUT = 300.0
     GATE_ACTIONS = {'select', 'load', 'change', 'unload', 'eject', 'preload', 'check'}
     RECOVERY_ACTIONS = {'recover', 'manual', 'unlock', 'resume'}
+    GRIP_SELECTORS = {'ServoSelector', 'RotarySelector', 'LinearServoSelector', 'LinearMGServoSelector'}
+    HOME_SELECTORS = {'LinearSelector', 'LinearServoSelector', 'LinearMGSelector', 'LinearMGServoSelector'}
 
     def __init__(self, printer):
         self.printer = printer
@@ -191,7 +237,7 @@ class MMUSession:
             target = 'G%d' % (gate + 1)
         else:
             target = ''
-        if action in ('select', 'load', 'preload', 'check', 'bypass') and m.filament != 'unloaded':
+        if action in ('select', 'load', 'preload', 'check', 'bypass', 'home_selector', 'check_all', 'grip', 'release') and m.filament != 'unloaded':
             raise ValueError('Unload filament first')
         if action in ('unload', 'unload_extruder') and m.filament != 'loaded':
             raise ValueError('Loaded filament required')
@@ -263,14 +309,50 @@ class MMUSession:
                     or integer(values[0]) is None or (values[0] != -1 and values[0] < 1)
                     or any(sid is None or (sid != -1 and sid < 1) for sid in m.spool_ids)):
                 raise ValueError('Known spool IDs and valid assignment required')
-            temperature = integer(m.temperatures[gate])
-            if temperature is None or temperature <= 0:
+            temperature = m.temperatures[gate]
+            if temperature is None or temperature <= 0 or int(temperature) != temperature:
                 raise ValueError('Known filament temperature required')
+            temperature = int(temperature)
             values = tuple(values)
             script = 'MMU_GATE_MAP GATE=%d SPOOLID=%d TEMP=%d' % (gate, values[0], temperature)
             label = ('Clear spool on ' if values[0] == -1 else 'Assign #%d to ' % values[0]) + target
             expected_spool_ids = tuple(values[0] if i == gate else -1 if values[0] > 0 and sid == values[0] else sid
                                        for i, sid in enumerate(m.spool_ids))
+        elif action == 'check_all':
+            if m.gate is None or m.gate < 0:
+                raise ValueError('Select an MMU gate first')
+            script, label = 'MMU_CHECK_GATE ALL=1', 'Check all %d gates' % m.num_gates
+        elif action == 'home_selector':
+            unit = m.active_unit
+            if len(m.units) != 1 or unit is None or unit.selector_type not in self.HOME_SELECTORS:
+                raise ValueError('Single homing selector required')
+            tools = [i for i, gate in enumerate(m.ttg_map) if gate is not None and gate >= 0]
+            if not tools or any(gate is None or gate < 0 for gate in m.ttg_map):
+                raise ValueError('Valid tool map required')
+            tool = m.tool if m.tool in tools else tools[0]
+            values = (m.units,)
+            script, label = 'MMU_HOME UNIT=0 TOOL=%d' % tool, 'Home selector / T%d' % tool
+        elif action in ('grip', 'release', 'sync_on', 'sync_off'):
+            unit = m.active_unit
+            if (unit is None or m.gate is None or not unit.first_gate <= m.gate < unit.first_gate + unit.num_gates):
+                raise ValueError('Known active unit and gate required')
+            if unit.selector_type in self.HOME_SELECTORS and m.homed is not True:
+                raise ValueError('Home selector before drive operations')
+            gate, values = m.gate, (m.unit, m.units)
+            if action in ('grip', 'release'):
+                if unit.selector_type not in self.GRIP_SELECTORS or m.grip is None:
+                    raise ValueError('Grip-capable selector telemetry required')
+                if action == 'release' and unit.always_gripped is not False:
+                    raise ValueError('Selector cannot release filament')
+                script = 'MMU_GRIP' if action == 'grip' else 'MMU_RELEASE'
+                label = '%s G%d' % (action.title(), m.gate + 1)
+            else:
+                if m.filament != 'loaded' or m.sync_drive is None or unit.always_gripped is None:
+                    raise ValueError('Loaded filament and known sync state required')
+                if action == 'sync_off' and unit.always_gripped:
+                    raise ValueError('Always-gripped unit cannot unsync')
+                script = 'MMU_SYNC_GEAR_MOTOR SYNC=%d' % (action == 'sync_on')
+                label = 'Gear sync ' + ('ON' if action == 'sync_on' else 'OFF')
         elif action == 'resume':
             if ps != 'paused' or m.locked is not False or m.filament != 'loaded':
                 raise ValueError('Recover and unlock first')
@@ -323,6 +405,10 @@ class MMUSession:
         if op.action == 'endless': return m.endless_enabled == op.enabled and m.endless_groups == op.values
         if op.action == 'spool':
             return m.spool_ids == op.expected_spool_ids
+        if op.action == 'check_all': return m.filament == 'unloaded' and all(v in (0, 1, 2) for v in m.gate_status)
+        if op.action == 'home_selector': return m.units == op.values[0] and m.homed is True and m.tool == op.tool and m.gate == m.ttg_map[op.tool] and m.filament == 'unloaded'
+        if op.action in ('grip', 'release'): return m.units == op.values[1] and m.gate == op.gate and m.unit == op.values[0] and m.grip == (op.action == 'grip') and m.filament == 'unloaded'
+        if op.action in ('sync_on', 'sync_off'): return m.units == op.values[1] and m.gate == op.gate and m.unit == op.values[0] and m.sync_drive == (op.action == 'sync_on') and m.filament == 'loaded'
         if op.action == 'select': return m.gate == op.gate and m.filament == 'unloaded'
         if op.action == 'bypass': return m.gate == -2 and m.filament == 'unloaded'
         if op.action in ('load', 'change'): return m.gate == op.gate and m.filament == 'loaded' and (op.action != 'change' or m.tool == op.tool)
@@ -362,6 +448,7 @@ class MMUSession:
             snap = dict(snap, status=dict(snap['status'], **status))
             m = MMUState.from_snapshot(snap)
             if (m is None or m.epoch != self.operation.fingerprint[0]
+                    or m.num_gates != self.operation.fingerprint[1]
                     or m.enabled is not True or m.busy or not self._confirmed(m, status)):
                 self._fail(m.reason if m and m.reason else 'State unconfirmed; check MMU')
                 return
