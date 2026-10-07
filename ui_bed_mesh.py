@@ -115,6 +115,23 @@ class BedMeshMixin:
                 self.lcd.draw_text(False, False, self.lcd.font6x12, self.lcd.Color_White,
                                      self.lcd.Color_Bg_Black, tx, ys[y]-6, label)
 
+    def _draw_mesh_point(self, columns, rows, x, y, z):
+        xs = [round(25 + index * 222 / (columns - 1)) for index in range(columns)]
+        ys = [round(277 - index * 222 / (rows - 1)) for index in range(rows)]
+        color, radius = point_style(z, max(columns, rows))
+        for dy in range(-radius, radius + 1):
+            dx = math.isqrt(radius * radius - dy * dy)
+            self.lcd.draw_rectangle(
+                1, color, xs[x] - dx, ys[y] + dy, xs[x] + dx, ys[y] + dy)
+        stride = max(1, math.ceil((36 if columns < 9 else 24) / (222 / (columns - 1))))
+        row_stride = max(1, math.ceil(12 / (222 / (rows - 1))))
+        if x % stride == 0 and y % row_stride == 0:
+            label = point_label(z, columns)
+            tx = max(0, min(272 - len(label) * 6, xs[x] - len(label) * 3))
+            self.lcd.draw_text(
+                False, False, self.lcd.font6x12, self.lcd.Color_White,
+                self.lcd.Color_Bg_Black, tx, ys[y] - 6, label)
+
     def Draw_Bed_Mesh(self):
         session = self.pd.bed_mesh
         self.Clear_Main_Window()
@@ -147,6 +164,7 @@ class BedMeshMixin:
         elif session.phase == 'measuring':
             counts, _, _ = session.layout
             self._draw_mesh_grid(*counts, session.progress)
+            self._mesh_drawn_progress = dict(session.progress)
             self._mesh_button('Cancel', 86, True)
             self._mesh_text(session.message + ' (raw Z)', 347, size=6)
         else:
@@ -309,4 +327,20 @@ class BedMeshMixin:
                 self._mesh_button_selection = 0
             if session.phase in ('interrupted', 'error'):
                 self._mesh_confirmation = None
+            if session.phase == 'measuring' and not getattr(self, '_mesh_confirmation', None):
+                previous_points = getattr(self, '_mesh_drawn_progress', {})
+                changed = [
+                    (key, value) for key, value in session.progress.items()
+                    if previous_points.get(key) != value
+                ]
+                if changed and all(key not in previous_points for key, _ in changed):
+                    columns, rows = session.layout[0]
+                    for (x, y), z in changed:
+                        self._draw_mesh_point(columns, rows, x, y, z)
+                    self._mesh_drawn_progress = dict(session.progress)
+                    self.lcd.draw_rectangle(
+                        1, self.lcd.Color_Bg_Black, 0, 347, 271, 359)
+                    self._mesh_text(session.message + ' (raw Z)', 347, size=6)
+                    self.lcd.update()
+                    return
             self.Draw_Bed_Mesh()

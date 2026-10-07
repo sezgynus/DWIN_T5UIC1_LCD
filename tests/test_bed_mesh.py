@@ -207,6 +207,21 @@ class MeshViewTests(unittest.TestCase):
     def event(self,view,event):
         view.get_encoder_state.return_value=event;view._dispatch_input()
 
+    def test_measuring_progress_adds_point_without_full_screen_redraw(self):
+        view = self.make()
+        view.pd.bed_mesh.start()
+        view.checkkey = view.BedMeshScreen
+        view.Draw_Bed_Mesh()
+        view.lcd.reset_mock()
+        view.pd.subscription.responses_since.return_value = (
+            1, ('probe at 60.000,40.000 is z=2.10',))
+        view._poll_bed_mesh()
+        view.lcd.clear.assert_not_called()
+        self.assertFalse(any(
+            call.args[2:] == (25, 55, 247, 277)
+            for call in view.lcd.draw_rectangle.call_args_list))
+        view.lcd.update.assert_called_once()
+
     def test_home_menu_measure_result_continue_and_back(self):
         view=self.make()
         self.assertEqual(view.PREPARE_CASE_MESH,-1)
