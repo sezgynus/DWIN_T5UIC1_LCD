@@ -10,93 +10,93 @@ MMU ekran ailesinde alttaki genel hareket paneli tamamen kalkar. Bu bize **120 p
 
 ## Bir bakışta
 
-![Günlük MMU kullanımı ve alt menüler](daily-overview.png)
+![Günlük MMU kullanımı ve alt menüler](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/daily-overview.png?raw=true)
 
-![Bakım ve kurtarma akışları](recovery-overview.png)
+![Bakım ve kurtarma akışları](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/recovery-overview.png?raw=true)
 
 ## Ekranlar nasıl çalışacak?
 
 ### 1. MMU açılış ekranı
 
-![MMU açılış ekranı](home.png)
+![MMU açılış ekranı](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/home.png?raw=true)
 
 Ana menüde MMU seçilip düğmeye basılınca açılır. Alt genel hareket göstergeleri kalkar. Üstte makaralar, ortada aktif takım/kanal ve filament yolu, altta altı menü girişi bulunur. Encoder çevrilince mavi odak sırayla düğmeler arasında dolaşır; basılınca seçilen menü açılır. Yeşil G3 aktif kanaldır, mavi odakla aynı anlamı taşımaz. Sol üstteki geri oku da seçilebilir. Yüklü filamentte Unload görünür; uygun boş durumda bunun yerini Load alır.
 
 ### 2. Kanallar: hangi makarada ne var?
 
-![Kanallar: hangi makarada ne var?](gates.png)
+![Kanallar: hangi makarada ne var?](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/gates.png?raw=true)
 
 Gates ile bu liste açılır. Encoder ile bir kanala gidilir, basılınca o kanalın işlem ekranı açılır. Listede gezinmek fiziksel kanal seçimi veya filament hareketi yapmaz. Dörtten fazla kanal varsa liste kayar/sayfalanır. Yüzdeler Spoolman verisidir; veri yoksa -- yazılır.
 
 ### 3. Kanal işlemleri
 
-![Kanal işlemleri](gate.png)
+![Kanal işlemleri](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/gate.png?raw=true)
 
 Örnekte T2'ye bağlı G3 yüklüdür. Unload filamenti MMU'ya geri park eder; Eject spool makarayı MMU'dan çıkarır ve gerekiyorsa önce boşaltır. Her hareket için hedefi açıklayan onay gösterilir. Filament boşken uygun Select only, Load/change, Preload ve Check seçenekleri açılır; bunlar uygulamada ayrı seçilebilir işlemler olacaktır. Select only yüklemeden kanal seçer; Load/change ise yükleme/takım değiştirme akışıdır. LOCK görünen işlem o an çalıştırılamaz.
 
 ### 4. Filament ve Spoolman
 
-![Filament ve Spoolman](filament.png)
+![Filament ve Spoolman](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/filament.png?raw=true)
 
 Kanalın malzemesi, rengi, makara kimliği, kalan yüzdesi ve sıcaklık bilgisi görünür. Assign spool ID ile kimlik alanı açılır: basarak düzenlemeye girilir, çevirerek sayı değiştirilir, tekrar basarak değer onaylanır; atama ayrıca kaydedilir. Spoolman bağlantısının modu değişikliğe izin vermiyorsa bu işlem de kapanır. Metadata salt okunur olabilir. Uzun isim ve serbest renk düzenlemesini web arayüzünde bırakmayı öneriyorum.
 
 ### 5. Takım–kanal eşleme
 
-![Takım–kanal eşleme](map.png)
+![Takım–kanal eşleme](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/map.png?raw=true)
 
 Önce takım satırına gelinip basılır; ardından encoder çevrilerek bağlanacağı fiziksel kanal değiştirilir. Tekrar basmak düzenlenen değeri kabul eder. Save tüm taslağı uygular, Cancel değişiklikleri bırakır. Örnekte T2 → G3. Ekranda G1, Happy Hare tarafındaki GATE=0 demektir; takım numaraları T0'dan başlamaya devam eder. Baskı sırasında eşleme düzenleme kapalıdır.
 
 ### 6. EndlessSpool
 
-![EndlessSpool](endless.png)
+![EndlessSpool](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/endless.png?raw=true)
 
 Tool map içindeki EndlessSpool girişinden açılır. Özelliği açıp kapatabilir ve kanal gruplarını düzenleyebilirsin. Örnekte G1 ve G2 aynı gruptadır; G1 biterse Happy Hare uygun koşullarda G2'ye geçebilir. Grup satırına basmak üye kanal seçimini açar; Save uygulanana kadar değişiklikler taslaktır. Aynı gruptaki malzeme ve renklerin uygunluğunu kullanıcı görerek kontrol etmelidir.
 
 ### 7. Bakım menüsü
 
-![Bakım menüsü](manage.png)
+![Bakım menüsü](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/manage.png?raw=true)
 
 Manage; kurtarma, selector/gate kontrolü, grip/release, extruder-only, motor/senkronizasyon ve seçeneklere giriş verir. Normal bakım işlemleri baskı dışında ve uygun filament durumunda açılır. Hata nedeniyle duran baskıda Recover ekranına ayrı bir doğrudan giriş bulunur. Donanımın desteklemediği servo/selector işlemleri sunulmaz. Kalibrasyon ilk sürümde web arayüzünde kalır.
 
 ### 8. Bakım işlemleri
 
-![Bakım işlemleri](maintenance.png)
+![Bakım işlemleri](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/maintenance.png?raw=true)
 
 Bu örnek boş filamentli, uygun çalışma durumundaki selector + servo sistemini gösterir. Home selector başlangıç referansını bulur, Check all gates kanal doluluğunu kontrol eder. Grip/release mekanizmayı tutar veya bırakır; extruder-only komutları yalnız ekstrüder bölümünü yönetir. Ekrandaki seçenekler MMU tipine göre değişir. Hareket seçilince hedefli onay ve ardından canlı durum gösterilir.
 
 ### 9. MMU seçenekleri
 
-![MMU seçenekleri](options.png)
+![MMU seçenekleri](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/options.png?raw=true)
 
 Destek varsa MMU etkinliği, LED modu, gear sync, motor bırakma ve sensör/FlowGuard sayfaları burada bulunur. Tek ünite varsa gereksiz ünite seçici gösterilmez; birden fazla ünitede seçim açılır. Bunlar örnek seçeneklerdir; mevcut sürüm, donanım ve yazıcı durumu hangi işlemin açık olacağını belirler. Motor bırakma gibi işlemler ayrıca onay ister.
 
 ### 10. Hata ve kurtarma
 
-![Hata ve kurtarma](recover.png)
+![Hata ve kurtarma](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/recover.png?raw=true)
 
 MMU baskıyı hata nedeniyle durdurursa hata nedeni, takım/kanal ve bilinen filament durumu gösterilir. Önce fiziksel problem düzeltilir, sonra Auto recover ile durum kontrol edilir. Gerekirse Set state manually açılır. Unlock/reheat hata kilidi/ısıtma adımıdır; Resume print ayrı bir karardır. Demo kilitli durumda olduğu için Resume kapalıdır; gerekli koşullar sağlanınca açılır.
 
 ### 11. Elle durum bildirme
 
-![Elle durum bildirme](manual.png)
+![Elle durum bildirme](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/manual.png?raw=true)
 
 Tool, Gate ve Filament alanları encoder ile düzenlenir. Apply mevcut fiziksel durumu Happy Hare'e bildirir; bu ekran filamenti yükleyip boşaltmaz. Örneğin filament elle çıkarıldıysa UNLOADED bildirilebilir. Yanlışlıkla durum değiştirmemek için uygulamada hedefi özetleyen bir onay gerekir. Cancel önceki ekrana değişiklik yapmadan döner.
 
 ### 12. Canlı işlem ve sensörler
 
-![Canlı işlem ve sensörler](status.png)
+![Canlı işlem ve sensörler](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/status.png?raw=true)
 
 Bir işlem başlayınca bu görünüm hangi aşamada olduğunu gösterir. Örnekte Bowden yüklemesi %68'dir; bu tüm takım değişiminin veya toplam sürenin %68'i değildir. Sensörler, gear sync ve nozzle ısısı görünür. Yüzde verisi gelmiyorsa aşama adı gösterilir; uydurma ilerleme üretilmez. Yüklü/boş tahmini ile fiziksel sensör okuması ayrı tutulur.
 
 ### 13. Bypass: doğrudan ekstrüdere makara
 
-![Bypass: doğrudan ekstrüdere makara](bypass.png)
+![Bypass: doğrudan ekstrüdere makara](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/bypass.png?raw=true)
 
 MMU filamenti yüklüyken önce Unload current gate seçilir. Boşaltma tamamlanınca Select bypass açılır; bypass seçilince extruder-only yükleme/boşaltma kullanılabilir. Ekranın kilitleri gerçek durumla değişir. Böylece MMU filamentini içeride bırakıp doğrudan makarayla çakışan bir akış başlatılmaz.
 
 ### 14. Hareket öncesi onay
 
-![Hareket öncesi onay](confirm.png)
+![Hareket öncesi onay](https://github.com/sezgynus/KlipperDWIN/blob/docs/mmu-menu-demo/docs/mmu-menu-demo/confirm.png?raw=true)
 
 Örnekte Unload T2/G3 onayı var. İlk odak Cancel üzerindedir. Çevirip Unload'a gelerek basmak hareketi başlatır; Cancel geri döner. Eject, motor bırakma ve diğer işlemler kendi adını/hedefini gösteren ayrı onay kullanır. Komutun gönderilmiş olması tamamlandığı anlamına gelmez; durum ekranı gerçek sonucu bekler.
 
