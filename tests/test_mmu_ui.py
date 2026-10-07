@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import Mock
 
 from test_capabilities import display
-from test_mmu_control import mmu_snapshot, hardware_status, add_motor_status
+from test_mmu_control import mmu_snapshot, hardware_status, add_motor_status, add_led_status, add_multiple_units
 
 
 class MMUUITests(unittest.TestCase):
@@ -34,6 +34,125 @@ class MMUUITests(unittest.TestCase):
         v, data = self.make(**fields)
         data['status']['mmu_machine'] = hardware_status(selector_type, always)
         return v, data
+
+    def test_led_menu_is_capability_specific_and_browsing_sends_nothing(self):
+        v, data = self.make_hardware()
+        v._mmu_open('options')
+        self.assertNotIn('LEDs', [i[1] for i in v._mmu_items(v.pd.mmu_session.state)])
+        name = add_led_status(data)
+        v.Draw_MMU_Menu()
+        items = v._mmu_items(v.pd.mmu_session.state)
+        self.press(v, next(i + 1 for i, item in enumerate(items) if item[1] == 'LEDs'))
+        self.assertEqual(v._mmu_page, 'leds')
+        self.assertIn('Exit: gate_status', self.strings(v))
+        v.pd.subscription.request.assert_not_called()
+        data['status'][name]['exit'] = 0
+        v.Draw_MMU_Menu()
+        self.assertEqual(len(v._mmu_items(v.pd.mmu_session.state)), 2)
+
+    def test_led_confirmation_cancel_and_single_dispatch(self):
+        for selection, script in ((1, 'MMU_LED UNIT=0 ENABLE=0'),
+                                  (2, 'MMU_LED UNIT=0 ANIMATION=1'),
+                                  (3, 'MMU_LED UNIT=0 EXIT_EFFECT=off')):
+            v, data = self.make_hardware()
+            add_led_status(data)
+            v._mmu_open('leds')
+            self.press(v, selection)
+            self.assertEqual(v._mmu_confirmation.script, script)
+            self.assertEqual(v._mmu_selection, 1)
+            self.press(v, 1)
+            self.assertEqual(v._mmu_page, 'leds')
+            v.pd.subscription.request.assert_not_called()
+            self.press(v, selection)
+            self.press(v, 2)
+            self.assertEqual(v._mmu_page, 'status')
+            v.pd.subscription.request.assert_called_once()
+
+    def test_led_unknown_flags_and_external_changes_lock_dispatch(self):
+        v, data = self.make_hardware()
+        name = add_led_status(data)
+        data['status'][name]['enabled'] = None
+        v._mmu_open('leds')
+        self.assertFalse(any(i[3] for i in v._mmu_items(v.pd.mmu_session.state)))
+        self.press(v, 1)
+        v.pd.subscription.request.assert_not_called()
+        data['status'][name]['enabled'] = True
+        v.Draw_MMU_Menu()
+        self.press(v, 1)
+        data['status'][name]['animation'] = True
+        self.press(v, 2)
+        v.pd.subscription.request.assert_not_called()
+
+    def test_unit_browser_keeps_global_gate_numbers_and_requires_motion_confirmation(self):
+        v, data = self.make_hardware(gate=0, tool=0)
+        v._mmu_open('options')
+        self.assertNotIn('Units', [i[1] for i in v._mmu_items(v.pd.mmu_session.state)])
+        add_multiple_units(data)
+        v.Draw_MMU_Menu()
+        items = v._mmu_items(v.pd.mmu_session.state)
+        self.press(v, next(i + 1 for i, item in enumerate(items) if item[1] == 'Units'))
+        self.assertEqual(v._mmu_page, 'units')
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'unit')
+        self.assertEqual(v._mmu_unit_view, 1)
+        items = v._mmu_items(v.pd.mmu_session.state)
+        self.assertEqual([i[0] for i in items[1:]], [('gate', 2), ('gate', 3)])
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, 1)
+        self.assertEqual(v._mmu_confirmation.script, 'MMU_SELECT GATE=2')
+        self.assertEqual(v._mmu_selection, 1)
+        self.press(v, 1)
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, 1)
+        self.press(v, 2)
+        v.pd.subscription.request.assert_called_once()
+
+    def test_unit_browsing_during_print_remains_readonly(self):
+        v, data = self.make_hardware()
+        add_multiple_units(data)
+        data['status']['print_stats']['state'] = 'printing'
+        v._mmu_open('units')
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'unit')
+        self.assertFalse(v._mmu_items(v.pd.mmu_session.state)[0][3])
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'gate')
+        self.assertEqual(v._mmu_gate, 2)
+        v.pd.subscription.request.assert_not_called()
+
+    def test_unit_and_led_rows_and_confirmations_stay_inside_canvas(self):
+        v, data = self.make_hardware()
+        add_multiple_units(data)
+        add_led_status(data, num_gates=2)
+        for page, selection in (('units', 2), ('unit', 3), ('leds', 6)):
+            v._mmu_unit_view = 1
+            v._mmu_open(page)
+            v._mmu_selection = selection
+            v._mmu_canvas_page = None
+            v.lcd.reset_mock()
+            v.Draw_MMU_Menu()
+            for call in v.lcd.Draw_Rectangle.call_args_list:
+                _, _, x0, y0, x1, y1 = call.args
+                self.assertTrue(0 <= x0 <= x1 < 272)
+                self.assertTrue(0 <= y0 <= y1 < 480)
+            for call in v.lcd.Draw_String.call_args_list:
+                self.assertTrue(0 <= call.args[5] < 272)
+                self.assertTrue(0 <= call.args[6] < 480)
+        v._mmu_open('unit')
+        self.press(v, 1)
+        self.assertIn('May home / move the selector', self.strings(v))
+
+    def test_changed_unit_partition_blocks_stale_selection(self):
+        v, data = self.make_hardware()
+        add_multiple_units(data)
+        v._mmu_unit_view = 1
+        v._mmu_open('unit')
+        data['status']['mmu_machine']['unit_0']['num_gates'] = 1
+        data['status']['mmu_machine']['unit_1'].update(first_gate=1, num_gates=3)
+        self.press(v, 1)
+        v.pd.subscription.request.assert_not_called()
+        self.assertIsNone(getattr(v, '_mmu_confirmation', None))
+        self.assertIn('Menu changed', v._mmu_notice)
 
     def test_maintenance_hides_unsupported_selector_and_release(self):
         v, _ = self.make()

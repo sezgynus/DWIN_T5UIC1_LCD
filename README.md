@@ -229,6 +229,8 @@ Spoolman percentages come from each gate’s `gate_spool_id` through Moonraker�
 | Bypass | Unload the current MMU gate, select bypass, then use extruder-only load/unload |
 | Manage / Recover | Recovery, manual state editor, unlock/reheat and Resume; links to maintenance/options |
 | Maintenance / Options | Check all gates, single linear-selector Home, supported Grip/Release, loaded-filament gear sync and sensor status |
+| LEDs (from Options) | Active-unit enable, animation and exit modes; verified LED configuration |
+| Units (from Options) | Read-only unit/gate browsing; separately confirmed selection of a unit’s first global gate |
 | Status | Actual action and Bowden-stage progress when available, distinct sensor states, gear sync, nozzle temperature and operation result |
 
 The LCD shows **G1 for Happy Hare `GATE=0`**; tools retain T0-based numbering. A spool mapped to several tools shows `T*`. Load selected uses the current available gate; Load/change chooses an associated logical tool and follows Happy Hare's mapping. Unload parks filament in the MMU; Eject spool explicitly requests removal, including unloading the active gate first when necessary.
@@ -247,7 +249,11 @@ Maintenance and Options read validated Happy Hare v4 `mmu_machine` unit metadata
 
 Options also offers explicit MMU enable/disable and release of all MMU motors, with Cancel-first confirmation. Both require unloaded filament outside printing/pauses. Enabling resets Happy Hare state; a disabled MMU can be re-enabled from this page. Motor release appears only with known driver telemetry and effective MMU stepper configuration; it sends `MMU_MOTORS_OFF UNIT=ALL` and checks every configured MMU driver is off and gear sync is off. Homing may be lost. Driver flags cannot prove servo power or physical motion.
 
-This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). LED controls and unit selection remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
+Options → LEDs appears only with validated active-unit `mmu_leds <name>` telemetry. Enable, animation and exit modes (`off`, `gate_status`, `filament_color`, `slicer_color`) use unit-scoped `MMU_LED UNIT=...` commands and query the actual LED object afterwards. The reported configuration does not prove physical LED output. Unsupported or unknown state locks the controls; custom effects and entry/status/logo editing remain in the web UI.
+
+Options → Units appears only for a validated multi-unit gate partition. Browsing units and their gates sends no command and preserves global gate numbers. Select this unit confirms `MMU_SELECT GATE=...` for that unit’s first gate; it may home or move the selector and requires unloaded filament outside printing/pauses. Completion checks both the queried active unit and gate. Single-unit installations omit this browser.
+
+This control implementation follows the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). Use the web UI for calibration and advanced LED configuration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
 
 
 ### Case Light
@@ -320,7 +326,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 ## Scope and limitations
 
 - The UI targets compatible 272×480 DWIN T5UIC1 assets; other display families require separate validation.
-- MMU LED controls and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
+- MMU calibration and advanced LED effects remain in the web UI. Multi-unit Home needs per-unit live homing telemetry and is not offered. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
 - Preview shows up to four used tools; per-tool lengths, brand names and physical lane mapping are not displayed.
 - SRAM cache is volatile and limited to 32 KiB; it is rebuilt after reconnect/restart.
 - Screws Tilt requires four distinct corners and uses a fixed 0.05 mm peak-to-peak success threshold.

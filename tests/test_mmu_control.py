@@ -39,6 +39,23 @@ def add_motor_status(data):
         'mmu_stepper gear': True, 'mmu_stepper selector': True, 'stepper_x': True}}
 
 
+def add_led_status(data, unit_name='pico', num_gates=4):
+    name = 'mmu_leds ' + unit_name
+    data['objects'].append(name)
+    data['status'][name] = dict(num_gates=num_gates, exit=num_gates, entry=0,
+                                status=1, logo=0, enabled=True, animation=False,
+                                exit_effect='gate_status')
+    return name
+
+
+def add_multiple_units(data):
+    machine = hardware_status()
+    machine['num_units'] = 2
+    machine['unit_0']['num_gates'] = 2
+    machine['unit_1'] = dict(machine['unit_0'], name='second', display_name='Second MMU', first_gate=2)
+    data['status']['mmu_machine'] = machine
+
+
 class MMUControlTests(unittest.TestCase):
     def make(self, **changes):
         data = mmu_snapshot(**changes)
@@ -54,6 +71,125 @@ class MMUControlTests(unittest.TestCase):
         p, data, s = self.make(**fields)
         data['status']['mmu_machine'] = hardware_status(selector_type, always)
         return p, data, s
+
+    def test_led_commands_scope_to_active_unit_and_whitelist_modes(self):
+        for action, kwargs, argument in (
+                ('led_enable', {'enabled': False}, 'ENABLE=0'),
+                ('led_animation', {'enabled': True}, 'ANIMATION=1'),
+                ('led_mode', {'values': ('filament_color',)}, 'EXIT_EFFECT=filament_color')):
+            p, data, session = self.make_hardware()
+            add_multiple_units(data)
+            data['status']['mmu']['unit'] = 1
+            add_led_status(data, 'second', 2)
+            op = session.prepare(action, **kwargs)
+            self.assertEqual(op.script, 'MMU_LED UNIT=1 ' + argument)
+            p.subscription.request.assert_not_called()
+        for value in ('custom', 'off\nM112', 1, None):
+            _, data, session = self.make_hardware()
+            add_led_status(data)
+            with self.assertRaises(ValueError): session.prepare('led_mode', values=(value,))
+
+    def test_led_missing_unknown_or_mismatched_telemetry_locks_actions(self):
+        for case in ('missing', 'unknown', 'count', 'empty', 'unit'):
+            p, data, session = self.make_hardware()
+            name = add_led_status(data)
+            if case == 'missing': del data['status'][name]
+            elif case == 'unknown': data['status'][name]['enabled'] = 'True'
+            elif case == 'count': data['status'][name]['num_gates'] = 3
+            elif case == 'empty': data['status'][name].update(exit=0, status=0)
+            else: data['status']['mmu']['unit'] = None
+            with self.assertRaises(ValueError): session.prepare('led_enable', enabled=False)
+            p.subscription.request.assert_not_called()
+
+    def test_led_query_requires_actual_object_and_verifies_mode_and_unit(self):
+        for case in ('success', 'unchanged', 'missing', 'wrong_unit', 'unrelated_change'):
+            p, data, session = self.make_hardware()
+            name = add_led_status(data)
+            session.start(session.prepare('led_mode', values=('slicer_color',)))
+            status = copy.deepcopy(data['status'])
+            if case != 'unchanged': status[name]['exit_effect'] = 'slicer_color'
+            if case == 'missing': del status[name]
+            elif case == 'wrong_unit': status['mmu']['unit'] = -1
+            elif case == 'unrelated_change': status[name]['animation'] = True
+            self.complete(session, p, status)
+            self.assertEqual(set(p.subscription.request.call_args.args[1]['objects']),
+                             {'mmu', 'print_stats', 'mmu_machine', name})
+            self.assertEqual(session.phase, 'complete' if case == 'success' else 'error')
+
+    def test_led_flags_are_verified_not_just_dispatch_acknowledged(self):
+        for action, field, value in (('led_enable', 'enabled', False), ('led_animation', 'animation', True)):
+            for changed in (False, True):
+                p, data, session = self.make_hardware()
+                name = add_led_status(data)
+                session.start(session.prepare(action, enabled=value))
+                status = copy.deepcopy(data['status'])
+                if changed: status[name][field] = value
+                self.complete(session, p, status)
+                self.assertEqual(session.phase, 'complete' if changed else 'error')
+
+    def test_led_noop_no_exit_print_pause_and_queue_state_changes_are_guarded(self):
+        p, data, session = self.make_hardware()
+        name = add_led_status(data)
+        for action, kwargs in (('led_enable', {'enabled': True}), ('led_animation', {'enabled': False}),
+                               ('led_mode', {'values': ('gate_status',)})):
+            with self.assertRaises(ValueError): session.prepare(action, **kwargs)
+        data['status'][name]['exit'] = 0
+        with self.assertRaises(ValueError): session.prepare('led_mode', values=('off',))
+        for state in ('printing', 'paused'):
+            data['status']['print_stats']['state'] = state
+            with self.assertRaises(ValueError): session.prepare('led_enable', enabled=False)
+        data['status']['print_stats']['state'] = 'standby'
+        op = session.prepare('led_enable', enabled=False)
+        session.start(op)
+        data['status'][name]['animation'] = True
+        self.assertFalse(p.subscription.request.call_args.kwargs['guard']())
+
+    def test_unit_select_uses_first_global_gate_without_sending_on_prepare(self):
+        p, data, session = self.make_hardware(gate=0, tool=0)
+        add_multiple_units(data)
+        for index, gate in ((0, 0), (1, 2)):
+            op = session.prepare('unit_select', values=(index,))
+            self.assertEqual(op.script, 'MMU_SELECT GATE=%d' % gate)
+            self.assertEqual(op.gate, gate)
+        p.subscription.request.assert_not_called()
+
+    def test_unit_select_requires_valid_partition_index_and_unloaded_offprint_state(self):
+        for case in ('single', 'partition', 'loaded', 'printing', 'paused', 'index', 'boolean'):
+            p, data, session = self.make_hardware()
+            if case != 'single': add_multiple_units(data)
+            index = 1
+            if case == 'partition': data['status']['mmu_machine']['unit_1']['first_gate'] = 1
+            elif case == 'loaded': data['status']['mmu'].update(filament='Loaded', filament_pos=10)
+            elif case in ('printing', 'paused'): data['status']['print_stats']['state'] = case
+            elif case == 'index': index = 2
+            elif case == 'boolean': index = True
+            with self.assertRaises(ValueError): session.prepare('unit_select', values=(index,))
+            p.subscription.request.assert_not_called()
+
+    def test_unit_completion_requires_queried_partition_active_unit_and_gate(self):
+        for case in ('success', 'gate_only', 'unit_only', 'partition', 'missing'):
+            p, data, session = self.make_hardware(gate=0, tool=0)
+            add_multiple_units(data)
+            session.start(session.prepare('unit_select', values=(1,)))
+            status = copy.deepcopy(data['status'])
+            status['mmu'].update(unit=1, gate=2)
+            if case == 'gate_only': status['mmu']['unit'] = 0
+            elif case == 'unit_only': status['mmu']['gate'] = 0
+            elif case == 'partition': status['mmu_machine']['unit_1']['name'] = 'reconfigured'
+            elif case == 'missing': del status['mmu_machine']
+            self.complete(session, p, status)
+            self.assertEqual(session.phase, 'complete' if case == 'success' else 'error')
+
+    def test_unit_partition_change_invalidates_confirmation_and_queued_dispatch(self):
+        p, data, session = self.make_hardware()
+        add_multiple_units(data)
+        op = session.prepare('unit_select', values=(1,))
+        data['status']['mmu_machine']['unit_1']['name'] = 'changed'
+        with self.assertRaises(ValueError): session.start(op)
+        p.subscription.request.assert_not_called()
+        session.start(session.prepare('unit_select', values=(1,)))
+        data['status']['mmu_machine']['unit_1']['display_name'] = 'changed again'
+        self.assertFalse(p.subscription.request.call_args.kwargs['guard']())
 
     def test_enable_disable_use_native_command_and_allow_reenable_only_when_disabled(self):
         for current in (True, False):

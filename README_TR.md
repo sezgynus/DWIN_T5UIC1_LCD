@@ -229,6 +229,8 @@ Spoolman yüzdeleri tek bir aktif makaradan değil, Moonraker Spoolman proxy’s
 | Bypass | Mevcut MMU kanalını boşaltma, bypass seçimi ve ardından yalnız ekstrüder yükleme/boşaltma |
 | Manage / Recover | Kurtarma, manuel durum editörü, kilit açma/ısıtma ve Resume; bakım/seçenek girişleri |
 | Maintenance / Options | Tüm kanalları kontrol, tek lineer selector için Home, desteklenen Grip/Release, yüklü filamentte gear sync ve sensör durumu |
+| LEDs (Options içinden) | Aktif ünite için aç/kapat, animasyon ve çıkış modları; doğrulanan LED yapılandırması |
+| Units (Options içinden) | Salt okunur ünite/kanal gezintisi; ünitenin ilk global kanalını ayrıca onayla seçme |
 | Status | Gerçek işlem ve varsa Bowden aşama yüzdesi, ayrıştırılmış sensör durumları, gear sync, nozzle sıcaklığı ve işlem sonucu |
 
 Ekrandaki **G1, Happy Hare tarafında `GATE=0`** anlamına gelir; takım numaraları T0'dan başlar. Birden fazla takıma eşlenen makara `T*` gösterir. Load selected mevcut dolu kanalı kullanır; Load/change ilişkili mantıksal takımı seçerek Happy Hare eşlemesini izler. Unload filamenti MMU'da park eder; Eject spool gerçek çıkarmayı açıkça ister ve gerektiğinde aktif kanalı önce boşaltır.
@@ -247,7 +249,11 @@ Maintenance ve Options, doğrulanan Happy Hare v4 `mmu_machine` ünite bilgisini
 
 Options ayrıca Cancel odaklı onayla MMU aç/kapat ve tüm MMU motorlarını bırakma sunar. İkisi de baskı/duraklama dışında boş filament gerektirir. Açma Happy Hare durumunu sıfırlar; kapalı MMU bu sayfadan açılabilir. Motor bırakma yalnız bilinen sürücü telemetrisi ve etkin MMU stepper yapılandırmasıyla görünür; `MMU_MOTORS_OFF UNIT=ALL` gönderilip yapılandırılmış tüm MMU sürücülerinin ve gear sync durumunun kapalı olduğu kontrol edilir. Home bilgisi kaybolabilir. Sürücü bayrakları servo enerjisini veya fiziksel hareketi kanıtlamaz.
 
-Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. LED kontrolleri ve ünite seçimi bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
+Options → LEDs yalnız doğrulanmış aktif ünite `mmu_leds <isim>` telemetrisiyle görünür. Aç/kapat, animasyon ve çıkış modları (`off`, `gate_status`, `filament_color`, `slicer_color`) üniteye özel `MMU_LED UNIT=...` komutuyla gönderilip gerçek LED nesnesi sorgulanır. Raporlanan yapılandırma fiziksel LED çıktısını kanıtlamaz. Desteklenmeyen veya bilinmeyen durum kontrolleri kilitler; özel efektler ve entry/status/logo düzenleme web arayüzünde kalır.
+
+Options → Units yalnız doğrulanmış çoklu ünite kanal dağılımında görünür. Ünitelerde ve kanallarda gezinmek komut göndermez; kanal numaraları global kalır. Select this unit ünitenin ilk kanalı için `MMU_SELECT GATE=...` onayı açar; selector home veya hareket yapabilir ve baskı/duraklama dışında boş filament gerektirir. Sonuçta sorgulanan aktif ünite ve kanal birlikte doğrulanır. Tek üniteli kurulumlarda bu tarayıcı gösterilmez.
+
+Bu kontrol uygulaması [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alır. Kalibrasyon ve ileri LED yapılandırması için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
 
 
 ### Case Light
@@ -320,7 +326,7 @@ sudo systemctl restart KlipperDWIN.service
 ## Kapsam ve sınırlar
 
 - Arayüz uyumlu 272×480 DWIN T5UIC1 kaynaklarını hedefler; diğer ekran aileleri ayrıca doğrulanmalıdır.
-- MMU LED kontrolleri ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
+- MMU kalibrasyonu ve ileri LED efektleri web arayüzünde kalır. Çoklu ünite Home için ünite başına canlı home telemetrisi gerekir; bu işlem sunulmaz. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
 - Önizleme en fazla dört kullanılan tool gösterir; tool başına uzunluk, marka adı ve fiziksel kanal eşlemesi gösterilmez.
 - SRAM önbelleği geçicidir ve 32 KiB ile sınırlıdır; yeniden bağlantı/başlatma sonrası yeniden kurulur.
 - Screws Tilt dört ayrı köşe gerektirir; sabit 0,05 mm en yüksek/en düşük nokta farkı başarı eşiği kullanır.

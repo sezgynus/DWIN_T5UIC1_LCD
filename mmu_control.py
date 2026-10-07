@@ -4,7 +4,7 @@ Gate indices stay zero based here; the LCD alone presents G1 for gate 0.
 Missing telemetry remains unknown and never enables a motion operation.
 """
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 import time
 
@@ -89,6 +89,30 @@ def motor_states(snapshot, units):
 
 
 @dataclass(frozen=True)
+class MMULeds:
+    object_name: str
+    enabled: bool | None
+    animation: bool | None
+    exit_effect: str
+    segments: tuple
+
+
+def led_state(snapshot, units, unit_index):
+    if unit_index is None or not 0 <= unit_index < len(units):
+        return None
+    unit = units[unit_index]
+    name = 'mmu_leds ' + unit.config_name
+    raw = snapshot.get('status', {}).get(name)
+    if not isinstance(raw, Mapping) or integer(raw.get('num_gates')) != unit.num_gates:
+        return None
+    counts = tuple(integer(raw.get(k)) for k in ('exit', 'entry', 'status', 'logo'))
+    if any(n is None or n < 0 for n in counts) or not any(counts):
+        return None
+    return MMULeds(name, switch(raw.get('enabled')), switch(raw.get('animation')),
+                   text(raw.get('exit_effect')), counts)
+
+
+@dataclass(frozen=True)
 class MMUState:
     epoch: int
     num_gates: int
@@ -118,6 +142,7 @@ class MMUState:
     homed: bool | None
     grip: bool | None
     motors: tuple
+    leds: MMULeds | None
 
     @classmethod
     def from_snapshot(cls, snapshot):
@@ -178,7 +203,8 @@ class MMUState:
                    switch(raw.get('endless_spool_enabled', raw.get('endless_spool'))),
                    values('endless_spool_groups', lambda v: integer(v) if integer(v) is not None and v >= 0 else None),
                    values('gate_color', lambda v: text(v, '--')), units,
-                   integer(raw.get('unit')), boolean(raw.get('is_homed')), grip, motor_states(snapshot, units))
+                   integer(raw.get('unit')), boolean(raw.get('is_homed')), grip, motor_states(snapshot, units),
+                   led_state(snapshot, units, integer(raw.get('unit'))))
 
     @property
     def busy(self):
@@ -190,7 +216,7 @@ class MMUState:
                 self.action, self.print_state, self.filament, self.locked,
                 self.gate_status, self.ttg_map, self.endless_enabled, self.endless_groups,
                 self.materials, self.colors, self.spool_ids, self.spoolman_support,
-                self.temperatures, self.units, self.unit, self.homed, self.grip, self.sync_drive, self.motors)
+                self.temperatures, self.units, self.unit, self.homed, self.grip, self.sync_drive, self.motors, self.leds)
 
     @property
     def active_unit(self):
@@ -220,6 +246,7 @@ class MMUSession:
     RECOVERY_ACTIONS = {'recover', 'manual', 'unlock', 'resume'}
     GRIP_SELECTORS = {'ServoSelector', 'RotarySelector', 'LinearServoSelector', 'LinearMGServoSelector'}
     HOME_SELECTORS = {'LinearSelector', 'LinearServoSelector', 'LinearMGSelector', 'LinearMGServoSelector'}
+    LED_MODES = ('off', 'gate_status', 'filament_color', 'slicer_color')
 
     def __init__(self, printer):
         self.printer = printer
@@ -270,7 +297,7 @@ class MMUSession:
             target = 'G%d' % (gate + 1)
         else:
             target = ''
-        if action in ('select', 'load', 'preload', 'check', 'bypass', 'home_selector', 'check_all', 'grip', 'release', 'enable', 'motors_off') and m.filament != 'unloaded':
+        if action in ('select', 'load', 'preload', 'check', 'bypass', 'home_selector', 'check_all', 'grip', 'release', 'enable', 'motors_off', 'unit_select') and m.filament != 'unloaded':
             raise ValueError('Unload filament first')
         if action in ('unload', 'unload_extruder') and m.filament != 'loaded':
             raise ValueError('Loaded filament required')
@@ -283,6 +310,39 @@ class MMUSession:
                 raise ValueError('Known MMU driver states required')
             values = tuple(name for name, _ in m.motors)
             script, label = 'MMU_MOTORS_OFF UNIT=ALL', 'Release all MMU motors'
+        elif action == 'unit_select':
+            if not isinstance(values, (tuple, list)) or not values or integer(values[0]) is None:
+                raise ValueError('Choose a valid MMU unit')
+            index = values[0]
+            if len(m.units) < 2 or not 0 <= index < len(m.units):
+                raise ValueError('Validated multiple units required')
+            gate = m.units[index].first_gate
+            values = (index, m.units)
+            script = 'MMU_SELECT GATE=%d' % gate
+            label = 'Select U%d / G%d' % (index + 1, gate + 1)
+        elif action in ('led_enable', 'led_animation', 'led_mode'):
+            leds = m.leds
+            if m.active_unit is None or leds is None or leds.enabled is None or leds.animation is None:
+                raise ValueError('Known unit LED state required')
+            mode = None
+            if action == 'led_mode':
+                if not isinstance(values, (tuple, list)) or not values or not isinstance(values[0], str) or values[0] not in self.LED_MODES:
+                    raise ValueError('Unsupported LED exit mode')
+                mode = values[0]
+                if not leds.segments[0] or mode == leds.exit_effect:
+                    raise ValueError('Choose a different supported exit mode')
+                desired = replace(leds, exit_effect=mode)
+                argument, label = 'EXIT_EFFECT=' + mode, 'Exit: ' + mode.replace('_', ' ')
+            else:
+                field = 'enabled' if action == 'led_enable' else 'animation'
+                if not isinstance(enabled, bool) or getattr(leds, field) == enabled:
+                    raise ValueError('Choose a different known LED state')
+                desired = replace(leds, **{field: enabled})
+                argument = ('ENABLE' if action == 'led_enable' else 'ANIMATION') + '=%d' % enabled
+                label = ('LEDs ' if action == 'led_enable' else 'Animation ') + ('ON' if enabled else 'OFF')
+            values = (mode, m.unit, m.units, desired)
+            script = 'MMU_LED UNIT=%d %s' % (m.unit, argument)
+            label = 'U%d ' % (m.unit + 1) + label
         elif action == 'select':
             script, label = 'MMU_SELECT GATE=%d' % gate, 'Select ' + target
         elif action == 'load':
@@ -444,6 +504,8 @@ class MMUSession:
         if m.locked is not False:
             return False
         if op.action == 'enable': return m.enabled == op.enabled
+        if op.action == 'unit_select': return m.units == op.values[1] and m.unit == op.values[0] and m.gate == op.gate and m.filament == 'unloaded'
+        if op.action.startswith('led_'): return m.unit == op.values[1] and m.units == op.values[2] and m.leds == op.values[3]
         if op.action == 'motors_off': return tuple(name for name, _ in m.motors) == op.values and all(v is False for _, v in m.motors) and m.sync_drive is False and m.filament == 'unloaded'
         if op.action == 'map': return m.ttg_map == op.values
         if op.action == 'endless': return m.endless_enabled == op.enabled and m.endless_groups == op.values
@@ -461,6 +523,16 @@ class MMUSession:
         if op.action == 'eject': return m.gate_status[op.gate] == 0
         if op.action in ('preload', 'check'): return m.gate_status[op.gate] in (0, 1, 2) and m.filament == 'unloaded'
         return False
+
+    def _query_objects(self):
+        objects = {'mmu': None, 'print_stats': None}
+        if self.operation.action == 'motors_off':
+            objects['stepper_enable'] = None
+        if self.operation.action.startswith('led_'):
+            objects[self.operation.values[3].object_name] = None
+        if self.operation.action == 'unit_select' or self.operation.action.startswith('led_'):
+            objects['mmu_machine'] = None
+        return objects
 
     def update(self):
         if self.pending is None:
@@ -483,14 +555,14 @@ class MMUSession:
         try:
             result = self.pending.result()
             if self.phase == 'running':
-                objects = {'mmu': None, 'print_stats': None}
-                if self.operation.action == 'motors_off':
-                    objects['stepper_enable'] = None
                 self.pending = p.subscription.request('printer.objects.query',
-                    {'objects': objects})
+                    {'objects': self._query_objects()})
                 self.phase, self.message = 'confirming', 'Checking MMU result'
                 return
             status = result['status']
+            if not isinstance(status, Mapping) or not self._query_objects().keys() <= status.keys():
+                self._fail('Incomplete MMU result; check status')
+                return
             snap = p.subscription.snapshot()
             snap = dict(snap, status=dict(snap['status'], **status))
             m = MMUState.from_snapshot(snap)

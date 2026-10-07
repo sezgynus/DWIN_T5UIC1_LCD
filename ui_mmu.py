@@ -130,7 +130,8 @@ class MMUViewMixin:
                   'status': 'MMU STATUS', 'bypass': 'BYPASS', 'recover': 'RECOVER STATE',
                   'manual': 'SET MMU STATE', 'confirm': 'CONFIRM',
                   'endless': 'ENDLESS SPOOL', 'group': 'GROUP MEMBERS', 'spool': 'ASSIGN SPOOL',
-                  'maintenance': 'MAINTENANCE', 'options': 'MMU OPTIONS'}
+                  'maintenance': 'MAINTENANCE', 'options': 'MMU OPTIONS',
+                  'leds': 'MMU LEDS', 'units': 'MMU UNITS', 'unit': 'UNIT GATES'}
 
     def Enter_MMU_Menu(self, page='home'):
         self.checkkey = self.MMUMenu
@@ -143,6 +144,7 @@ class MMUViewMixin:
         self._mmu_map_draft = None
         self._mmu_endless_draft = None
         self._mmu_spool_draft = None
+        self._mmu_unit_view = 0
         self._mmu_canvas_page = None
         self.Draw_MMU_Menu()
 
@@ -339,7 +341,44 @@ class MMUViewMixin:
                     items.append(self._mmu_action_item('sync_off', 'Gear sync OFF'))
             if m and m.motors and all(v is not None for _, v in m.motors):
                 items.append(self._mmu_action_item('motors_off', 'Release MMU motors'))
+            if m and m.leds is not None:
+                items.append(nav('leds', 'LEDs'))
+            if m and len(m.units) > 1:
+                items.append(nav('units', 'Units'))
             return items + [nav('status', 'Sensors / status')]
+        if page == 'units':
+            return [(('unit', i), 'U%d %s' % (i + 1, unit.name),
+                     'G%d-G%d%s' % (unit.first_gate + 1, unit.first_gate + unit.num_gates,
+                                     ' ACTIVE' if m.unit == i else ''), True)
+                    for i, unit in enumerate(m.units if m else ())]
+        if page == 'unit':
+            index = getattr(self, '_mmu_unit_view', 0)
+            if not m or not 0 <= index < len(m.units):
+                return []
+            unit = m.units[index]
+            try:
+                self.pd.mmu_session.prepare('unit_select', values=(index,))
+                enabled = True
+            except ValueError:
+                enabled = False
+            return [(('unit_select', index, unit.first_gate), 'Select this unit', '>' if enabled else 'LOCK', enabled)] + [
+                (('gate', gate), '%s %s' % (self._mmu_gate_label(gate), m.materials[gate] or '--'),
+                 self._mmu_percent(gate), True) for gate in range(unit.first_gate, unit.first_gate + unit.num_gates)]
+        if page == 'leds':
+            if not m or not m.leds:
+                return []
+            leds = m.leds
+            items = [self._mmu_action_item('led_enable', 'LEDs OFF' if leds.enabled else 'LEDs ON', desired_enabled=not leds.enabled if leds.enabled is not None else None),
+                     self._mmu_action_item('led_animation', 'Animation OFF' if leds.animation else 'Animation ON', desired_enabled=not leds.animation if leds.animation is not None else None)]
+            if leds.segments[0]:
+                for mode in self.pd.mmu_session.LED_MODES:
+                    try:
+                        self.pd.mmu_session.prepare('led_mode', values=(mode,))
+                        enabled = True
+                    except ValueError:
+                        enabled = False
+                    items.append((('led_mode', mode), mode.replace('_', ' ').title(), '>' if enabled else 'LOCK', enabled))
+            return items
         if page == 'filament':
             return [nav('spool', 'Assign spool ID')]
         if page == 'spool':
@@ -541,6 +580,19 @@ class MMUViewMixin:
                       if m else 'Live state unavailable')
             self._mmu_text('maintdetail', detail, 12, 152)
             first_y, visible = 191, 5
+        elif page in ('unit', 'units'):
+            index = getattr(self, '_mmu_unit_view', 0)
+            unit = m.units[index] if m and 0 <= index < len(m.units) else None
+            self._mmu_text('unitview', unit.name if page == 'unit' and unit else 'Browse units; no movement', 12, 66)
+            self._mmu_text('unithelp', 'Select moves to the first gate' if page == 'unit' else 'Gate numbers remain global', 12, 98, 40, small=True)
+            first_y, visible = 134, 7
+        elif page == 'leds':
+            unit = m.active_unit if m else None
+            self._mmu_text('ledunit', unit.name if unit else 'LED state unavailable', 12, 66)
+            mode = m.leds.exit_effect if m and m.leds else '--'
+            self._mmu_text('ledmode', 'Exit: ' + mode, 12, 98, 40, small=True)
+            self._mmu_text('ledscope', 'Only the active unit is changed', 12, 119, 40, small=True)
+            first_y, visible = 148, 6
         elif page == 'map':
             writable = self._mmu_map_writable(m)
             self._mmu_text('maphint', 'Press row, turn gate, press again', 12, 66, 40, small=True)
@@ -618,7 +670,15 @@ class MMUViewMixin:
                 message = 'Resets MMU state.' if op.enabled else 'Disables MMU and releases motors.'
             if op.action == 'motors_off':
                 message = 'All MMU units; home may be lost.'
+            if op.action.startswith('led_'):
+                message = 'Changes LEDs on the target unit.'
+            if op.action == 'unit_select':
+                message = 'May home / move the selector'
             self._mmu_text('effect', message, 12, 210, 40, small=True)
+            if op.action.startswith('led_') or op.action == 'unit_select':
+                index = op.values[1] if op.action.startswith('led_') else op.values[0]
+                unit = m.units[index] if m and 0 <= index < len(m.units) else None
+                self._mmu_text('targetunit', unit.name if unit else 'Target unit unavailable', 12, 241, 40, small=True)
             if op.action == 'map':
                 old = m.ttg_map if m else ()
                 changes = [(tool, gate) for tool, gate in enumerate(op.values)
@@ -743,6 +803,10 @@ class MMUViewMixin:
                 self._mmu_gate = key[1]
                 self._mmu_open('gate')
                 return
+            elif key[0] == 'unit':
+                self._mmu_unit_view = key[1]
+                self._mmu_open('unit')
+                return
             elif key[0] == 'map_edit':
                 self._mmu_edit = ('map', key[1])
             elif key[0] == 'endless_toggle':
@@ -763,11 +827,15 @@ class MMUViewMixin:
                     while new_group in groups:
                         new_group += 1
                     groups[gate] = new_group
-            elif key[0] in ('action', 'apply', 'map_save', 'endless_save', 'spool_save', 'spool_clear'):
+            elif key[0] in ('action', 'apply', 'map_save', 'endless_save', 'spool_save', 'spool_clear', 'unit_select', 'led_mode'):
                 try:
                     if key[0] == 'apply' and (m is None or m.fingerprint != self._mmu_manual_base):
                         raise ValueError('MMU changed; reopen editor')
-                    if key[0] in ('spool_save', 'spool_clear'):
+                    if key[0] == 'unit_select':
+                        self._mmu_confirmation = self.pd.mmu_session.prepare('unit_select', values=(key[1],))
+                    elif key[0] == 'led_mode':
+                        self._mmu_confirmation = self.pd.mmu_session.prepare('led_mode', values=(key[1],))
+                    elif key[0] in ('spool_save', 'spool_clear'):
                         if not self._mmu_spool_writable(m):
                             raise ValueError('MMU changed; reopen editor')
                         sid = -1 if key[0] == 'spool_clear' else self._mmu_spool_draft
