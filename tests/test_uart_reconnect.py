@@ -14,6 +14,8 @@ class UARTReconnectTests(unittest.TestCase):
         result._uart_epoch = 0
         result._uart_online = False
         result._next_uart_retry = 0
+        result._next_uart_probe = 0
+        result._uart_probe_failures = 0
         result.HMI_Init = Mock()
         result.HMI_StartFrame = Mock()
         result._show_message = Mock()
@@ -50,6 +52,48 @@ class UARTReconnectTests(unittest.TestCase):
         self.assertFalse(result._uart_online)
         self.assertIsNone(result.lcd)
         self.assertEqual(result._next_uart_retry, 15)
+
+    def test_liveness_probe_requires_two_failures_before_reconnect(self):
+        result = self.display()
+        result._uart_online = True
+        result.lcd.handshake.return_value = False
+        result.EachMomentUpdate = Mock()
+
+        with patch.object(ui.time, 'monotonic', return_value=10):
+            result._ui_tick()
+        self.assertTrue(result._uart_online)
+        self.assertEqual(result._uart_probe_failures, 1)
+
+        with patch.object(ui.time, 'monotonic', return_value=12):
+            result._ui_tick()
+        self.assertFalse(result._uart_online)
+        self.assertIsNone(result.lcd)
+        self.assertEqual(result._next_uart_retry, 17)
+
+    def test_successful_liveness_probe_resets_failure_count(self):
+        result = self.display()
+        result._uart_online = True
+        result._uart_probe_failures = 1
+        result.lcd.handshake.return_value = True
+        result.EachMomentUpdate = Mock()
+
+        with patch.object(ui.time, 'monotonic', return_value=10):
+            result._ui_tick()
+
+        self.assertTrue(result._uart_online)
+        self.assertEqual(result._uart_probe_failures, 0)
+        self.assertEqual(result._next_uart_probe, 12)
+
+    def test_liveness_probe_is_rate_limited(self):
+        result = self.display()
+        result._uart_online = True
+        result._next_uart_probe = 12
+        result.EachMomentUpdate = Mock()
+
+        with patch.object(ui.time, 'monotonic', return_value=10):
+            result._ui_tick()
+
+        result.lcd.handshake.assert_not_called()
 
     def test_old_uart_epoch_and_offline_input_are_discarded(self):
         result = self.display()

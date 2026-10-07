@@ -294,6 +294,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._uart_epoch = 0
         self._uart_online = False
         self._next_uart_retry = 0
+        self._next_uart_probe = 0
+        self._uart_probe_failures = 0
         self.encoder = self.button = self.lcd = self.pd = None
         self._settings = (USARTx, encoder_pins, button_pin, octoPrint_API_Key,
                           moonraker_url, request_timeout, settings_path, power_device, power_on_hold_ms)
@@ -341,6 +343,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._uart_online = False
         self._uart_epoch += 1
         self._next_uart_retry = time.monotonic() + 5
+        self._next_uart_probe = 0
+        self._uart_probe_failures = 0
         if self.lcd is not None:
             self.lcd.close()
         self.lcd = None
@@ -372,6 +376,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self._show_message('Moonraker unavailable')
             self._uart_online = True
             self._uart_epoch += 1
+            self._uart_probe_failures = 0
+            self._next_uart_probe = time.monotonic() + 2.0
             logging.info('LCD UART connected; current screen restored')
             return True
         except (OSError, TimeoutError):
@@ -386,6 +392,19 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self._ensure_uart()
             return
         try:
+            now = time.monotonic()
+            if now >= getattr(self, '_next_uart_probe', 0):
+                self._next_uart_probe = now + 2.0
+                if self.lcd.handshake(timeout=0.5):
+                    self._uart_probe_failures = 0
+                else:
+                    self._uart_probe_failures = getattr(self, '_uart_probe_failures', 0) + 1
+                    logging.warning('LCD liveness probe failed (%d/2)',
+                                    self._uart_probe_failures)
+                    if self._uart_probe_failures >= 2:
+                        logging.warning('LCD liveness lost; reconnecting')
+                        self._uart_failed()
+                        return
             if getattr(self, 'checkkey', None) == self.FilePreview:
                 if not getattr(self, '_pending_start', None) and not getattr(self, '_start_error_visible', False):
                     self._poll_file_preview()
