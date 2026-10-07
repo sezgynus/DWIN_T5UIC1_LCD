@@ -65,6 +65,7 @@ class AtlasDriverTests(unittest.TestCase):
         self.assertEqual(lcd_atlas.ICON_MACHINE, 0x0104)
         self.assertEqual(lcd_atlas.ICON_HOST, 0x0105)
         self.assertEqual(lcd_atlas.ICON_SOFTWARE, 0x0106)
+        self.assertEqual(lcd_atlas.ICON_POWER, 0x0107)
         self.assertEqual(
             lcd_atlas.ICON_COORDINATES,
             {
@@ -75,6 +76,7 @@ class AtlasDriverTests(unittest.TestCase):
                 0x0104: (0, 224, 0, 20, 20),
                 0x0105: (0, 160, 32, 20, 20),
                 0x0106: (0, 192, 32, 20, 20),
+                0x0107: (0, 224, 32, 20, 20),
             },
         )
         self.assertEqual(
