@@ -291,9 +291,25 @@ On LCD connection the driver:
 5. writes the new metadata **only after all required Picture Flash writes
    succeed**.
 
-Therefore a power loss or failed transfer cannot mark a partially updated atlas
-as current; it is retried on the next connection. If host and panel versions
-already match, no JPEG is uploaded again.
+Each successful Picture Flash write is checkpointed immediately in Data Flash
+and read back for verification. If a later atlas fails, an already committed
+atlas is therefore not rewritten on the next service start.
+
+Automatic Picture Flash programming also has a process-lifetime wear guard:
+the same `(Picture ID, size, digest)` is attempted at most once automatically
+per KlipperDWIN process. Atlas-sync failure is non-fatal to the normal LCD UI
+and does not enter the 5-second UART reconnect loop. Rendering APIs
+(`draw_atlas_icon()` and `load_atlases()`) never initiate persistent Flash
+writes; they require startup synchronization to have completed successfully.
+A deliberate explicit `sync_atlases()` call may retry after an operator has
+investigated the failure.
+
+This means a lost acknowledgement, failed metadata write, or later atlas error
+cannot cause continuous Picture Flash programming every few seconds. A true
+host/service restart may make one new automatic attempt, while systemd's
+existing start-rate limit remains a secondary guard.
+
+If host and panel versions already match, no JPEG or metadata is written.
 
 Atlas JPEGs must be complete JPEG files and fit inside the T5UIC1's 32 KiB SRAM
 transfer limit. The default coordinate table is intentionally empty until the

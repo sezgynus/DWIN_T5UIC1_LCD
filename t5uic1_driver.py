@@ -54,6 +54,13 @@ class T5UIC1Display:
         ">8sBB6xBBBBI16sBBBBI16s"
     )
 
+    # Automatic Picture Flash programming is deliberately one-shot per
+    # (picture_id, size, digest) for the lifetime of the host process.  This is
+    # a wear-safety backstop for UART reconnect loops: a lost acknowledgement
+    # or metadata failure must never cause the same image to be programmed
+    # every few seconds. Explicit/manual sync_atlases() calls bypass this set.
+    _atlas_auto_picture_attempts = set()
+
     FONT_SIZES = (
         (6, 12), (8, 16), (10, 20), (12, 24), (14, 28),
         (16, 32), (20, 40), (24, 48), (28, 56), (32, 64),
@@ -138,6 +145,7 @@ class T5UIC1Display:
         self._virtual_area_pictures = {}
         self._atlas_specs, self._atlas_icons = self._build_atlas_config()
         self._atlas_synced = False
+        self._atlas_sync_blocked = False
 
         try:
             time.sleep(wake_delay)
@@ -149,12 +157,11 @@ class T5UIC1Display:
             # Preserve the existing Ender 3 V2 portrait orientation and startup
             # traffic.  Do not wait for the optional 0x34 acknowledgement here.
             self.set_orientation(1, wait_ack=False)
-            # Atlas Picture Flash is synchronized here, but virtual areas are
-            # populated lazily by draw_atlas_icon(). This avoids presenting the
-            # Area-0 atlas sheet during startup. Missing host JPEGs are tolerated
-            # so a coordinate-table commit can land before binary assets are
-            # uploaded; draw_atlas_icon() remains strict and will retry sync.
-            self.sync_atlases(allow_missing=True)
+            # Atlas Picture Flash is synchronized once during connection.
+            # Failure is non-fatal to the normal LCD UI and automatic retry is
+            # blocked for this connection/process to protect Flash endurance.
+            # Virtual areas are still populated lazily by draw_atlas_icon().
+            self._startup_sync_atlases()
             self.update()
         except BaseException:
             self.close()
@@ -889,16 +896,63 @@ class T5UIC1Display:
             entries[area] = (picture_id, len(data), digest)
         return payloads, entries
 
-    def sync_atlases(self, *, allow_missing=False):
+    def _commit_atlas_metadata(self, metadata):
+        """Write one metadata checkpoint and verify it by readback."""
+        logging.info(
+            "Atlas metadata: updating Data Flash @ 0x%04X",
+            self.ATLAS_METADATA_ADDRESS,
+        )
+        try:
+            self.write_flash(self.ATLAS_METADATA_ADDRESS, metadata)
+        except Exception:
+            logging.exception("Atlas metadata: Data Flash write failed")
+            raise
+
+        try:
+            verified = self.read_flash(
+                self.ATLAS_METADATA_ADDRESS, self.ATLAS_METADATA_SIZE
+            )
+        except Exception:
+            logging.exception("Atlas metadata: verification read failed")
+            raise
+        if verified != metadata:
+            logging.error("Atlas metadata: verification mismatch")
+            raise T5UIC1ProtocolError("Atlas metadata verification failed")
+
+        logging.info("Atlas metadata: Data Flash update verified")
+        return verified
+
+    def _startup_sync_atlases(self):
+        """Perform the single automatic atlas-sync attempt for this connection.
+
+        Atlas persistence is optional to the base LCD transport. A metadata or
+        picture programming error must not turn the normal 5-second UART
+        reconnect path into a Flash-write loop.
+        """
+        try:
+            result = self.sync_atlases(allow_missing=True, automatic=True)
+        except Exception:
+            self._atlas_sync_blocked = True
+            logging.exception(
+                "Atlas auto-sync failed; automatic retries are blocked to protect Flash endurance"
+            )
+            return False
+        return result
+
+    def sync_atlases(self, *, allow_missing=False, automatic=False):
         """Synchronize changed host atlas JPEGs into reserved Picture Flash.
 
-        The persistent record is written only after every required Picture
-        Flash update succeeds. A failed/interrupted update therefore remains
-        dirty and is retried on the next connection.
+        The metadata is checkpointed after every successful Picture Flash
+        write. This prevents an unrelated later failure from causing already
+        committed atlases to be rewritten on the next service start.
+
+        When automatic=True, each exact Picture Flash payload is attempted at
+        most once per host-process lifetime. This guards the UART reconnect
+        path against rapid repeated Flash programming. Manual/explicit calls
+        may bypass that guard deliberately.
 
         allow_missing is used only by startup to tolerate a repository update
-        where the manifest has landed before its binary JPEG assets. Explicit
-        sync and icon drawing remain strict.
+        where the manifest has landed before its binary JPEG assets.
         """
         self._atlas_synced = False
         payloads, desired = self._atlas_payloads(allow_missing=allow_missing)
@@ -953,9 +1007,19 @@ class T5UIC1Display:
             else:
                 logging.info("Atlas %d: unchanged -> skip", area)
 
+        # Keep only metadata that describes atlases still present in the host
+        # manifest. Each successful picture write is checkpointed immediately.
+        committed = {
+            area: entry for area, entry in current.items()
+            if area in desired
+        }
+
         for area in changed:
             picture_id, _ = specs[area]
             data = payloads[area]
+            _, size, digest = desired[area]
+            attempt_key = (picture_id, size, digest)
+
             logging.info(
                 "Atlas %d: uploading %d bytes to SRAM @ 0x0000",
                 area, len(data),
@@ -966,6 +1030,19 @@ class T5UIC1Display:
                 logging.exception("Atlas %d: SRAM upload failed", area)
                 raise
             logging.info("Atlas %d: SRAM upload complete", area)
+
+            if automatic:
+                if attempt_key in self._atlas_auto_picture_attempts:
+                    logging.critical(
+                        "Atlas %d: automatic Picture Flash %d rewrite blocked by wear guard",
+                        area, picture_id,
+                    )
+                    raise T5UIC1ProtocolError(
+                        "automatic atlas Picture Flash retry blocked by wear guard"
+                    )
+                # Mark before issuing 0x33. If the ACK is lost after the panel
+                # starts programming, a reconnect still cannot rewrite it.
+                self._atlas_auto_picture_attempts.add(attempt_key)
 
             logging.info(
                 "Atlas %d: storing SRAM as Picture Flash %d",
@@ -984,28 +1061,25 @@ class T5UIC1Display:
                 area, picture_id,
             )
 
-        metadata = self._pack_atlas_metadata(desired)
-        if raw_metadata != metadata:
-            logging.info(
-                "Atlas metadata: updating Data Flash @ 0x%04X",
-                self.ATLAS_METADATA_ADDRESS,
-            )
-            try:
-                self.write_flash(self.ATLAS_METADATA_ADDRESS, metadata)
-            except Exception:
-                logging.exception("Atlas metadata: Data Flash write failed")
-                raise
-            logging.info("Atlas metadata: Data Flash update complete")
-        else:
-            logging.info("Atlas metadata: unchanged")
+            committed[area] = desired[area]
+            checkpoint = self._pack_atlas_metadata(committed)
+            if raw_metadata != checkpoint:
+                raw_metadata = self._commit_atlas_metadata(checkpoint)
 
-        self._atlas_synced = True
+        # If nothing changed, never rewrite metadata merely to canonicalize
+        # reserved/padding bytes. Avoiding unnecessary writes is preferable.
+        self._atlas_synced = (all(committed.get(area) == desired[area]
+                                  for area in desired))
+        if self._atlas_synced:
+            self._atlas_sync_blocked = False
+
         if changed:
             logging.info(
                 "Atlas sync complete: updated virtual area(s) %s",
                 ",".join(str(area) for area in changed),
             )
         else:
+            logging.info("Atlas metadata: unchanged")
             logging.info("Atlas sync complete: no atlas uploads required")
         return bool(changed)
 
@@ -1024,9 +1098,15 @@ class T5UIC1Display:
             self.cache_jpeg(picture_id)
 
     def load_atlases(self):
-        """Populate every active virtual area from its reserved Picture slot."""
+        """Populate every active virtual area from its reserved Picture slot.
+
+        Rendering paths are intentionally Flash-write free. Persistent atlas
+        synchronization happens at startup or through an explicit sync call.
+        """
         if not getattr(self, "_atlas_synced", False):
-            self.sync_atlases()
+            raise T5UIC1ProtocolError(
+                "custom atlases are not synchronized; refusing render-time Flash sync"
+            )
         for area in self._active_atlas_areas():
             self._load_atlas_area(area)
 
@@ -1047,7 +1127,9 @@ class T5UIC1Display:
         if x + width > self.WIDTH or y + height > self.HEIGHT:
             raise ValueError("atlas icon destination exceeds display bounds")
         if not getattr(self, "_atlas_synced", False):
-            self.sync_atlases()
+            raise T5UIC1ProtocolError(
+                "custom atlases are not synchronized; refusing render-time Flash sync"
+            )
         self._ensure_atlas_area(area)
         self.copy_cache(
             area,

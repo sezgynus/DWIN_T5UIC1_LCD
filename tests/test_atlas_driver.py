@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import lcd_atlas
 from test_t5uic1_driver import driver
-from t5uic1_driver import T5UIC1Display
+from t5uic1_driver import T5UIC1Display, T5UIC1ProtocolError
 
 
 JPEG_A = b"\xFF\xD8atlas-a\xFF\xD9"
@@ -131,25 +131,28 @@ class AtlasDriverTests(unittest.TestCase):
             lcd.store_sram_as_picture = Mock(
                 side_effect=lambda picture_id: order.append(("picture", picture_id))
             )
-            lcd.write_flash = Mock(
-                side_effect=lambda address, data, **kwargs:
-                    order.append(("metadata", address, data))
-            )
+            def checkpoint(data):
+                order.append(("metadata", data))
+                return data
+            lcd._commit_atlas_metadata = Mock(side_effect=checkpoint)
 
             changed = lcd.sync_atlases()
 
         self.assertTrue(changed)
         self.assertEqual(
             [item[0] for item in order],
-            ["sram", "picture", "sram", "picture", "metadata"],
+            ["sram", "picture", "metadata", "sram", "picture", "metadata"],
         )
         self.assertEqual(order[1], ("picture", 14))
-        self.assertEqual(order[3], ("picture", 15))
-        metadata = order[-1][2]
-        parsed = lcd._unpack_atlas_metadata(metadata)
-        self.assertEqual(parsed[0][0:2], (14, len(JPEG_A)))
-        self.assertEqual(parsed[1][0:2], (15, len(JPEG_B)))
-        self.assertEqual(len(parsed[0][2]), lcd.ATLAS_DIGEST_SIZE)
+        self.assertEqual(order[4], ("picture", 15))
+
+        first = lcd._unpack_atlas_metadata(order[2][1])
+        final = lcd._unpack_atlas_metadata(order[5][1])
+        self.assertEqual(first[0][0:2], (14, len(JPEG_A)))
+        self.assertNotIn(1, first)
+        self.assertEqual(final[0][0:2], (14, len(JPEG_A)))
+        self.assertEqual(final[1][0:2], (15, len(JPEG_B)))
+        self.assertEqual(len(final[0][2]), lcd.ATLAS_DIGEST_SIZE)
 
     def test_matching_persistent_versions_skip_picture_flash_rewrites(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -159,14 +162,14 @@ class AtlasDriverTests(unittest.TestCase):
             lcd.read_flash = Mock(return_value=metadata)
             lcd.write_sram = Mock()
             lcd.store_sram_as_picture = Mock()
-            lcd.write_flash = Mock()
+            lcd._commit_atlas_metadata = Mock()
 
             changed = lcd.sync_atlases()
 
         self.assertFalse(changed)
         lcd.write_sram.assert_not_called()
         lcd.store_sram_as_picture.assert_not_called()
-        lcd.write_flash.assert_not_called()
+        lcd._commit_atlas_metadata.assert_not_called()
 
     def test_only_the_changed_atlas_is_rewritten(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -178,13 +181,13 @@ class AtlasDriverTests(unittest.TestCase):
             lcd.read_flash = Mock(return_value=old_metadata)
             lcd.write_sram = Mock()
             lcd.store_sram_as_picture = Mock()
-            lcd.write_flash = Mock()
+            lcd._commit_atlas_metadata = Mock(side_effect=lambda data: data)
 
             changed = lcd.sync_atlases()
 
         self.assertTrue(changed)
         lcd.store_sram_as_picture.assert_called_once_with(14)
-        lcd.write_flash.assert_called_once()
+        lcd._commit_atlas_metadata.assert_called_once()
 
     def test_metadata_is_not_advanced_when_picture_update_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -192,12 +195,12 @@ class AtlasDriverTests(unittest.TestCase):
             lcd.read_flash = Mock(return_value=b"\xFF" * lcd.ATLAS_METADATA_SIZE)
             lcd.write_sram = Mock()
             lcd.store_sram_as_picture = Mock(side_effect=RuntimeError("write failed"))
-            lcd.write_flash = Mock()
+            lcd._commit_atlas_metadata = Mock()
 
             with self.assertRaises(RuntimeError):
                 lcd.sync_atlases()
 
-        lcd.write_flash.assert_not_called()
+        lcd._commit_atlas_metadata.assert_not_called()
 
     def test_invalid_or_oversized_atlas_is_rejected_before_flash_access(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -234,7 +237,7 @@ class AtlasDriverTests(unittest.TestCase):
             lcd.read_flash = Mock(return_value=b"\xFF" * lcd.ATLAS_METADATA_SIZE)
             lcd.write_sram = Mock()
             lcd.store_sram_as_picture = Mock()
-            lcd.write_flash = Mock()
+            lcd._commit_atlas_metadata = Mock(side_effect=lambda data: data)
 
             with self.assertLogs(level="INFO") as captured:
                 self.assertTrue(lcd.sync_atlases())
@@ -245,7 +248,6 @@ class AtlasDriverTests(unittest.TestCase):
         self.assertIn("Atlas 0: SRAM upload complete", output)
         self.assertIn("Atlas 0: Picture Flash 14 write complete", output)
         self.assertIn("Atlas 1: Picture Flash 15 write complete", output)
-        self.assertIn("Atlas metadata: Data Flash update complete", output)
         self.assertIn("Atlas sync complete: updated virtual area(s) 0,1", output)
 
     def test_sync_logs_unchanged_atlases_and_virtual_area_load(self):
@@ -255,7 +257,7 @@ class AtlasDriverTests(unittest.TestCase):
             lcd.read_flash = Mock(return_value=lcd._pack_atlas_metadata(desired))
             lcd.write_sram = Mock()
             lcd.store_sram_as_picture = Mock()
-            lcd.write_flash = Mock()
+            lcd._commit_atlas_metadata = Mock()
 
             with self.assertLogs(level="INFO") as captured:
                 self.assertFalse(lcd.sync_atlases())
@@ -272,7 +274,109 @@ class AtlasDriverTests(unittest.TestCase):
         )
         lcd.write_sram.assert_not_called()
         lcd.store_sram_as_picture.assert_not_called()
-        lcd.write_flash.assert_not_called()
+        lcd._commit_atlas_metadata.assert_not_called()
+
+    def test_metadata_checkpoint_is_read_back_and_verified(self):
+        lcd = driver()
+        metadata = bytes(range(lcd.ATLAS_METADATA_SIZE))
+        lcd.write_flash = Mock()
+        lcd.read_flash = Mock(return_value=metadata)
+
+        self.assertEqual(lcd._commit_atlas_metadata(metadata), metadata)
+        lcd.write_flash.assert_called_once_with(lcd.ATLAS_METADATA_ADDRESS, metadata)
+        lcd.read_flash.assert_called_once_with(
+            lcd.ATLAS_METADATA_ADDRESS, lcd.ATLAS_METADATA_SIZE
+        )
+
+        lcd.read_flash = Mock(return_value=b"x" * lcd.ATLAS_METADATA_SIZE)
+        with self.assertRaises(T5UIC1ProtocolError):
+            lcd._commit_atlas_metadata(metadata)
+
+    def test_render_path_never_triggers_persistent_flash_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcd, _, _ = configured_driver(tmp)
+            lcd._atlas_synced = False
+            lcd.sync_atlases = Mock()
+
+            with self.assertRaises(T5UIC1ProtocolError):
+                lcd.draw_atlas_icon(0x100, 0, 0)
+            with self.assertRaises(T5UIC1ProtocolError):
+                lcd.load_atlases()
+
+        lcd.sync_atlases.assert_not_called()
+        self.assertFalse(lcd.serial.frames)
+
+    def test_startup_sync_failure_is_nonfatal_and_blocks_render_retry(self):
+        lcd = driver()
+        lcd._atlas_sync_blocked = False
+        lcd.sync_atlases = Mock(side_effect=TimeoutError("metadata timeout"))
+
+        with self.assertLogs(level="ERROR") as captured:
+            self.assertFalse(lcd._startup_sync_atlases())
+
+        self.assertTrue(lcd._atlas_sync_blocked)
+        self.assertIn("automatic retries are blocked", "\n".join(captured.output))
+
+    def test_automatic_wear_guard_blocks_same_picture_retry_in_process(self):
+        T5UIC1Display._atlas_auto_picture_attempts.clear()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                first, _, _ = configured_driver(tmp)
+                # Exercise only area 0 to make the retry target unambiguous.
+                first._atlas_icons = {0x100: (0, 10, 20, 5, 6)}
+                first.read_flash = Mock(
+                    return_value=b"\xFF" * first.ATLAS_METADATA_SIZE
+                )
+                first.write_sram = Mock()
+                first.store_sram_as_picture = Mock()
+                first._commit_atlas_metadata = Mock(
+                    side_effect=RuntimeError("metadata commit failed")
+                )
+
+                with self.assertRaises(RuntimeError):
+                    first.sync_atlases(automatic=True)
+                first.store_sram_as_picture.assert_called_once_with(14)
+
+                second, _, _ = configured_driver(tmp)
+                second._atlas_icons = {0x100: (0, 10, 20, 5, 6)}
+                second.read_flash = Mock(
+                    return_value=b"\xFF" * second.ATLAS_METADATA_SIZE
+                )
+                second.write_sram = Mock()
+                second.store_sram_as_picture = Mock()
+                second._commit_atlas_metadata = Mock()
+
+                with self.assertRaises(T5UIC1ProtocolError):
+                    second.sync_atlases(automatic=True)
+
+                second.store_sram_as_picture.assert_not_called()
+                second._commit_atlas_metadata.assert_not_called()
+        finally:
+            T5UIC1Display._atlas_auto_picture_attempts.clear()
+
+    def test_first_successful_picture_is_checkpointed_before_second_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcd, _, _ = configured_driver(tmp)
+            lcd.read_flash = Mock(
+                return_value=b"\xFF" * lcd.ATLAS_METADATA_SIZE
+            )
+            lcd.write_sram = Mock()
+            lcd.store_sram_as_picture = Mock(
+                side_effect=[None, RuntimeError("picture 15 failed")]
+            )
+            checkpoints = []
+            lcd._commit_atlas_metadata = Mock(
+                side_effect=lambda data: checkpoints.append(data) or data
+            )
+
+            with self.assertRaises(RuntimeError):
+                lcd.sync_atlases()
+
+        self.assertEqual(len(checkpoints), 1)
+        parsed = lcd._unpack_atlas_metadata(checkpoints[0])
+        self.assertIn(0, parsed)
+        self.assertNotIn(1, parsed)
+        self.assertEqual(parsed[0][0], 14)
 
     def test_startup_can_defer_sync_until_binary_atlases_are_present(self):
         lcd = driver()
@@ -296,7 +400,7 @@ class AtlasDriverTests(unittest.TestCase):
             {0x100: (0, 0, 0, 10, 10)},
         )
         lcd._atlas_synced = False
-        with self.assertRaises(OSError):
+        with self.assertRaises(T5UIC1ProtocolError):
             lcd.draw_atlas_icon(0x100, 0, 0)
         self.assertFalse(lcd.serial.frames)
 
