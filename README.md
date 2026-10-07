@@ -225,6 +225,7 @@ Spoolman percentages come from each gate’s `gate_spool_id` through Moonraker�
 | Gates / gate details | Scrollable physical-gate list; Select only, Load selected, mapped Load/change, Unload, Eject spool, Preload and Check |
 | Filament | Read-only name, material, spool ID, remaining percentage, recommended temperature and Spoolman mode |
 | Tool map | Draft tool-to-gate editor; press, rotate, press to accept; Save/Cancel |
+| EndlessSpool (from Tool map) | Draft enable switch, groups and gate membership; material/color compatibility, Save/Cancel |
 | Bypass | Unload the current MMU gate, select bypass, then use extruder-only load/unload |
 | Manage / Recover | Automatic filament-state recovery, a draft manual tool/gate/loaded-state editor, separate unlock/reheat and Resume print |
 | Status | Actual action and Bowden-stage progress when available, distinct sensor states, gear sync, nozzle temperature and operation result |
@@ -237,7 +238,9 @@ An MMU error pause with a reported reason opens Recover directly. Fix the physic
 
 Tool map edits are available only outside printing/pauses while the MMU is idle. Several tools may share one gate. Save confirms the changed rows, sends one bulk `MMU_TTG_MAP MAP=...` command and verifies the actual mapping; Cancel discards the draft. External state changes lock the draft until reopened.
 
-This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). EndlessSpool, spool-ID assignment and hardware-specific maintenance/options remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
+EndlessSpool uses the same idle, off-print guards. Edit the Enabled value by pressing, rotating and pressing again. Open a group and press gates to add them; removing a member gives it a separate group (the final member stays). Group pages show each gate’s material/color and report matching, mixed or unknown metadata; verify physical spool compatibility. Save sends the complete enable/group draft in one `MMU_ENDLESS_SPOOL ENABLE=... GROUPS=...` command and verifies both fields. Back from members retains the draft; Cancel from EndlessSpool discards it.
+
+This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). Spool-ID assignment and hardware-specific maintenance/options remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
 
 
 ### Case Light
@@ -310,7 +313,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 ## Scope and limitations
 
 - The UI targets compatible 272×480 DWIN T5UIC1 assets; other display families require separate validation.
-- MMU EndlessSpool, spool-ID assignment, hardware-specific maintenance/options and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
+- MMU spool-ID assignment, hardware-specific maintenance/options and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
 - Preview shows up to four used tools; per-tool lengths, brand names and physical lane mapping are not displayed.
 - SRAM cache is volatile and limited to 32 KiB; it is rebuilt after reconnect/restart.
 - Screws Tilt requires four distinct corners and uses a fixed 0.05 mm peak-to-peak success threshold.

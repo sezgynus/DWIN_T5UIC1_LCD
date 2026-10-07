@@ -47,13 +47,13 @@ class MMUUITests(unittest.TestCase):
     def test_map_save_cancel_keeps_draft_then_confirm_sends_one_bulk_command(self):
         v, _ = self.make()
         self.edit_map(v)
-        self.press(v, 5)
+        self.press(v, 6)
         self.assertEqual(v._mmu_page, 'confirm')
         self.assertEqual(v._mmu_selection, 1)
         self.assertIn('T0 > G2', self.strings(v))
         self.press(v, 1)
         self.assertEqual(v._mmu_map_draft, [1, 1, 2, 3])
-        self.press(v, 5)
+        self.press(v, 6)
         self.press(v, 2)
         self.assertEqual(v._mmu_page, 'status')
         self.assertEqual(v.pd.subscription.request.call_args.args,
@@ -66,7 +66,7 @@ class MMUUITests(unittest.TestCase):
             self.edit_map(v)
             if change == 'map': data['status']['mmu']['ttg_map'] = [3]*4
             else: data['status']['print_stats']['state'] = 'printing'
-            self.press(v, 5)
+            self.press(v, 6)
             self.assertEqual(v._mmu_page, 'map')
             v.pd.subscription.request.assert_not_called()
 
@@ -85,6 +85,162 @@ class MMUUITests(unittest.TestCase):
         v.get_encoder_state.return_value = v.ENCODER_DIFF_CCW
         v.HMI_MMU_Menu()
         self.assertEqual(v._mmu_map_draft[0], 0)
+
+    def open_endless(self, v):
+        self.press(v, 3)
+        self.press(v, v.pd.mmu_session.state.num_gates + 1)
+        self.assertEqual(v._mmu_page, 'endless')
+
+    def enable_endless(self, v):
+        self.press(v, 1)
+        v.get_encoder_state.return_value = v.ENCODER_DIFF_CW
+        v.HMI_MMU_Menu()
+        self.press(v, 1)
+
+    def save_endless(self, v):
+        items = v._mmu_items(v.pd.mmu_session.state)
+        self.press(v, next(i + 1 for i, item in enumerate(items) if item[0] == ('endless_save',)))
+
+    def test_endless_toggle_membership_cancel_never_sends(self):
+        v, _ = self.make()
+        self.open_endless(v)
+        self.enable_endless(v)
+        self.press(v, 2)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_endless_draft, {'enabled': True, 'groups': [0, 0, 2, 3]})
+        self.press(v, 0)
+        self.press(v, len(v._mmu_items(v.pd.mmu_session.state)))
+        self.assertEqual(v._mmu_page, 'map')
+        self.assertIsNone(v._mmu_endless_draft)
+        v.pd.subscription.request.assert_not_called()
+
+    def test_endless_confirmation_cancel_retains_draft_then_saves_once(self):
+        v, _ = self.make()
+        self.open_endless(v)
+        self.enable_endless(v)
+        self.press(v, 2)
+        self.press(v, 2)
+        self.press(v, 0)
+        self.save_endless(v)
+        self.assertEqual(v._mmu_page, 'confirm')
+        self.assertEqual(v._mmu_selection, 1)
+        self.assertIn('G2 > Group 1', self.strings(v))
+        self.press(v, 1)
+        self.assertEqual(v._mmu_endless_draft['groups'], [0, 0, 2, 3])
+        self.save_endless(v)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'status')
+        v.pd.subscription.request.assert_called_once()
+        self.assertEqual(v.pd.subscription.request.call_args.args,
+                         ('printer.gcode.script', {'script': 'MMU_ENDLESS_SPOOL ENABLE=1 GROUPS=0,0,2,3'}))
+
+    def test_endless_removing_member_splits_to_unused_group_last_member_stays(self):
+        v, _ = self.make(endless_spool_groups=[99, 99, 2, 3])
+        self.open_endless(v)
+        # IDs 2, 3, 99 appear as groups 1, 2, 3.
+        self.press(v, 4)
+        self.press(v, 1)
+        self.assertEqual(v._mmu_endless_draft['groups'], [0, 99, 2, 3])
+        self.press(v, 2)
+        self.assertEqual(v._mmu_endless_draft['groups'], [0, 99, 2, 3])
+
+    def test_endless_material_color_compatibility_visible(self):
+        v, _ = self.make(endless_spool_groups=[0]*4)
+        self.open_endless(v)
+        self.press(v, 2)
+        self.assertIn('Mixed material / color', self.strings(v))
+        self.assertIn('G1 PLA ff0000', self.strings(v))
+        v, _ = self.make(endless_spool_groups=[0]*4, gate_material=['PLA']*4,
+                         gate_color=['ff0000']*4)
+        self.open_endless(v)
+        self.press(v, 2)
+        self.assertIn('Same material / color', self.strings(v))
+
+    def test_endless_external_change_print_pause_and_disconnect_lock_draft(self):
+        for case in ('groups', 'printing', 'paused', 'offline'):
+            v, data = self.make()
+            self.open_endless(v)
+            self.enable_endless(v)
+            if case == 'groups': data['status']['mmu']['endless_spool_groups'] = [3]*4
+            elif case == 'offline': data['state'] = 'disconnected'
+            else: data['status']['print_stats']['state'] = case
+            self.save_endless(v)
+            self.assertEqual(v._mmu_page, 'endless')
+            v.pd.subscription.request.assert_not_called()
+
+    def test_endless_missing_telemetry_remains_unknown_and_locked(self):
+        v, _ = self.make(endless_spool_enabled=None, endless_spool_groups=[])
+        self.open_endless(v)
+        self.assertIsNone(v._mmu_endless_draft['enabled'])
+        self.press(v, 1)
+        self.assertIsNone(v._mmu_endless_draft['enabled'])
+        self.save_endless(v)
+        self.assertEqual(v._mmu_page, 'endless')
+        v.pd.subscription.request.assert_not_called()
+
+    def test_endless_navigation_preserves_unsaved_tool_map_draft(self):
+        v, _ = self.make()
+        self.edit_map(v)
+        self.press(v, 5)
+        self.press(v, 0)
+        self.assertEqual(v._mmu_map_draft, [1, 1, 2, 3])
+
+    def test_endless_enabled_value_uses_press_rotate_press_and_can_disable(self):
+        v, _ = self.make(endless_spool_enabled=1)
+        self.open_endless(v)
+        self.press(v, 1)
+        self.assertTrue(v._mmu_endless_draft['enabled'])
+        self.assertEqual(v._mmu_edit, ('endless', 'enabled'))
+        v.get_encoder_state.return_value = v.ENCODER_DIFF_CCW
+        v.HMI_MMU_Menu()
+        self.assertFalse(v._mmu_endless_draft['enabled'])
+        self.press(v, 1)
+        self.assertIsNone(v._mmu_edit)
+        self.save_endless(v)
+        self.assertEqual(v._mmu_confirmation.script, 'MMU_ENDLESS_SPOOL ENABLE=0 GROUPS=0,1,2,3')
+        v.pd.subscription.request.assert_not_called()
+
+    def test_endless_large_group_summary_and_rows_fit_screen(self):
+        count = 16
+        v, _ = self.make(num_gates=count, ttg_map=list(range(count)), gate_status=[1]*count,
+                         gate_color_rgb=[[1, 0, 0]]*count, endless_spool_groups=[0]*count)
+        self.open_endless(v)
+        self.assertIn('G1 G2 G3 +13', self.strings(v))
+        self.press(v, 2)
+        v._mmu_selection = count
+        v.Draw_MMU_Menu()
+        self.assertTrue(any('G16' in s for s in self.strings(v)))
+        for c in v.lcd.Draw_String.call_args_list:
+            x, _, value = c.args[-3:]
+            font = c.args[2]
+            cell = 6 if font == v.lcd.font6x12 else 8
+            self.assertLessEqual(x + len(value)*cell, 272)
+
+    def test_endless_gate_count_shrink_keeps_old_editor_and_confirmation_safe(self):
+        for page in ('group', 'confirm'):
+            v, data = self.make()
+            self.open_endless(v)
+            if page == 'group':
+                self.press(v, 2)
+            else:
+                self.enable_endless(v)
+                self.save_endless(v)
+            data['status']['mmu']['num_gates'] = 2
+            v.Draw_MMU_Menu()
+            self.press(v, 2)
+            v.pd.subscription.request.assert_not_called()
+
+    def test_endless_confirmation_rejects_new_print_and_connection_epoch(self):
+        for case in ('printing', 'epoch'):
+            v, data = self.make()
+            self.open_endless(v)
+            self.enable_endless(v)
+            self.save_endless(v)
+            if case == 'printing': data['status']['print_stats']['state'] = 'printing'
+            else: data['epoch'] += 1
+            self.press(v, 2)
+            self.assertEqual(v._mmu_page, 'confirm')
+            v.pd.subscription.request.assert_not_called()
 
     def test_home_uses_full_canvas_but_keeps_original_dashboard_untouched(self):
         v, _ = self.make()

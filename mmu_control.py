@@ -17,6 +17,12 @@ def boolean(value):
     return value if isinstance(value, bool) else None
 
 
+def switch(value):
+    if isinstance(value, bool):
+        return value
+    return bool(value) if integer(value) in (0, 1) else None
+
+
 def text(value, default='Unknown'):
     return value if isinstance(value, str) and value else default
 
@@ -43,6 +49,9 @@ class MMUState:
     bowden_progress: int | None
     reason: str
     spoolman_support: str
+    endless_enabled: bool | None
+    endless_groups: tuple
+    colors: tuple
 
     @classmethod
     def from_snapshot(cls, snapshot):
@@ -93,7 +102,10 @@ class MMUState:
                    values('gate_spool_id', integer),
                    tuple(sorted((str(k), boolean(v)) for k, v in sensors.items())),
                    boolean(raw.get('sync_drive')), progress,
-                   text(raw.get('reason_for_pause'), ''), text(raw.get('spoolman_support'), 'off'))
+                   text(raw.get('reason_for_pause'), ''), text(raw.get('spoolman_support'), 'off'),
+                   switch(raw.get('endless_spool_enabled', raw.get('endless_spool'))),
+                   values('endless_spool_groups', lambda v: integer(v) if integer(v) is not None and v >= 0 else None),
+                   values('gate_color', lambda v: text(v, '--')))
 
     @property
     def busy(self):
@@ -103,7 +115,8 @@ class MMUState:
     def fingerprint(self):
         return (self.epoch, self.num_gates, self.gate, self.tool, self.enabled,
                 self.action, self.print_state, self.filament, self.locked,
-                self.gate_status, self.ttg_map)
+                self.gate_status, self.ttg_map, self.endless_enabled, self.endless_groups,
+                self.materials, self.colors)
 
     def tools_for_gate(self, gate):
         return tuple(i for i, mapped in enumerate(self.ttg_map) if mapped == gate)
@@ -231,6 +244,15 @@ class MMUSession:
             values = tuple(values)
             script = 'MMU_TTG_MAP MAP=' + ','.join(str(v) for v in values)
             label = 'Save tool map'
+        elif action == 'endless':
+            if (not isinstance(enabled, bool) or m.endless_enabled is None
+                    or any(v is None for v in m.endless_groups)
+                    or not isinstance(values, (tuple, list)) or len(values) != m.num_gates
+                    or any(integer(v) is None or v < 0 for v in values)):
+                raise ValueError('Complete EndlessSpool state required')
+            values = tuple(values)
+            script = 'MMU_ENDLESS_SPOOL ENABLE=%d GROUPS=%s' % (enabled, ','.join(str(v) for v in values))
+            label = 'Save EndlessSpool'
         elif action == 'resume':
             if ps != 'paused' or m.locked is not False or m.filament != 'loaded':
                 raise ValueError('Recover and unlock first')
@@ -280,6 +302,7 @@ class MMUSession:
         if m.locked is not False:
             return False
         if op.action == 'map': return m.ttg_map == op.values
+        if op.action == 'endless': return m.endless_enabled == op.enabled and m.endless_groups == op.values
         if op.action == 'select': return m.gate == op.gate and m.filament == 'unloaded'
         if op.action == 'bypass': return m.gate == -2 and m.filament == 'unloaded'
         if op.action in ('load', 'change'): return m.gate == op.gate and m.filament == 'loaded' and (op.action != 'change' or m.tool == op.tool)

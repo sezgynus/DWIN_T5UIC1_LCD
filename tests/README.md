@@ -96,9 +96,14 @@ actual LCD and installed Happy Hare configuration before merging the control UI:
 8. Disconnect/reconnect Moonraker and UART. Check retained operation errors,
    rebuilt current page, read-only offline navigation and no command replay.
 
-EndlessSpool, spool assignment and hardware-specific maintenance
+Spool assignment and hardware-specific maintenance
 are not exposed by this first implementation. Use the web UI for these functions.
 
 Tool map: edit several tools to one gate, cancel the draft, cancel confirmation,
 then Save and verify the actual Happy Hare mapping. Check long lists, gate bounds,
 printing/pause locks and web UI mapping changes while the editor is open.
+
+EndlessSpool: toggle enable, join/split gates (including the final member),
+check material/color metadata, Cancel and Save. Verify whole enable/group state,
+arbitrary existing group IDs, missing metadata, external changes, off-print locks,
+long lists and reconnect behavior. Physical compatibility still needs hardware QA.

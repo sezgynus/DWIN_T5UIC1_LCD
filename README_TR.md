@@ -225,6 +225,7 @@ Spoolman yüzdeleri tek bir aktif makaradan değil, Moonraker Spoolman proxy’s
 | Gates / kanal detayları | Kaydırılabilir fiziksel kanal listesi; Select only, Load selected, eşlemeli Load/change, Unload, Eject spool, Preload ve Check |
 | Filament | Salt okunur isim, malzeme, makara kimliği, kalan yüzde, önerilen sıcaklık ve Spoolman modu |
 | Tool map | Taslak takım–kanal düzenleyici; bas, çevir, bas ile kabul; Save/Cancel |
+| EndlessSpool (Tool map içinden) | Taslak aç/kapat, gruplar ve kanal üyeliği; malzeme/renk uyumu, Save/Cancel |
 | Bypass | Mevcut MMU kanalını boşaltma, bypass seçimi ve ardından yalnız ekstrüder yükleme/boşaltma |
 | Manage / Recover | Otomatik filament durumu kurtarma, taslak takım/kanal/yüklü durum editörü, ayrı kilit açma/ısıtma ve Resume print |
 | Status | Gerçek işlem ve varsa Bowden aşama yüzdesi, ayrıştırılmış sensör durumları, gear sync, nozzle sıcaklığı ve işlem sonucu |
@@ -237,7 +238,9 @@ Nedeni bildirilen bir MMU hata duraklaması Recover sayfasını doğrudan açar.
 
 Tool map yalnızca baskı/duraklama dışında ve MMU boşta iken düzenlenir. Birden fazla takım aynı kanala eşlenebilir. Save değişen satırları onaylatır, tek `MMU_TTG_MAP MAP=...` komutu gönderir ve gerçek eşlemeyi doğrular; Cancel taslağı siler. Dışarıdan durum değişirse düzenleyiciyi yeniden açmak gerekir.
 
-Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. EndlessSpool, makara kimliği atama ve donanıma özel bakım/seçenekler bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
+EndlessSpool aynı boşta ve baskı dışı koşulları kullanır. Enabled değerini bas, çevir, tekrar bas ile düzenleyin. Grubu açıp kanallara basarak üye ekleyin; çıkarılan üye ayrı gruba geçer (son üye korunur). Grup ekranında her kanalın malzeme/rengi ve aynı, karışık veya bilinmeyen veri durumu görünür; fiziksel makara uyumunu doğrulayın. Save tüm aç/kapat ve grup taslağını tek `MMU_ENDLESS_SPOOL ENABLE=... GROUPS=...` komutuyla gönderip iki alanı da doğrular. Üyelerden Back taslağı korur; EndlessSpool ekranındaki Cancel siler.
+
+Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. Makara kimliği atama ve donanıma özel bakım/seçenekler bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
 
 
 ### Case Light
@@ -310,7 +313,7 @@ sudo systemctl restart KlipperDWIN.service
 ## Kapsam ve sınırlar
 
 - Arayüz uyumlu 272×480 DWIN T5UIC1 kaynaklarını hedefler; diğer ekran aileleri ayrıca doğrulanmalıdır.
-- MMU EndlessSpool, makara kimliği atama, donanıma özel bakım/seçenekler ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
+- MMU makara kimliği atama, donanıma özel bakım/seçenekler ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
 - Önizleme en fazla dört kullanılan tool gösterir; tool başına uzunluk, marka adı ve fiziksel kanal eşlemesi gösterilmez.
 - SRAM önbelleği geçicidir ve 32 KiB ile sınırlıdır; yeniden bağlantı/başlatma sonrası yeniden kurulur.
 - Screws Tilt dört ayrı köşe gerektirir; sabit 0,05 mm en yüksek/en düşük nokta farkı başarı eşiği kullanır.

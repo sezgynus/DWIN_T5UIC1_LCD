@@ -18,6 +18,8 @@ def mmu_snapshot(**changes):
                gate_spool_id=[101, 102, 104, -1],
                sensors={'toolhead': True, 'extruder': False, 'mmu_shared_exit': None},
                sync_drive=False, bowden_progress=-1)
+    raw.update(endless_spool_enabled=0, endless_spool_groups=[0, 1, 2, 3],
+               gate_color=['ff0000', 'ffffff', '0000ff', 'ffff00'])
     raw.update(changes)
     data['status']['mmu'] = raw
     return data
@@ -100,6 +102,56 @@ class MMUControlTests(unittest.TestCase):
             if matches: status['mmu']['ttg_map'] = [2]*4
             self.complete(s, p, status)
             self.assertEqual(s.phase, 'complete' if matches else 'error')
+
+    def test_endless_state_accepts_integer_switch_and_preserves_group_ids(self):
+        m = MMUState.from_snapshot(mmu_snapshot(endless_spool_enabled=1,
+                                               endless_spool_groups=[10, 10, 99, 99]))
+        self.assertTrue(m.endless_enabled)
+        self.assertEqual(m.endless_groups, (10, 10, 99, 99))
+        for value in ('1', 2, None):
+            self.assertIsNone(MMUState.from_snapshot(mmu_snapshot(endless_spool_enabled=value)).endless_enabled)
+        data = mmu_snapshot(endless_spool=1)
+        del data['status']['mmu']['endless_spool_enabled']
+        self.assertTrue(MMUState.from_snapshot(data).endless_enabled)
+
+    def test_endless_saves_whole_draft_in_single_non_motion_command(self):
+        p, _, s = self.make()
+        op = s.prepare('endless', enabled=True, values=[99, 99, 2, 3])
+        self.assertEqual(op.script, 'MMU_ENDLESS_SPOOL ENABLE=1 GROUPS=99,99,2,3')
+        p.subscription.request.assert_not_called()
+        s.start(op)
+        self.assertTrue(p.subscription.request.call_args.kwargs['guard']())
+
+    def test_endless_rejects_invalid_draft_before_partial_enable_is_possible(self):
+        for values in ([0], [0, 1, 2, -1], [0, 1, 2, True], [0, 1, 2, '3']):
+            p, _, s = self.make()
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                s.prepare('endless', enabled=True, values=values)
+            p.subscription.request.assert_not_called()
+        for fields in ({'endless_spool_enabled': None}, {'endless_spool_groups': [0, 1]},
+                       {'endless_spool_groups': [0, 1, 2, -1]}):
+            _, _, s = self.make(**fields)
+            with self.assertRaises(ValueError): s.prepare('endless', enabled=True, values=[0]*4)
+        _, _, s = self.make()
+        with self.assertRaises(ValueError): s.prepare('endless', enabled=1, values=[0]*4)
+
+    def test_endless_confirmation_guard_rejects_group_material_color_changes(self):
+        for field, values in (('endless_spool_groups', [2]*4),
+                              ('gate_material', ['ABS']*4), ('gate_color', ['000000']*4)):
+            p, data, s = self.make()
+            s.start(s.prepare('endless', enabled=True, values=[0]*4))
+            data['status']['mmu'][field] = values
+            self.assertFalse(p.subscription.request.call_args.kwargs['guard']())
+
+    def test_endless_completion_requires_both_enabled_and_group_result(self):
+        for result in ('both', 'groups', 'enabled'):
+            p, data, s = self.make()
+            s.start(s.prepare('endless', enabled=True, values=[0]*4))
+            status = copy.deepcopy(data['status'])
+            if result != 'groups': status['mmu']['endless_spool_enabled'] = 1
+            if result != 'enabled': status['mmu']['endless_spool_groups'] = [0]*4
+            self.complete(s, p, status)
+            self.assertEqual(s.phase, 'complete' if result == 'both' else 'error')
 
     def test_commands_use_zero_based_gates_and_explicit_eject(self):
         for action, script in [('unload', 'MMU_UNLOAD'), ('eject', 'MMU_EJECT GATE=2 FORCE=1')]:

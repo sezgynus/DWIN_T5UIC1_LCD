@@ -128,7 +128,8 @@ class MMUViewMixin:
     MMU_TITLES = {'home': 'MMU', 'gates': 'GATES', 'gate': 'GATE',
                   'filament': 'FILAMENT', 'map': 'TOOL MAP', 'manage': 'MANAGE',
                   'status': 'MMU STATUS', 'bypass': 'BYPASS', 'recover': 'RECOVER STATE',
-                  'manual': 'SET MMU STATE', 'confirm': 'CONFIRM'}
+                  'manual': 'SET MMU STATE', 'confirm': 'CONFIRM',
+                  'endless': 'ENDLESS SPOOL', 'group': 'GROUP MEMBERS'}
 
     def Enter_MMU_Menu(self, page='home'):
         self.checkkey = self.MMUMenu
@@ -139,6 +140,7 @@ class MMUViewMixin:
         self._mmu_notice = ''
         self._mmu_edit = None
         self._mmu_map_draft = None
+        self._mmu_endless_draft = None
         self._mmu_canvas_page = None
         self.Draw_MMU_Menu()
 
@@ -146,6 +148,8 @@ class MMUViewMixin:
         self._mmu_edit = None
         if page == 'map':
             self._mmu_begin_map()
+        if page == 'endless':
+            self._mmu_begin_endless()
         self._mmu_history.append((self._mmu_page, self._mmu_selection))
         self._mmu_page, self._mmu_selection = page, 1
         self._mmu_notice = ''
@@ -155,6 +159,8 @@ class MMUViewMixin:
         self._mmu_edit = None
         if self._mmu_page == 'map':
             self._mmu_map_draft = None
+        if self._mmu_page == 'endless':
+            self._mmu_endless_draft = None
         if self._mmu_history:
             self._mmu_page, self._mmu_selection = self._mmu_history.pop()
             self._mmu_notice = ''
@@ -184,6 +190,8 @@ class MMUViewMixin:
                              color, bg, x, y, value)
 
     def _mmu_row(self, key, label, value, x, y, width, selected, enabled=True):
+        label = str(label).replace('\n', ' ').replace('\r', ' ')
+        value = str(value).replace('\n', ' ').replace('\r', ' ')
         signature = (label, value, selected, enabled, x, y, width)
         if self._mmu_render.get(key) == signature:
             return
@@ -194,7 +202,7 @@ class MMUViewMixin:
         if selected:
             self.lcd.Draw_Rectangle(0, 0xFFFF, x, y, x + width - 1, y + 39)
         cells = (width - 16) // 8
-        value = str(value)
+        value = str(value)[:max(0, cells - 3)]
         available = cells - (len(value) + 1 if value else 0)
         label = label[:available] if len(label) <= available else label[:max(0, available - 1)] + '~'
         self.lcd.Draw_String(False, False, self.lcd.font8x16, fg, bg, x + 8, y + 12, label)
@@ -231,6 +239,28 @@ class MMUViewMixin:
         except ValueError:
             return False
         return True
+
+    def _mmu_begin_endless(self):
+        m = self.pd.mmu_session.state
+        self._mmu_endless_draft = {'enabled': m.endless_enabled if m else None,
+                                   'groups': list(m.endless_groups) if m else []}
+        self._mmu_endless_base = m.fingerprint if m else None
+        self._mmu_endless_original = (self._mmu_endless_draft['enabled'], tuple(self._mmu_endless_draft['groups']))
+        self._mmu_group = next((g for g in self._mmu_endless_draft['groups'] if g is not None), 0)
+
+    def _mmu_endless_writable(self, m):
+        if m is None or m.fingerprint != getattr(self, '_mmu_endless_base', None):
+            return False
+        draft = self._mmu_endless_draft
+        try:
+            self.pd.mmu_session.prepare('endless', values=draft['groups'], enabled=draft['enabled'])
+        except ValueError:
+            return False
+        return True
+
+    def _mmu_group_summary(self, group):
+        gates = [self._mmu_gate_label(i) for i, g in enumerate(self._mmu_endless_draft['groups']) if g == group]
+        return ' '.join(gates[:3]) + (' +%d' % (len(gates) - 3) if len(gates) > 3 else '')
 
     def _mmu_items(self, m):
         page = self._mmu_page
@@ -272,9 +302,27 @@ class MMUViewMixin:
             writable = self._mmu_map_writable(m)
             return [(('map_edit', tool), 'T%d' % tool, self._mmu_gate_label(gate), writable)
                     for tool, gate in enumerate(draft)] + [
+                        nav('endless', 'EndlessSpool'),
                         (('map_save',), 'Save', '>' if writable else 'LOCK',
                          writable and tuple(draft) != self._mmu_map_original),
                         (('cancel',), 'Cancel', '', True)]
+        if page in ('endless', 'group'):
+            draft = self._mmu_endless_draft
+            writable = self._mmu_endless_writable(m)
+            groups = draft['groups']
+            if page == 'group':
+                return [(('member', gate), '%s %s %s' % (self._mmu_gate_label(gate),
+                         (m.materials[gate] or '--') if m and gate < m.num_gates else '--',
+                         (m.colors[gate] or '--') if m and gate < m.num_gates else '--'),
+                         'IN' if group == self._mmu_group else 'OUT', writable)
+                        for gate, group in enumerate(groups)] + [(('cancel',), 'Back', '', True)]
+            ids = sorted({g for g in groups if g is not None})
+            changed = (draft['enabled'], tuple(groups)) != self._mmu_endless_original
+            return [(('endless_toggle',), 'Enabled', {True: 'ON', False: 'OFF', None: '--'}[draft['enabled']], writable)] + [
+                (('group', group), 'Group %d' % (i + 1), self._mmu_group_summary(group), True)
+                for i, group in enumerate(ids)] + [
+                (('endless_save',), 'Save', '>' if writable else 'LOCK', writable and changed),
+                (('cancel',), 'Cancel', '', True)]
         if page == 'manual':
             draft = self._mmu_manual
             return [(('edit', 'tool'), 'Tool', self._mmu_tool_label(draft['tool']), True),
@@ -364,6 +412,8 @@ class MMUViewMixin:
             self._mmu_canvas_page, self._mmu_render = page, {}
         if page == 'map' and getattr(self, '_mmu_map_draft', None) is None:
             self._mmu_begin_map()
+        if page in ('endless', 'group') and getattr(self, '_mmu_endless_draft', None) is None:
+            self._mmu_begin_endless()
         if page == 'manual' and not hasattr(self, '_mmu_manual'):
             self._mmu_manual_base = m.fingerprint if m else None
             self._mmu_manual = {'tool': m.tool if m and m.tool is not None and m.tool >= 0 else 0,
@@ -420,6 +470,25 @@ class MMUViewMixin:
             self._mmu_text('mapdraft', 'Changes wait for Save' if writable else 'Locked; reopen after state change',
                            12, 87, 40, small=True, color=0x8410 if writable else 0xFD20)
             first_y, visible = 114, 7
+        elif page in ('endless', 'group'):
+            writable = self._mmu_endless_writable(m)
+            hint = 'Changes wait for Save' if writable else 'Locked; reopen after state change'
+            if page == 'group':
+                members = [i for i, g in enumerate(self._mmu_endless_draft['groups'])
+                           if g == self._mmu_group and m and i < m.num_gates]
+                materials = {(m.materials[i] or '--').strip().lower() for i in members} if m else set()
+                colors = {(m.colors[i] or '--').strip().lower() for i in members} if m else set()
+                known = members and '--' not in materials and '--' not in colors
+                compatibility = ('Mixed material / color' if len(materials) > 1 or len(colors) > 1
+                                 else 'Same material / color' if known else 'Compatibility unknown')
+                self._mmu_text('groupcompat', compatibility, 12, 66, 40, small=True, color=0xFD20)
+                self._mmu_text('grouphelp', 'Press gate: join / split group', 12, 87, 40, small=True)
+                self._mmu_text('grouplock', hint, 12, 108, 40, small=True)
+                first_y, visible = 134, 7
+            else:
+                self._mmu_text('endlesshint', hint, 12, 66, 40, small=True, color=0x8410 if writable else 0xFD20)
+                self._mmu_text('endlesshelp', 'Open group to choose member gates', 12, 87, 40, small=True)
+                first_y, visible = 114, 7
         elif page == 'status':
             session = self.pd.mmu_session
             self._mmu_text('result', session.message or 'Live MMU telemetry', 12, 66, 40, small=True, color=0xFD20 if session.phase == 'error' else 0xFFFF)
@@ -456,7 +525,8 @@ class MMUViewMixin:
             self._mmu_text('details', summary, 12, 120, 40, small=True)
             self._mmu_text('valid', 'Target changed; cancel and retry' if not self._mmu_confirmation_valid() else 'Check target before confirming', 12, 170, 40, small=True, color=0xFD20)
             message = {'unload': 'Filament returns to MMU.', 'eject': 'Spool removed from MMU.',
-                       'manual': 'Reports state; does not move.', 'map': 'Saves mapping; no filament movement.', 'resume': 'Print motion will resume.'}.get(op.action, 'This may move filament/motors.')
+                       'manual': 'Reports state; does not move.', 'map': 'Saves mapping; no filament movement.',
+                       'endless': 'Saves groups; no filament movement.', 'resume': 'Print motion will resume.'}.get(op.action, 'This may move filament/motors.')
             self._mmu_text('effect', message, 12, 210, 40, small=True)
             if op.action == 'map':
                 old = m.ttg_map if m else ()
@@ -467,6 +537,16 @@ class MMUViewMixin:
                              if row < min(4, len(changes)) else
                              '+%d more changes' % (len(changes) - 4) if row == 4 and len(changes) > 4 else '')
                     self._mmu_text('change%d' % row, value, 12, 241 + row * 20, 40, small=True)
+            if op.action == 'endless':
+                self._mmu_text('enablechange', 'Enabled: ' + ('ON' if op.enabled else 'OFF'), 12, 241)
+                changes = [(gate, group) for gate, group in enumerate(op.values)
+                           if m and (gate >= m.num_gates or m.endless_groups[gate] != group)]
+                ids = sorted(set(op.values))
+                for row in range(4):
+                    value = ('%s > Group %d' % (self._mmu_gate_label(changes[row][0]), ids.index(changes[row][1]) + 1)
+                             if row < min(3, len(changes)) else
+                             '+%d more changes' % (len(changes) - 3) if row == 3 and len(changes) > 3 else '')
+                    self._mmu_text('groupchange%d' % row, value, 12, 269 + row * 20, 40, small=True)
             for i, (_, label, _, enabled) in enumerate(items):
                 self._mmu_row('item%d' % i, label, '', 8 + i * 132, 374, 124,
                               self._mmu_selection == i + 1, enabled)
@@ -478,6 +558,8 @@ class MMUViewMixin:
                 if i < len(items):
                     _, label, value, enabled = items[i]
                     if page == 'map' and items[i][0][0] == 'map_edit' and getattr(self, '_mmu_edit', None) == ('map', items[i][0][1]):
+                        value = '[' + value + ']'
+                    if page == 'endless' and items[i][0][0] == 'endless_toggle' and getattr(self, '_mmu_edit', None) == ('endless', 'enabled'):
                         value = '[' + value + ']'
                     if page == 'manual' and items[i][0][0] == 'edit' and getattr(self, '_mmu_edit', None) == items[i][0][1]:
                         value = '[' + value + ']'
@@ -510,6 +592,12 @@ class MMUViewMixin:
                     delta = 1 if event == self.ENCODER_DIFF_CW else -1
                     tool = edit[1]
                     self._mmu_map_draft[tool] = max(0, min(m.num_gates - 1, self._mmu_map_draft[tool] + delta))
+            elif edit == ('endless', 'enabled'):
+                if not self._mmu_endless_writable(m):
+                    self._mmu_edit = None
+                    self._mmu_notice = 'MMU changed; reopen editor'
+                elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+                    self._mmu_endless_draft['enabled'] = event == self.ENCODER_DIFF_CW
             elif m and event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
                 delta = 1 if event == self.ENCODER_DIFF_CW else -1
                 self._mmu_manual[edit] = (not self._mmu_manual[edit] if edit == 'loaded'
@@ -548,11 +636,32 @@ class MMUViewMixin:
                 return
             elif key[0] == 'map_edit':
                 self._mmu_edit = ('map', key[1])
-            elif key[0] in ('action', 'apply', 'map_save'):
+            elif key[0] == 'endless_toggle':
+                self._mmu_edit = ('endless', 'enabled')
+            elif key[0] == 'group':
+                self._mmu_group = key[1]
+                self._mmu_open('group')
+                return
+            elif key[0] == 'member':
+                groups = self._mmu_endless_draft['groups']
+                gate = key[1]
+                if groups[gate] != self._mmu_group:
+                    groups[gate] = self._mmu_group
+                elif groups.count(self._mmu_group) > 1:
+                    new_group = 0
+                    while new_group in groups:
+                        new_group += 1
+                    groups[gate] = new_group
+            elif key[0] in ('action', 'apply', 'map_save', 'endless_save'):
                 try:
                     if key[0] == 'apply' and (m is None or m.fingerprint != self._mmu_manual_base):
                         raise ValueError('MMU changed; reopen editor')
-                    if key[0] == 'map_save':
+                    if key[0] == 'endless_save':
+                        if not self._mmu_endless_writable(m):
+                            raise ValueError('MMU changed; reopen editor')
+                        draft = self._mmu_endless_draft
+                        self._mmu_confirmation = self.pd.mmu_session.prepare('endless', values=draft['groups'], enabled=draft['enabled'])
+                    elif key[0] == 'map_save':
                         if not self._mmu_map_writable(m):
                             raise ValueError('MMU changed; reopen editor')
                         self._mmu_confirmation = self.pd.mmu_session.prepare('map', values=self._mmu_map_draft)
@@ -575,6 +684,8 @@ class MMUViewMixin:
                     # Drop confirmation so Back can never submit it again.
                     if self._mmu_confirmation.action == 'map':
                         self._mmu_map_draft = None
+                    if self._mmu_confirmation.action == 'endless':
+                        self._mmu_endless_draft = None
                     self._mmu_page, self._mmu_selection = 'status', 0
                     self.Draw_MMU_Menu()
                     return
