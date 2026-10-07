@@ -303,7 +303,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 
 One UI owner thread controls rendering, navigation and UART writes. GPIO callbacks enqueue input events. Moonraker WebSocket subscriptions supply merged immutable state; a serialized HTTP worker handles commands, while long bed-calibration operations use completion-tracked WebSocket RPC.
 
-Connection epochs reject stale input and queued commands. Failed printer commands are **not replayed automatically**. Reconnecting redraws the UI and rebuilds volatile caches. A timeout may mean the printer received a command but its response was lost; inspect actual state before retrying.
+Connection epochs reject stale input and queued commands. Failed printer commands are **not replayed automatically**. A response-based panel heartbeat detects LCD power cycles even when the Linux UART device remains open; reconnecting redraws the UI and restores volatile atlas/cache state from persistent Picture Flash without rewriting unchanged atlas data. A timeout may mean the printer received a command but its response was lost; inspect actual state before retrying.
 
 | Modules | Responsibility |
 |---|---|

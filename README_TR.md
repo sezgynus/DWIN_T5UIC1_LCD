@@ -303,6 +303,8 @@ sudo systemctl restart KlipperDWIN.service
 
 Tek UI sahibi thread; çizim, gezinme ve UART yazımlarını yönetir. GPIO callback’leri girdi olaylarını kuyruğa ekler. Moonraker WebSocket abonelikleri birleştirilmiş değiştirilemez durum sağlar; sıralı HTTP worker komutları işler, uzun tabla kalibrasyonları tamamlanması izlenen WebSocket RPC kullanır.
 
+Yanıt tabanlı panel heartbeat'i, Linux UART aygıtı açık kalmış olsa bile LCD güç çevrimini algılar. Yeniden bağlantıda ekran ve geçici atlas/cache durumu persistent Picture Flash'tan geri yüklenir; değişmemiş atlas verisi Flash'a yeniden yazılmaz.
+
 Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başarısız yazıcı komutları **otomatik tekrar gönderilmez**. Yeniden bağlantı arayüzü çizer ve geçici önbellekleri yeniden kurar. Zaman aşımı, komutun yazıcıya ulaşıp yanıtın kaybolduğu anlamına gelebilir; tekrarlamadan önce gerçek durumu inceleyin.
 
 | Modüller | Sorumluluk |

@@ -1735,7 +1735,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.pd.HMI_ValueStruct.Bed_Temp
         )
 
-# ---------------------Todo--------------------------------#
 
     def HMI_Motion(self):
         event = self.get_encoder_state()
