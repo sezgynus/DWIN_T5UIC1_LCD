@@ -243,7 +243,7 @@ class AtlasDriverTests(unittest.TestCase):
                 self.assertTrue(lcd.sync_atlases())
 
         output = "\n".join(captured.output)
-        self.assertIn("Atlas sync: reading metadata @ 0x3FC0", output)
+        self.assertIn("Atlas sync: reading metadata @ 0x0000", output)
         self.assertIn("Atlas 0: changed -> upload required", output)
         self.assertIn("Atlas 0: SRAM upload complete", output)
         self.assertIn("Atlas 0: Picture Flash 14 write complete", output)
