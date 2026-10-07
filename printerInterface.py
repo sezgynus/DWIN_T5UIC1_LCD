@@ -14,6 +14,7 @@ from moonraker_subscription import MoonrakerSubscription
 from probe_wizard import ProbeWizard
 from screws_tilt import ScrewsTiltSession
 from bed_mesh import BedMeshSession
+from mmu_control import MMUSession
 from preset_store import PresetStore
 from printer_state import PrinterState
 from printer_capabilities import PrinterCapabilities
@@ -195,6 +196,7 @@ class PrinterData:
         self.live_position = (0.0, 0.0, 0.0)
         self.dashboard_fan_pwm = 0
         self.mmu = None
+        self.mmu_session = MMUSession(self)
         self._spoolman_percentages = {}
         self._spoolman_futures = {}
         self._spoolman_refresh_at = {}

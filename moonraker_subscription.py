@@ -164,11 +164,11 @@ class MoonrakerSubscription:
             return self._response_serial, tuple(text for serial, text in self._response_history
                                                 if cursor is not None and serial > cursor)
 
-    def request(self, method, params=None):
+    def request(self, method, params=None, guard=None):
         """Nonblocking RPC; Future resolves on completion, never on dispatch."""
-        return self.notify(method, params, completion=True)
+        return self.notify(method, params, completion=True, guard=guard)
 
-    def notify(self, method, params=None, completion=False):
+    def notify(self, method, params=None, completion=False, guard=None):
         future = Future()
         with self._lock:
             if self._stop.is_set() or self._state != 'ready' or self._socket is None:
@@ -179,7 +179,7 @@ class MoonrakerSubscription:
             with self._lock:
                 self._completion_requests.add(future)
         try:
-            self._outbound.put_nowait((future, epoch, method, params or {}))
+            self._outbound.put_nowait((future, epoch, method, params or {}, guard))
         except Full:
             with self._lock:
                 self._completion_requests.discard(future)
@@ -196,7 +196,7 @@ class MoonrakerSubscription:
                 future.set_exception(MoonrakerError(message))
         while True:
             try:
-                future, _, _, _ = self._outbound.get_nowait()
+                future, _, _, _, _ = self._outbound.get_nowait()
             except Empty:
                 return
             if not future.done():
@@ -209,7 +209,7 @@ class MoonrakerSubscription:
                                       if not value.done()}
         while True:
             try:
-                future, epoch, method, params = self._outbound.get_nowait()
+                future, epoch, method, params, guard = self._outbound.get_nowait()
             except Empty:
                 return
             try:
@@ -219,6 +219,8 @@ class MoonrakerSubscription:
                     raise MoonrakerError('Printer connection changed before command dispatch')
                 if future.cancelled():
                     continue
+                if guard is not None and not guard():
+                    raise MoonrakerError('Printer state changed before command dispatch')
                 envelope = {'jsonrpc': '2.0', 'method': method, 'params': params}
                 with self._lock:
                     completion = future in self._completion_requests
