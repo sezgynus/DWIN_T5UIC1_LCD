@@ -149,11 +149,12 @@ class UARTReconnectTests(unittest.TestCase):
         result = self.display()
         lcd = driver()
         lcd._needs_update = False
-        result.HMI_Init = lambda: lcd.cache_jpeg(1)
+        result.HMI_Init = Mock()
         result.HMI_StartFrame = lambda update: lcd.clear(0)
         with patch.object(ui, 'T5UIC1Display', return_value=lcd):
             self.assertTrue(result._ensure_uart())
-        self.assertEqual([frame[1] for frame in lcd.serial.frames], [0x25, 1, 0x3D])
+        result.HMI_Init.assert_called_once_with()
+        self.assertEqual([frame[1] for frame in lcd.serial.frames], [1, 0x3D])
         self.assertFalse(lcd._needs_update)
 
 
