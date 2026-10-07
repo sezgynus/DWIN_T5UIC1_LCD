@@ -342,7 +342,10 @@ class DirectoryBrowserTests(unittest.TestCase):
         view.Draw_Menu_Line=Mock();view.lcd.reset_mock()
         view.Draw_SDItem(0,0)
         view.Draw_Menu_Line.assert_called_once_with(0,False,'inner')
-        self.assertEqual(view.lcd.draw_rectangle.call_count,2)
+        from lcd_atlas import ICON_FOLDER
+        view.lcd.draw_atlas_icon.assert_called_once_with(
+            ICON_FOLDER, 26, view.MBASE(0) - 7)
+        view.lcd.draw_rectangle.assert_not_called()
         view.Draw_SDItem(1,1)
         self.assertEqual(view.Draw_Menu_Line.call_args.args,(1,view.ICON_File,'A.gcode'))
 
