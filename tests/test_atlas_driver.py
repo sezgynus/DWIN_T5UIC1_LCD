@@ -32,6 +32,7 @@ def configured_driver(directory, data_a=JPEG_A, data_b=JPEG_B):
     )
     lcd._virtual_area_pictures = {}
     lcd._atlas_synced = True
+    lcd._atlas_virtual_areas_loaded = False
     return lcd, path_a, path_b
 
 
@@ -69,6 +70,19 @@ class AtlasDriverTests(unittest.TestCase):
             T5UIC1Display._build_atlas_config(
                 {0: ("a.jpg", 14)}, {1: (1, 0, 0, 1, 1)}
             )
+
+    def test_load_atlases_restores_volatile_areas_without_flash_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcd, _, _ = configured_driver(tmp)
+            lcd.write_flash = Mock()
+            lcd.store_sram_as_picture = Mock()
+            lcd.load_atlases()
+
+        self.assertEqual([frame[1] for frame in lcd.serial.frames], [0x22, 0x25])
+        self.assertEqual(lcd._virtual_area_pictures, {0: 14, 1: 15})
+        self.assertTrue(lcd._atlas_virtual_areas_loaded)
+        lcd.write_flash.assert_not_called()
+        lcd.store_sram_as_picture.assert_not_called()
 
     def test_draw_atlas_icon_resolves_area_and_source_rectangle(self):
         with tempfile.TemporaryDirectory() as tmp:

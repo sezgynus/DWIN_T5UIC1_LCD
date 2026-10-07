@@ -155,6 +155,7 @@ class T5UIC1Display:
         self._virtual_area_pictures = {}
         self._atlas_specs, self._atlas_icons = self._build_atlas_config()
         self._atlas_synced = False
+        self._atlas_virtual_areas_loaded = False
         self._atlas_sync_blocked = False
 
         try:
@@ -172,6 +173,8 @@ class T5UIC1Display:
             # blocked for this connection/process to protect Flash endurance.
             # Virtual areas are still populated lazily by draw_atlas_icon().
             self._startup_sync_atlases()
+            if self._atlas_synced:
+                self.load_atlases()
             self.update()
         except BaseException:
             self.close()
@@ -1108,23 +1111,30 @@ class T5UIC1Display:
             self.cache_jpeg(picture_id)
 
     def load_atlases(self):
-        """Populate every active virtual area from its reserved Picture slot.
+        """Restore volatile virtual areas from persistent Picture Flash.
 
-        Rendering paths are intentionally Flash-write free. Persistent atlas
-        synchronization happens at startup or through an explicit sync call.
+        This is safe on every panel reconnect: it issues only display/cache
+        load commands and never programs Picture Flash or Data Flash.
         """
         if not getattr(self, "_atlas_synced", False):
             raise T5UIC1ProtocolError(
                 "custom atlases are not synchronized; refusing render-time Flash sync"
             )
+        self._virtual_area_pictures.clear()
         for area in self._active_atlas_areas():
             self._load_atlas_area(area)
+        self._atlas_virtual_areas_loaded = True
 
     def _ensure_atlas_area(self, area):
         specs, _ = self._atlas_runtime_config()
         picture_id, _ = specs[area]
-        if self._virtual_area_pictures.get(area) != picture_id:
+        if (not getattr(self, "_atlas_virtual_areas_loaded", False) or
+                self._virtual_area_pictures.get(area) != picture_id):
             self._load_atlas_area(area)
+            self._atlas_virtual_areas_loaded = all(
+                self._virtual_area_pictures.get(active_area) == specs[active_area][0]
+                for active_area in self._active_atlas_areas()
+            )
 
     def draw_atlas_icon(self, icon_id, x, y):
         """Draw one custom icon by ID without exposing atlas layout to the UI."""
