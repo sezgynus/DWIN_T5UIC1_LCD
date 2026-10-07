@@ -356,6 +356,8 @@ Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başa
 
 Hareket ve kalibrasyon komutları gönderilirken canlı baskı, home ve oturum durumu yeniden kontrol edilir; eski jog konumu reddedilir. Hareket hatasından sonra MOVE=0 temizliğinin çalışabilmesi için jog geri yükleme ayrı bağlantı kontrolü kullanır.
 
+SAVE_CONFIG gönderiminde onaylanan pending ayarların tam kümesi ve değerleri yeniden doğrulanır; mesh kaydında ölçülen current/profile verisi de kontrol edilir. Diğer istemcilerden gözlenen değişiklikler kaydı geçersiz kılar. Bu istemci kontrolü tüm Moonraker istemcilerini kapsayan atomik kilit değildir.
+
 ### Regresyon testleri
 
 ```bash

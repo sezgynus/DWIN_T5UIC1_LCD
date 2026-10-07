@@ -162,7 +162,7 @@ class MeshTests(unittest.TestCase):
                 self.assertEqual(session.phase,'error')
                 self.assertNotIn({'script':'SAVE_CONFIG'}, [c.args[1] for c in p.subscription.request.call_args_list])
             else:
-                p.subscription.request.assert_called_with('printer.gcode.script', {'script':'SAVE_CONFIG'})
+                p.subscription.request.assert_called_with('printer.gcode.script', {'script':'SAVE_CONFIG'}, guard=ANY)
                 p.connection_error = 'restarting';session.update()
                 self.assertEqual(session.phase,'interrupted')
                 self.assertIn('check after restart',session.message)

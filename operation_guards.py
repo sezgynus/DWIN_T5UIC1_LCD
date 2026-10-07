@@ -41,3 +41,20 @@ def motion_dispatch_guard(printer, owner='', manual_active=False, position=False
     if not guard():
         raise ValueError('Motion state changed; check printer')
     return guard
+
+
+def config_save_guard(printer, config, owner, verify=None):
+    """Bind SAVE_CONFIG to the exact pending values approved by the user."""
+    expected = freeze((config.get('save_config_pending'), config.get('save_config_pending_items')))
+    motion = motion_dispatch_guard(printer, owner=owner)
+
+    def guard():
+        try:
+            status = printer.subscription.snapshot()['status']
+            current = status['configfile']
+            return (motion() and current.get('save_config_pending') is True
+                    and freeze((current.get('save_config_pending'), current.get('save_config_pending_items'))) == expected
+                    and (verify is None or verify(status)))
+        except (KeyError, TypeError, ValueError):
+            return False
+    return guard

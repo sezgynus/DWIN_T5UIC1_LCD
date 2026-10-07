@@ -356,6 +356,8 @@ Connection epochs reject stale input and queued commands. Failed printer command
 
 Motion and calibration commands recheck live print, homing and session state when dispatched; stale jog positions are rejected. Jog cleanup uses a separate connection guard so MOVE=0 restoration remains available after a movement failure.
 
+SAVE_CONFIG dispatch rechecks the exact approved pending settings; mesh saves also recheck the measured current/profile data. Changes observed from other clients invalidate the save. This client-side guard is not an atomic lock across all Moonraker clients.
+
 ### Regression tests
 
 ```bash
