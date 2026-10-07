@@ -1893,86 +1893,113 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     # --------------------------------------------------------------#
 
     def Draw_Status_Area(self, with_update):
-        # Compact dashboard: temperatures / speed / fan, bed / flow / Z offset,
-        # then interpolated live X/Y/Z positions.
-        self.lcd.draw_rectangle(
-            1, self.lcd.Color_Bg_Black, 0, self.STATUS_Y,
-            self.lcd.DWIN_WIDTH, self.lcd.DWIN_HEIGHT - 1)
+        # Dashboard rendering is state-aware.  A full render establishes the
+        # static icons/separators; subsequent ticks only redraw fields whose
+        # displayed value changed.
+        epoch = getattr(self, '_uart_epoch', 0)
+        cache = getattr(self, '_status_render_cache', None)
+        full = cache is None or getattr(self, '_status_render_epoch', None) != epoch
+        if full:
+            cache = {}
+            self._status_render_cache = cache
+            self._status_render_epoch = epoch
+            self.lcd.draw_rectangle(
+                1, self.lcd.Color_Bg_Black, 0, self.STATUS_Y,
+                self.lcd.DWIN_WIDTH, self.lcd.DWIN_HEIGHT - 1)
 
         y1, y2, y3 = 382, 416, 458
-        # Temperature fields need enough width for "actual/target". Keep them
-        # in a wider left column and compact the two telemetry columns.
         x1, x2, x3 = 6, 116, 202
         value1, value2, value3 = 26, 137, 223
 
-        if self.pd.HAS_HOTEND:
-            self.lcd.show_icon(self.ICON, self.ICON_HotendTemp, x1, y1 - 1)
-            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
-                self.lcd.Color_White, self.lcd.Color_Bg_Black, 3, value1, y1,
-                self.pd.thermalManager['temp_hotend'][0]['celsius'])
-            self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_STAT,
-                self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                value1 + 3 * self.STAT_CHR_W, y1, "/")
-            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
-                self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
-                value1 + 4 * self.STAT_CHR_W, y1,
-                self.pd.thermalManager['temp_hotend'][0]['target'])
+        def changed(name, value):
+            if full or cache.get(name) != value:
+                cache[name] = value
+                return True
+            return False
 
-        # Match the established dashboard behavior: alternate speed override
-        # and instantaneous Klipper toolhead velocity in the same field.
+        if self.pd.HAS_HOTEND:
+            if full:
+                self.lcd.show_icon(self.ICON, self.ICON_HotendTemp, x1, y1 - 1)
+                self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_STAT,
+                    self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                    value1 + 3 * self.STAT_CHR_W, y1, "/")
+            hotend_actual = self.pd.thermalManager['temp_hotend'][0]['celsius']
+            hotend_target = self.pd.thermalManager['temp_hotend'][0]['target']
+            if changed('hotend_actual', hotend_actual):
+                self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
+                    self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
+                    value1, y1, hotend_actual)
+            if changed('hotend_target', hotend_target):
+                self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
+                    self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
+                    value1 + 4 * self.STAT_CHR_W, y1, hotend_target)
+
         phase = int(time.monotonic() / 2.0) & 1
-        self.lcd.show_icon(self.ICON, self.ICON_Speed, x2, y1 - 1)
-        if phase:
-            speed_text = '{:.0f}%'.format(self.pd.feedrate_percentage)
-        else:
-            speed_text = '{:.0f}mm/s'.format(abs(self.pd.live_velocity))
-        self.lcd.draw_text(False, True, self.lcd.DWIN_FONT_STAT,
-            self.lcd.Color_White, self.lcd.Color_Bg_Black, value2, y1, speed_text)
+        if full:
+            self.lcd.show_icon(self.ICON, self.ICON_Speed, x2, y1 - 1)
+        speed_text = ('{:.0f}%'.format(self.pd.feedrate_percentage) if phase
+                      else '{:.0f}mm/s'.format(abs(self.pd.live_velocity)))
+        if changed('speed', (phase, speed_text)):
+            self.lcd.draw_text(False, True, self.lcd.DWIN_FONT_STAT,
+                self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                value2, y1, speed_text)
 
         if self.pd.HAS_FAN:
-            self.lcd.show_icon(self.ICON, self.ICON_FanSpeed, x3, y1 - 1)
-            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
-                self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
-                value3, y1, self.pd.dashboard_fan_pwm)
+            if full:
+                self.lcd.show_icon(self.ICON, self.ICON_FanSpeed, x3, y1 - 1)
+            fan_pwm = self.pd.dashboard_fan_pwm
+            if changed('fan_pwm', fan_pwm):
+                self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
+                    self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
+                    value3, y1, fan_pwm)
 
         if self.pd.HAS_HEATED_BED:
-            self.lcd.show_icon(self.ICON, self.ICON_BedTemp, x1, y2 - 1)
-            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
-                self.lcd.Color_White, self.lcd.Color_Bg_Black, 3, value1, y2,
-                self.pd.thermalManager['temp_bed']['celsius'])
-            self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_STAT,
-                self.lcd.Color_White, self.lcd.Color_Bg_Black,
-                value1 + 3 * self.STAT_CHR_W, y2, "/")
-            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
-                self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
-                value1 + 4 * self.STAT_CHR_W, y2,
-                self.pd.thermalManager['temp_bed']['target'])
+            if full:
+                self.lcd.show_icon(self.ICON, self.ICON_BedTemp, x1, y2 - 1)
+                self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_STAT,
+                    self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                    value1 + 3 * self.STAT_CHR_W, y2, "/")
+            bed_actual = self.pd.thermalManager['temp_bed']['celsius']
+            bed_target = self.pd.thermalManager['temp_bed']['target']
+            if changed('bed_actual', bed_actual):
+                self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
+                    self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
+                    value1, y2, bed_actual)
+            if changed('bed_target', bed_target):
+                self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
+                    self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
+                    value1 + 4 * self.STAT_CHR_W, y2, bed_target)
 
-        # The extrusion field alternates between M221 flow override and
-        # instantaneous volumetric flow so both fit without sacrificing XYZ.
-        self.lcd.show_icon(self.ICON, self.ICON_StepE, x2, y2 - 1)
-        if phase:
-            flow_text = '{:.0f}%'.format(self.pd.flow_percentage)
-        else:
-            flow_text = '{:.1f}mm3/s'.format(self.pd.volumetric_flow)
-        self.lcd.draw_text(False, True, self.lcd.DWIN_FONT_STAT,
-            self.lcd.Color_White, self.lcd.Color_Bg_Black, value2, y2, flow_text)
+        if full:
+            self.lcd.show_icon(self.ICON, self.ICON_StepE, x2, y2 - 1)
+        flow_text = ('{:.0f}%'.format(self.pd.flow_percentage) if phase
+                     else '{:.1f}mm3/s'.format(self.pd.volumetric_flow))
+        if changed('flow', (phase, flow_text)):
+            self.lcd.draw_text(False, True, self.lcd.DWIN_FONT_STAT,
+                self.lcd.Color_White, self.lcd.Color_Bg_Black,
+                value2, y2, flow_text)
 
         if self.pd.HAS_ZOFFSET_ITEM:
-            self.lcd.show_icon(self.ICON, self.ICON_Zoffset, x3, y2 - 1)
-            self.lcd.draw_signed_scaled_float_text(
-                self.lcd.DWIN_FONT_STAT, self.lcd.Color_Bg_Black,
-                2, 2, value3, y2, self.pd.BABY_Z_VAR * 100)
+            if full:
+                self.lcd.show_icon(self.ICON, self.ICON_Zoffset, x3, y2 - 1)
+            zoffset = self.pd.BABY_Z_VAR
+            if changed('zoffset', zoffset):
+                self.lcd.draw_signed_scaled_float_text(
+                    self.lcd.DWIN_FONT_STAT, self.lcd.Color_Bg_Black,
+                    2, 2, value3, y2, zoffset * 100)
 
         positions = self.pd.live_position
-        for icon, xpos, value_x, position in (
-                (self.ICON_MaxSpeedX, x1, value1, positions[0]),
-                (self.ICON_MaxSpeedY, x2, value2, positions[1]),
-                (self.ICON_MaxSpeedZ, x3, value3, positions[2])):
-            self.lcd.show_icon(self.ICON, icon, xpos, y3 - 3)
-            self.lcd.draw_signed_scaled_float_text(
-                self.lcd.DWIN_FONT_STAT, self.lcd.Color_Bg_Black,
-                3, 1, value_x, y3, position * 10)
+        for axis, icon, xpos, value_x, position in (
+                ('x', self.ICON_MaxSpeedX, x1, value1, positions[0]),
+                ('y', self.ICON_MaxSpeedY, x2, value2, positions[1]),
+                ('z', self.ICON_MaxSpeedZ, x3, value3, positions[2])):
+            if full:
+                self.lcd.show_icon(self.ICON, icon, xpos, y3 - 3)
+            if changed('position_' + axis, position):
+                self.lcd.draw_signed_scaled_float_text(
+                    self.lcd.DWIN_FONT_STAT, self.lcd.Color_Bg_Black,
+                    3, 1, value_x, y3, position * 10)
+
 
     def _draw_power_icon(self, selected=False, clear=False):
         if clear:

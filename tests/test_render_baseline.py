@@ -42,6 +42,31 @@ class RenderBaselineTests(unittest.TestCase):
         self.assertIn((0x05, 1), metrics.opcodes)
         self.assertEqual(metrics.refreshes, 1)
 
+    def test_status_dashboard_unchanged_emits_nothing(self):
+        screen = self.screen()
+        with patch.object(ui.time, 'monotonic', return_value=0):
+            screen.Draw_Status_Area(True)
+            screen.lcd.update()
+            metrics = RenderMetrics.measure(
+                screen.lcd,
+                lambda: (screen.Draw_Status_Area(True), screen.lcd.update()))
+        self.assertEqual(metrics.packets, 0)
+        self.assertEqual(metrics.bytes, 0)
+        self.assertEqual(metrics.refreshes, 0)
+
+    def test_status_dashboard_single_temperature_change_is_incremental(self):
+        screen = self.screen()
+        with patch.object(ui.time, 'monotonic', return_value=0):
+            screen.Draw_Status_Area(True)
+            screen.lcd.update()
+            screen.pd.thermalManager['temp_hotend'][0]['celsius'] += 1
+            metrics = RenderMetrics.measure(
+                screen.lcd,
+                lambda: (screen.Draw_Status_Area(True), screen.lcd.update()))
+        self.assertEqual(metrics.packets, 2)
+        self.assertEqual(metrics.refreshes, 1)
+        self.assertEqual(dict(metrics.opcodes), {0x11: 1, 0x3D: 1})
+
     def test_print_progress_periodic_redraw(self):
         screen = self.screen()
         metrics = self.measure(
