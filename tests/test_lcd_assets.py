@@ -15,25 +15,22 @@ class AssetContracts(unittest.TestCase):
                      if isinstance(n, ast.Assign) and len(n.targets) == 1
                      and isinstance(n.targets[0], ast.Name) and isinstance(n.value, ast.Constant)}
         self.assertEqual(constants['ICON'], manifest['library'])
-        self.assertEqual(constants['Language_English'], manifest['english_jpg'])
+        # The legacy English JPEG cache is intentionally not a UI constant:
+        # virtual display areas are reserved for managed custom atlases.
+        self.assertNotIn('Language_English', constants)
         for name, entry in manifest['icons'].items():
             self.assertEqual(constants[name], entry['id'], name)
             self.assertGreater(entry['width'], 0)
             self.assertGreater(entry['height'], 0)
 
-    def test_source_copy_regions_remain_within_verified_sheet(self):
-        tree = ast.parse((ROOT / 'dwinlcd.py').read_text())
-        checked = 0
+    def test_legacy_virtual_area_cache_is_not_used_by_ui(self):
+        source = (ROOT / 'dwinlcd.py').read_text()
+        tree = ast.parse(source)
+        forbidden = {'cache_jpeg', 'show_jpeg', 'copy_cache', 'copy_cache1'}
+        calls = []
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-                continue
-            if node.func.attr not in ('copy_cache', 'copy_cache'):
-                continue
-            try:
-                cache, x1, y1, x2, y2 = [ast.literal_eval(arg) for arg in node.args[:5]]
-            except (ValueError, TypeError):
-                continue
-            self.assertEqual(cache, 1)
-            self.assertTrue(0 <= x1 <= x2 < 272 and 0 <= y1 <= y2 < 480, node.lineno)
-            checked += 1
-        self.assertGreater(checked, 0)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr in forbidden:
+                    calls.append((node.func.attr, node.lineno))
+        self.assertEqual(calls, [])
+
