@@ -36,7 +36,7 @@ The application targets the 4.3-inch panel and asset layout used by the Ender 3 
 | Use integrations | Editable Mainsail temperature presets, Happy Hare gate visualization, Spoolman percentages and M355 case light |
 | Inspect the system | Scrollable host, software and MCU information; encoder power-on |
 
-Menus adapt to detected printer capabilities. The **MMU menu is a placeholder containing only Back**; the Home-screen Happy Hare visualization is functional. Remaining limitations are listed [below](#scope-and-limitations).
+Menus adapt to detected printer capabilities. The **MMU menu provides full-screen Happy Hare control, live status and recovery**; its Home-screen gate visualization keeps the existing layout. Remaining limitations are listed [below](#scope-and-limitations).
 
 ## Installation
 
@@ -109,7 +109,7 @@ Home has four icons per page. Continuing to rotate moves to the next or previous
 | Prepare | Move, Disable steppers, Home, Runtime Z offset, Screws Tilt Adjust, preheat and cooldown |
 | Control | Temperature, Motion, Probe calibration, jog recovery, Case Light and Info |
 | Leveling | Bed Mesh: Bed Mesh Calibrate and Mesh Viewer |
-| MMU | Back-only placeholder |
+| MMU | Full-screen gates, filament operations, bypass, live status and recovery |
 | Info | Scrollable system information |
 
 With bed mesh, the first page is **Print / Prepare / Control / Leveling** and the second **MMU / Info**. Without bed mesh, MMU takes the fourth slot and Info is on the next page. Optional menu entries appear only when supported.
@@ -213,9 +213,30 @@ Viewer selection **does not load a profile or change the active mesh**. The map 
 
 ### Happy Hare and Spoolman
 
-When Happy Hare objects are present, Home’s logo area becomes a live gate panel. It uses `mmu` for gate/material/color/spool state, `mmu_machine` for the unit name and **`unit0_mmu_exit_leds`** for exit-LED colors. Dim colors are normalized for readability; fully off LEDs stay black and lane numbers use contrasting black/white text.
+When Happy Hare objects are present, Home’s logo area becomes a live gate panel. It uses `mmu` for gate/material/color/spool state, `mmu_machine` for the unit name and **`unitN_mmu_exit_leds`** for exit-LED colors. Dim colors are normalized for readability; fully off LEDs stay black and lane numbers use contrasting black/white text.
 
-Spoolman percentages come from each gate’s `gate_spool_id` through Moonraker’s Spoolman proxy, rather than a single active spool. Missing Spoolman data does not disable the other gate information. The separate MMU menu remains Back-only.
+Spoolman percentages come from each gate’s `gate_spool_id` through Moonraker’s Spoolman proxy, rather than a single active spool. Missing Spoolman data does not disable the other gate information. Select **Home → MMU** to open the dedicated full-screen interface. The general motion dashboard is hidden on MMU pages and restored when returning Home.
+
+**Rotate to move focus; press to open or accept.** The upper-left Back arrow is selectable. Long press retains the configured printer-power behavior. Gate browsing and opening details never move filament.
+
+| MMU page | Available behavior |
+|---|---|
+| Home | Up to four spools on the active gate page, selected tool/gate, filament path, nozzle temperature and six menu entries |
+| Gates / gate details | Scrollable physical-gate list; Select only, Load selected, mapped Load/change, Unload, Eject spool, Preload and Check |
+| Filament | Read-only name, material, spool ID, remaining percentage, recommended temperature and Spoolman mode |
+| Tool map | Read-only tool-to-gate map; rotate to scroll longer maps |
+| Bypass | Unload the current MMU gate, select bypass, then use extruder-only load/unload |
+| Manage / Recover | Automatic filament-state recovery, a draft manual tool/gate/loaded-state editor, separate unlock/reheat and Resume print |
+| Status | Actual action and Bowden-stage progress when available, distinct sensor states, gear sync, nozzle temperature and operation result |
+
+The LCD shows **G1 for Happy Hare `GATE=0`**; tools retain T0-based numbering. A spool mapped to several tools shows `T*`. Load selected uses the current available gate; Load/change chooses an associated logical tool and follows Happy Hare's mapping. Unload parks filament in the MMU; Eject spool explicitly requests removal, including unloading the active gate first when necessary.
+
+Every operation opens a target-specific confirmation with **Cancel initially selected**. State is checked again before dispatch. Missing, disabled, stale or busy MMU state locks operations. Routine movement is disabled during printing and pauses; recovery has its own guards. A running operation remains inside the MMU interface and blocks LCD calibration starts. Commands use completion-tracked WebSocket RPC followed by an actual-state query; a dispatch acknowledgment is never shown as physical completion. Failed or unconfirmed operations require acknowledgment and are never automatically replayed.
+
+An MMU error pause with a reported reason opens Recover directly. Fix the physical problem, recover or report the actual state, unlock/reheat if needed, then choose Resume separately. Manual Apply reports state without loading/unloading filament; it may also correct the tool-to-gate assignment. Resume requires a paused print, unlocked MMU and loaded filament. Sensor `CLEAR`, `TRIGGERED`, `UNKNOWN/OFF` and `ABSENT` are distinct; Bowden percentage describes that stage rather than the whole tool change.
+
+This is the first control implementation based on the [MMU design](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo). Mapping edits, EndlessSpool, spool-ID assignment and hardware-specific maintenance/options remain outside this implementation. Use the web UI for those functions and calibration. Actual command behavior depends on the installed Happy Hare version and configuration; incomplete telemetry leaves the corresponding action locked.
+
 
 ### Case Light
 
@@ -287,7 +308,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 ## Scope and limitations
 
 - The UI targets compatible 272×480 DWIN T5UIC1 assets; other display families require separate validation.
-- MMU control operations are not implemented. Dynamic multi-unit/LED-source discovery remains planned; Home uses `unit0_mmu_exit_leds`.
+- MMU tool-map editing, EndlessSpool, spool-ID assignment, hardware-specific maintenance/options and a dedicated multi-unit selector are not implemented. Gates use global Happy Hare indices; the existing Home gate/LED layout is unchanged.
 - Preview shows up to four used tools; per-tool lengths, brand names and physical lane mapping are not displayed.
 - SRAM cache is volatile and limited to 32 KiB; it is rebuilt after reconnect/restart.
 - Screws Tilt requires four distinct corners and uses a fixed 0.05 mm peak-to-peak success threshold.

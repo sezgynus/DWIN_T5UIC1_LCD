@@ -85,7 +85,8 @@ class BedMeshSession:
         if motion and (not p.capabilities.probe or p.jog_recovery_required
                 or p.status in ('printing', 'paused', 'pausing')
                 or p.state.status.get('manual_probe', {}).get('is_active')
-                or p.screws_tilt.pending or p.probe_wizard.pending):
+                or p.screws_tilt.pending or p.probe_wizard.pending
+                or getattr(getattr(p, 'mmu_session', None), 'pending', None)):
             raise ValueError('Calibration unavailable; check printer')
 
     def _submit(self, phase, method, params, message):

@@ -151,6 +151,10 @@ class MMUViewMixin:
             self._mmu_page, self._mmu_selection = self._mmu_history.pop()
             self._mmu_notice = ''
             self.Draw_MMU_Menu()
+        elif self.pd.mmu_session.pending is not None:
+            self._mmu_page, self._mmu_selection = 'status', 0
+            self._mmu_notice = 'Wait for MMU operation'
+            self.Draw_MMU_Menu()
         else:
             self._mmu_canvas_page = None
             self.Goto_MainMenu()
@@ -327,10 +331,12 @@ class MMUViewMixin:
             self.lcd.Draw_Rectangle(1, 0x1105, 0, 0, 271, 29)
             self._mmu_canvas_page, self._mmu_render = page, {}
         if page == 'manual' and not hasattr(self, '_mmu_manual'):
+            self._mmu_manual_base = m.fingerprint if m else None
             self._mmu_manual = {'tool': m.tool if m and m.tool is not None and m.tool >= 0 else 0,
                                 'gate': m.gate if m and m.gate is not None and m.gate >= 0 else 0,
                                 'loaded': bool(m and m.filament == 'loaded')}
         items = self._mmu_items(m)
+        self._mmu_drawn_keys = tuple(item[0] for item in items)
         self._mmu_selection = min(self._mmu_selection, len(items))
         self._mmu_text('back', '<', 8, 5, 2, bg=0x33BD if self._mmu_selection == 0 else 0x1105)
         title = self.MMU_TITLES[page]
@@ -372,7 +378,7 @@ class MMUViewMixin:
                         ('Remaining', self._mmu_percent(gate)), ('Temperature', '%s C' % m.temperatures[gate] if m.temperatures[gate] is not None else '--'),
                         ('Spoolman', m.spoolman_support))):
                     self._mmu_text('meta%d' % i, label + ': ' + str(value or '--'), 12, 70 + 42 * i)
-                self._mmu_text('readonly', 'Metadata read-only in this stage', 12, 358, 40, small=True)
+                self._mmu_text('readonly', 'Read-only; edit in web UI', 12, 358, 40, small=True)
             first_y = None
         elif page == 'map':
             if m:
@@ -380,7 +386,7 @@ class MMUViewMixin:
                 start = min(start, max(0, m.num_gates - 8))
                 for i, tool in enumerate(range(start, min(m.num_gates, start + 8))):
                     self._mmu_text('map%d' % i, 'T%d > %s' % (tool, self._mmu_gate_label(m.ttg_map[tool])), 12, 70 + 37 * i)
-                self._mmu_text('readonly', 'Mapping editor: next stage', 12, 398, 40, small=True)
+                self._mmu_text('readonly', 'Read-only; edit in web UI', 12, 398, 40, small=True)
                 self._mmu_text('maphint', 'Turn: scroll   Press Back: return', 12, 421, 40, small=True)
             first_y = None
         elif page == 'status':
@@ -415,7 +421,8 @@ class MMUViewMixin:
         elif page == 'confirm':
             op = self._mmu_confirmation
             self._mmu_text('target', op.label, 12, 82)
-            self._mmu_text('details', op.script, 12, 120, 40, small=True)
+            summary = 'Physical state: ' + (m.filament.upper() if m else 'UNKNOWN')
+            self._mmu_text('details', summary, 12, 120, 40, small=True)
             self._mmu_text('valid', 'Target changed; cancel and retry' if not self._mmu_confirmation_valid() else 'Check target before confirming', 12, 170, 40, small=True, color=0xFD20)
             message = {'unload': 'Filament returns to MMU.', 'eject': 'Spool removed from MMU.',
                        'manual': 'Reports state; does not move.', 'resume': 'Print motion will resume.'}.get(op.action, 'This may move filament/motors.')
@@ -465,6 +472,11 @@ class MMUViewMixin:
             self.Draw_MMU_Menu()
             return
         items = self._mmu_items(m)
+        if event == self.ENCODER_DIFF_ENTER and tuple(item[0] for item in items) != self._mmu_drawn_keys:
+            self._mmu_notice = 'Menu changed; select again'
+            self.Draw_MMU_Menu()
+            return
+        self._mmu_selection = min(self._mmu_selection, len(items))
         if event == self.ENCODER_DIFF_CW:
             self._mmu_selection = min(len(items), self._mmu_selection + 1)
         elif event == self.ENCODER_DIFF_CCW:
@@ -478,6 +490,7 @@ class MMUViewMixin:
                 self._mmu_notice = 'Unavailable in current state'
             elif key[0] == 'page':
                 if key[1] == 'manual':
+                    self._mmu_manual_base = m.fingerprint if m else None
                     self._mmu_manual = {'tool': m.tool if m and m.tool is not None and m.tool >= 0 else 0,
                                         'gate': m.gate if m and m.gate is not None and m.gate >= 0 else 0,
                                         'loaded': bool(m and m.filament == 'loaded')}
@@ -490,6 +503,8 @@ class MMUViewMixin:
                 return
             elif key[0] in ('action', 'apply'):
                 try:
+                    if key[0] == 'apply' and (m is None or m.fingerprint != self._mmu_manual_base):
+                        raise ValueError('MMU changed; reopen editor')
                     self._mmu_confirmation = (self.pd.mmu_session.prepare(key[1], gate=key[2])
                         if key[0] == 'action' else self.pd.mmu_session.prepare('manual', **self._mmu_manual))
                 except ValueError as error:

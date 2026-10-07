@@ -36,7 +36,7 @@ Uygulama, Ender 3 V2’de kullanılan 4,3 inç paneli ve görsel kaynak düzenin
 | Entegrasyonlar | Düzenlenebilir Mainsail sıcaklık presetleri, Happy Hare kanal görünümü, Spoolman yüzdeleri ve M355 kabin ışığı |
 | Sistem bilgileri | Kaydırılabilir host, yazılım ve MCU bilgileri; encoder ile güç açma |
 
-Menüler algılanan yazıcı yeteneklerine göre şekillenir. **MMU menüsü yalnızca Back içeren bir yer tutucudur**; ana ekrandaki Happy Hare görünümü çalışır. Diğer sınırlar [aşağıda](#kapsam-ve-sınırlar) listelenmiştir.
+Menüler algılanan yazıcı yeteneklerine göre şekillenir. **MMU menüsü tam ekran Happy Hare kontrolü, canlı durum ve kurtarma sunar**; ana ekrandaki kanal görünümünün mevcut yerleşimi korunur. Diğer sınırlar [aşağıda](#kapsam-ve-sınırlar) listelenmiştir.
 
 ## Kurulum
 
@@ -109,7 +109,7 @@ Ana ekranda sayfa başına dört ikon bulunur. Çevirmeye devam etmek sonraki ve
 | Prepare | Move, Disable steppers, Home, Runtime Z offset, Screws Tilt Adjust, ön ısıtma ve soğutma |
 | Control | Temperature, Motion, Probe calibration, jog kurtarma, Case Light ve Info |
 | Leveling | Bed Mesh: Bed Mesh Calibrate ve Mesh Viewer |
-| MMU | Yalnızca Back içeren yer tutucu |
+| MMU | Tam ekran kanallar, filament işlemleri, bypass, canlı durum ve kurtarma |
 | Info | Kaydırılabilir sistem bilgileri |
 
 Bed mesh mevcutsa ilk sayfa **Print / Prepare / Control / Leveling**, ikinci sayfa **MMU / Info** olur. Bed mesh yoksa MMU dördüncü alanı alır, Info sonraki sayfada yer alır. İsteğe bağlı menü girişleri yalnızca destekleniyorsa görünür.
@@ -213,9 +213,30 @@ Viewer seçimi **profil yüklemez ve aktif mesh’i değiştirmez**. Haritada d�
 
 ### Happy Hare ve Spoolman
 
-Happy Hare nesneleri mevcutsa ana ekranın logo alanı canlı kanal paneline dönüşür. Kanal/malzeme/renk/makara durumu için `mmu`, ünite adı için `mmu_machine`, çıkış LED renkleri için **`unit0_mmu_exit_leds`** kullanılır. Düşük parlaklıktaki renkler okunabilirlik için normalize edilir; tamamen kapalı LED’ler siyah kalır ve kanal numaraları kontrastlı siyah/beyaz metin kullanır.
+Happy Hare nesneleri mevcutsa ana ekranın logo alanı canlı kanal paneline dönüşür. Kanal/malzeme/renk/makara durumu için `mmu`, ünite adı için `mmu_machine`, çıkış LED renkleri için **`unitN_mmu_exit_leds`** kullanılır. Düşük parlaklıktaki renkler okunabilirlik için normalize edilir; tamamen kapalı LED’ler siyah kalır ve kanal numaraları kontrastlı siyah/beyaz metin kullanır.
 
-Spoolman yüzdeleri tek bir aktif makaradan değil, Moonraker Spoolman proxy’si üzerinden her kanalın `gate_spool_id` değerinden alınır. Spoolman verisinin eksikliği diğer kanal bilgilerini devre dışı bırakmaz. Ayrı MMU menüsü yalnızca Back içerir.
+Spoolman yüzdeleri tek bir aktif makaradan değil, Moonraker Spoolman proxy’si üzerinden her kanalın `gate_spool_id` değerinden alınır. Spoolman verisinin eksikliği diğer kanal bilgilerini devre dışı bırakmaz. **Ana ekran → MMU** ile ayrı tam ekran arayüzü açın. Genel hareket paneli MMU sayfalarında gizlenir; ana ekrana dönünce geri çizilir.
+
+**Çevirerek odağı değiştirin; basarak açın veya kabul edin.** Sol üstteki Back oku seçilebilir. Uzun basış yapılandırılmış yazıcı güç davranışını korur. Kanallarda gezinmek ve detay açmak filament hareketi yaptırmaz.
+
+| MMU sayfası | Kullanılabilir davranış |
+|---|---|
+| Home | Aktif kanalın sayfasında en fazla dört makara, seçili takım/kanal, filament yolu, nozzle sıcaklığı ve altı menü girişi |
+| Gates / kanal detayları | Kaydırılabilir fiziksel kanal listesi; Select only, Load selected, eşlemeli Load/change, Unload, Eject spool, Preload ve Check |
+| Filament | Salt okunur isim, malzeme, makara kimliği, kalan yüzde, önerilen sıcaklık ve Spoolman modu |
+| Tool map | Salt okunur takım–kanal eşlemesi; uzun eşlemelerde encoder ile kaydırma |
+| Bypass | Mevcut MMU kanalını boşaltma, bypass seçimi ve ardından yalnız ekstrüder yükleme/boşaltma |
+| Manage / Recover | Otomatik filament durumu kurtarma, taslak takım/kanal/yüklü durum editörü, ayrı kilit açma/ısıtma ve Resume print |
+| Status | Gerçek işlem ve varsa Bowden aşama yüzdesi, ayrıştırılmış sensör durumları, gear sync, nozzle sıcaklığı ve işlem sonucu |
+
+Ekrandaki **G1, Happy Hare tarafında `GATE=0`** anlamına gelir; takım numaraları T0'dan başlar. Birden fazla takıma eşlenen makara `T*` gösterir. Load selected mevcut dolu kanalı kullanır; Load/change ilişkili mantıksal takımı seçerek Happy Hare eşlemesini izler. Unload filamenti MMU'da park eder; Eject spool gerçek çıkarmayı açıkça ister ve gerektiğinde aktif kanalı önce boşaltır.
+
+Her işlem hedefini belirten bir onay açar; **ilk odak Cancel üzerindedir**. Gönderim öncesinde durum yeniden kontrol edilir. Eksik, devre dışı, eski veya meşgul MMU verisi işlemleri kilitler. Baskı ve duraklama sırasında normal hareketler kapanır; kurtarmanın ayrı koşulları vardır. Devam eden işlem MMU arayüzü içinde kalır ve LCD'den kalibrasyon başlatılmasını engeller. Komutlar tamamlanması izlenen WebSocket RPC üzerinden gönderilir; ardından gerçek durum sorgulanır. Gönderim onayı fiziksel tamamlanma olarak gösterilmez. Başarısız veya doğrulanamayan sonuçlar kullanıcı onayıyla kapatılır; komutlar otomatik tekrarlanmaz.
+
+Nedeni bildirilen bir MMU hata duraklaması Recover sayfasını doğrudan açar. Fiziksel sorunu düzeltin, otomatik kurtarma veya gerçek durumu bildirme işlemini yapın, gerekiyorsa kilidi açıp ısıtın ve Resume'u ayrıca seçin. Manuel Apply filament yükleyip boşaltmadan durumu bildirir; takım–kanal atamasını da düzeltebilir. Resume için baskının duraklamış, MMU'nun kilitsiz ve filamentin yüklü olması gerekir. Sensörlerde `CLEAR`, `TRIGGERED`, `UNKNOWN/OFF` ve `ABSENT` ayrı gösterilir; Bowden yüzdesi tüm takım değişimini değil ilgili aşamayı anlatır.
+
+Bu, [MMU tasarımını](https://github.com/sezgynus/KlipperDWIN/tree/docs/mmu-menu-demo/docs/mmu-menu-demo) esas alan ilk kontrol uygulamasıdır. Eşleme düzenleme, EndlessSpool, makara kimliği atama ve donanıma özel bakım/seçenekler bu uygulamada yoktur. Bunlar ve kalibrasyon için web arayüzünü kullanın. Gerçek komut davranışı kurulu Happy Hare sürümüne ve yapılandırmasına bağlıdır; eksik telemetri ilgili işlemi kilitli bırakır.
+
 
 ### Case Light
 
@@ -287,7 +308,7 @@ sudo systemctl restart KlipperDWIN.service
 ## Kapsam ve sınırlar
 
 - Arayüz uyumlu 272×480 DWIN T5UIC1 kaynaklarını hedefler; diğer ekran aileleri ayrıca doğrulanmalıdır.
-- MMU kontrol işlemleri uygulanmadı. Dinamik çoklu ünite/LED kaynağı algılama planlanıyor; ana ekran `unit0_mmu_exit_leds` kullanır.
+- MMU takım eşleme düzenleme, EndlessSpool, makara kimliği atama, donanıma özel bakım/seçenekler ve ayrı çoklu ünite seçici uygulanmadı. Kanallar Happy Hare global indekslerini kullanır; mevcut ana ekran kanal/LED yerleşimi korunur.
 - Önizleme en fazla dört kullanılan tool gösterir; tool başına uzunluk, marka adı ve fiziksel kanal eşlemesi gösterilmez.
 - SRAM önbelleği geçicidir ve 32 KiB ile sınırlıdır; yeniden bağlantı/başlatma sonrası yeniden kurulur.
 - Screws Tilt dört ayrı köşe gerektirir; sabit 0,05 mm en yüksek/en düşük nokta farkı başarı eşiği kullanır.

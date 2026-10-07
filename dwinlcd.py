@@ -367,11 +367,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             elif getattr(self, 'checkkey', None) == self.BedMeshMenu:
                 self.Draw_Bed_Mesh_Menu()
             if getattr(self, 'checkkey', None) == self.MMUMenu:
+                self._mmu_canvas_page = None
                 self.Draw_MMU_Menu()
             if getattr(self, 'checkkey', None) == self.FilePreview:
                 self.Draw_File_Preview()
             self.lcd.UpdateLCD()
-            if self.pd.connection_error:
+            if self.pd.connection_error and self.checkkey != self.MMUMenu:
                 self._show_message('Moonraker unavailable')
             self._uart_online = True
             self._uart_epoch += 1
@@ -627,7 +628,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 or (feedback is not None and not (feedback.phase == 'error' and kind == 'press'))):
             return
         snapshot = self.pd.subscription.snapshot()
-        if snapshot['state'] != 'ready':
+        if snapshot['state'] != 'ready' and getattr(self, 'checkkey', None) != self.MMUMenu:
             return
         if not self._loop.post(InputEvent(kind, value, snapshot['epoch'], getattr(self, '_uart_epoch', 0), accelerated_value, rate)):
             logging.warning('LCD input queue full or closed; input discarded')
@@ -682,6 +683,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def _sync_input_state(self, event):
         previous_epoch = self.pd.state.epoch
         self.pd.update_variable()
+        if getattr(self, 'checkkey', None) == self.MMUMenu and not self.pd.state.ready:
+            self._poll_mmu()
+            return True  # Offline MMU navigation remains read-only.
         if (self.pd.connection_error or not self.pd.state.ready
                 or self.pd.state.epoch != event.epoch):
             return False
@@ -779,7 +783,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 or event.ui_epoch != getattr(self, '_uart_epoch', 0)):
             return
         snapshot = self.pd.subscription.snapshot()
-        if (snapshot['state'] != 'ready' or snapshot['epoch'] != event.epoch
+        if ((snapshot['state'] != 'ready' and getattr(self, 'checkkey', None) != self.MMUMenu) or snapshot['epoch'] != event.epoch
                 or self._closed):
             return
         if event.kind == 'live_jog_flush':
@@ -810,7 +814,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         try:
             for _ in range(count):
                 current = self.pd.subscription.snapshot()
-                if current['state'] != 'ready' or current['epoch'] != event.epoch:
+                if ((current['state'] != 'ready' and getattr(self, 'checkkey', None) != self.MMUMenu)
+                        or current['epoch'] != event.epoch):
                     break
                 self._encoder_event = direction
                 self._dispatch_input()

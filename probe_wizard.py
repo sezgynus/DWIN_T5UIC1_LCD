@@ -41,7 +41,8 @@ class ProbeWizard:
 
     def start(self):
         self._guard()
-        if self.printer.bed_mesh.pending or self.printer.screws_tilt.pending:
+        if (self.printer.bed_mesh.pending or self.printer.screws_tilt.pending
+                or getattr(getattr(self.printer, 'mmu_session', None), 'pending', None)):
             raise ValueError('Another calibration is running')
         if self.active():
             raise ValueError('Another manual probe is active')

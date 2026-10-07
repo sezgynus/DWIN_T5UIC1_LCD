@@ -63,14 +63,16 @@ class MMUState:
             n = integer(value)
             return n if n is not None and -2 <= n < count else None
         status = text(raw.get('print_state'))
-        locked = (status == 'pause_locked' if status != 'Unknown'
+        known_states = {'initialized', 'ready', 'started', 'printing', 'complete',
+                        'cancelled', 'error', 'pause_locked', 'paused', 'standby', 'idle'}
+        locked = (status == 'pause_locked' if status in known_states
                   else boolean(raw.get('is_locked')))
         filament = text(raw.get('filament')).lower()
         if filament not in ('loaded', 'unloaded'):
             filament = 'unknown'
         # Never promote an intermediate/contradictory physical state to loaded/empty.
         pos = integer(raw.get('filament_pos'))
-        if pos is not None and pos != {'loaded': 10, 'unloaded': 0}.get(filament):
+        if 'filament_pos' in raw and pos != {'loaded': 10, 'unloaded': 0}.get(filament):
             filament = 'unknown'
         progress = raw.get('bowden_progress')
         if (isinstance(progress, bool) or not isinstance(progress, (int, float))
@@ -143,6 +145,8 @@ class MMUSession:
             raise ValueError('MMU unavailable')
         if self.pending is not None and not ignore_pending:
             raise ValueError('Wait for MMU operation')
+        if self.phase == 'error':
+            raise ValueError('Acknowledge MMU result first')
         if m.enabled is not True:
             raise ValueError('MMU disabled or unknown')
         if m.busy or p.jog_recovery_required:
@@ -302,8 +306,9 @@ class MMUSession:
             snap = p.subscription.snapshot()
             snap = dict(snap, status=dict(snap['status'], **status))
             m = MMUState.from_snapshot(snap)
-            if m is None or m.busy or not self._confirmed(m, status):
-                self._fail('State unconfirmed; check MMU')
+            if (m is None or m.epoch != self.operation.fingerprint[0]
+                    or m.enabled is not True or m.busy or not self._confirmed(m, status)):
+                self._fail(m.reason if m and m.reason else 'State unconfirmed; check MMU')
                 return
         except Exception:
             self._fail('Command failed; check MMU/log')

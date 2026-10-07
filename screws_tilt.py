@@ -50,7 +50,8 @@ class ScrewsTiltSession:
             raise ValueError('Calculation already running')
         if (not p.state.ready or p.connection_error or not p.capabilities.screws_tilt_adjust
                 or not p.capabilities.probe
-                or p.jog_recovery_required or p.bed_mesh.pending):
+                or p.jog_recovery_required or p.bed_mesh.pending
+                or getattr(getattr(p, 'mmu_session', None), 'pending', None)):
             raise ValueError('Screws tilt unavailable; check printer')
         if p.status in ('printing', 'paused', 'pausing'):
             raise ValueError('Calibration unavailable during print')

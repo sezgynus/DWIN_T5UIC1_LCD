@@ -214,3 +214,95 @@ class MMUUITests(unittest.TestCase):
                 self.assertLess(x,272)
                 self.assertGreaterEqual(y,0)
                 self.assertLess(y,480)
+
+    def test_gate_removal_rejects_stale_enter_instead_of_selecting_new_target(self):
+        v, data = self.make()
+        self.press(v, 1)
+        v._mmu_selection = 4
+        data['status']['mmu']['num_gates'] = 2
+        self.press(v, 4)
+        self.assertEqual(v._mmu_page, 'gates')
+        self.assertIn('Menu changed', v._mmu_notice)
+        self.assertLessEqual(v._mmu_selection, 2)
+        v.pd.subscription.request.assert_not_called()
+
+    def test_changed_load_unload_button_cannot_execute_old_enter(self):
+        v, data = self.make()
+        data['status']['mmu'].update(filament='Unloaded', filament_pos=0)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'home')
+        self.assertIn('Menu changed', v._mmu_notice)
+        v.pd.subscription.request.assert_not_called()
+
+    def test_manual_draft_cannot_apply_after_external_state_change(self):
+        v, data = self.make()
+        v._mmu_open('recover')
+        self.press(v, 2)
+        data['status']['mmu']['tool'] = 1
+        self.press(v, 4)
+        self.assertEqual(v._mmu_page, 'manual')
+        self.assertIn('reopen editor', v._mmu_notice)
+        v.pd.subscription.request.assert_not_called()
+
+    def test_pending_operation_cannot_leave_mmu_and_start_another_ui_action(self):
+        v, _ = self.make()
+        self.press(v, 2)
+        self.press(v, 2)
+        self.press(v, 0)  # Return to MMU home.
+        self.press(v, 0)  # Exit is deferred until MMU completes.
+        self.assertEqual(v.checkkey, v.MMUMenu)
+        self.assertEqual(v._mmu_page, 'status')
+        self.assertIn('Wait', v._mmu_notice)
+        self.assertEqual(v.pd.subscription.request.call_count, 1)
+
+    def test_uart_reconnect_rebuilds_current_page_and_cache(self):
+        from test_regressions import ui
+        from unittest.mock import patch
+        v, _ = self.make()
+        self.press(v, 1)
+        v._closed = False
+        v._settings = ('/dev/fake',)
+        v._uart_online = False
+        v._next_uart_retry = 0
+        v._uart_epoch = 0
+        v.HMI_Init = Mock()
+        port = Mock()
+        with patch.object(ui, 'T5UIC1_LCD', return_value=port):
+            self.assertTrue(v._ensure_uart())
+        self.assertEqual(v._mmu_page, 'gates')
+        self.assertIn((1,0x0000,0,0,271,479), [c.args for c in port.Draw_Rectangle.call_args_list])
+        self.assertIn('G1 PLA', [c.args[-1] for c in port.Draw_String.call_args_list])
+        v.pd.subscription.request.assert_not_called()
+
+    def test_offline_encoder_navigation_can_back_out_but_never_sends_motion(self):
+        from ui_events import InputEvent
+        v, data = self.make()
+        v._closed = False
+        v._uart_online = True
+        v._uart_epoch = 1
+        v._encoder_event = v.ENCODER_DIFF_NO
+        v.get_encoder_state = lambda: v._encoder_event
+        data['state'] = 'disconnected'
+        data['error'] = 'offline'
+        v._process_input(InputEvent('press',1,1,1))  # Old Gates selection changed safely.
+        self.assertEqual(v.checkkey,v.MMUMenu)
+        v._process_input(InputEvent('rotate',1,1,1))  # CCW to Back.
+        v.Draw_Status_Area = Mock()
+        v._process_input(InputEvent('press',1,1,1))
+        if v.checkkey == v.MMUMenu:
+            v._mmu_selection = 0
+            v._process_input(InputEvent('press',1,1,1))
+        self.assertEqual(v.checkkey,v.MainMenu)
+        v.pd.subscription.request.assert_not_called()
+
+    def test_tick_keeps_full_screen_and_updates_only_changed_telemetry(self):
+        v, data = self.make()
+        v.last_status = v.pd.status
+        v._offline = False
+        v.lcd.reset_mock()
+        data['status']['extruder']['temperature'] = 201
+        v.EachMomentUpdate()
+        self.assertEqual(v.checkkey,v.MMUMenu)
+        self.assertIn('Nozzle 201/205 C', self.strings(v))
+        self.assertNotIn((1,0x0000,0,0,271,479), [c.args for c in v.lcd.Draw_Rectangle.call_args_list])
+        self.assertFalse(any(c.args[3] == v.STATUS_Y for c in v.lcd.Draw_Rectangle.call_args_list))

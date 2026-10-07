@@ -196,3 +196,86 @@ class MMUControlTests(unittest.TestCase):
         p, _, s = self.make()
         p.bed_mesh.pending = Future()
         with self.assertRaises(ValueError): s.prepare('unload', gate=2)
+
+    def test_malformed_lock_and_filament_position_do_not_enable_motion(self):
+        _, _, s = self.make(print_state='garbage')
+        with self.assertRaises(ValueError): s.prepare('unload', gate=2)
+        for value in ('10', True, float('nan')):
+            _, _, s = self.make(filament_pos=value)
+            with self.assertRaises(ValueError): s.prepare('unload', gate=2)
+
+    def test_failed_result_requires_acknowledgement_before_new_operation(self):
+        _, _, s = self.make()
+        s.phase = 'error'
+        with self.assertRaisesRegex(ValueError, 'Acknowledge'):
+            s.prepare('unload', gate=2)
+
+    def complete(self, session, p, status):
+        session.pending.set_result('ok')
+        query = Future()
+        p.subscription.request.return_value = query
+        session.update()
+        query.set_result({'status': status})
+        session.update()
+
+    def test_bypass_and_extruder_only_completion_use_actual_state(self):
+        p, data, s = self.make(filament='Unloaded', filament_pos=0)
+        s.start(s.prepare('bypass'))
+        status = copy.deepcopy(data['status'])
+        status['mmu'].update(gate=-2, tool=-2)
+        self.complete(s, p, status)
+        self.assertEqual(s.phase, 'complete')
+        p, data, s = self.make(gate=-2, tool=-2, filament='Unloaded', filament_pos=0)
+        op = s.prepare('load_extruder')
+        self.assertEqual(op.script, 'MMU_LOAD EXTRUDER_ONLY=1')
+        s.start(op)
+        status = copy.deepcopy(data['status'])
+        status['mmu'].update(filament='Loaded', filament_pos=10)
+        self.complete(s, p, status)
+        self.assertEqual(s.phase, 'complete')
+
+    def test_auto_manual_unlock_and_resume_are_separate_verified_results(self):
+        for action in ('recover', 'manual', 'unlock', 'resume'):
+            p, data, s = self.make(print_state='pause_locked', filament='Unknown', filament_pos=-1)
+            data['status']['print_stats']['state'] = 'paused'
+            if action == 'resume':
+                data['status']['mmu'].update(print_state='paused', filament='Loaded', filament_pos=10)
+            op = s.prepare(action, gate=2, tool=2, loaded=False) if action == 'manual' else s.prepare(action)
+            s.start(op)
+            status = copy.deepcopy(data['status'])
+            if action in ('recover', 'manual'):
+                status['mmu'].update(filament='Unloaded', filament_pos=0)
+            elif action == 'unlock':
+                status['mmu']['print_state'] = 'paused'
+            else:
+                status['mmu']['print_state'] = 'printing'
+                status['print_stats']['state'] = 'printing'
+            self.complete(s, p, status)
+            with self.subTest(action=action):
+                self.assertEqual(s.phase, 'complete')
+                scripts = [call.args[1]['script'] for call in p.subscription.request.call_args_list
+                           if call.args[0] == 'printer.gcode.script']
+                self.assertEqual(scripts, [op.script])
+                if action != 'resume': self.assertNotIn('RESUME', scripts)
+
+    def test_disabled_mmu_and_error_lock_at_result_never_report_success(self):
+        for field in ('enabled', 'print_state'):
+            p, data, s = self.make()
+            s.start(s.prepare('unload', gate=2))
+            status = copy.deepcopy(data['status'])
+            status['mmu'].update(filament='Unloaded', filament_pos=0)
+            status['mmu'][field] = False if field == 'enabled' else 'pause_locked'
+            self.complete(s, p, status)
+            self.assertEqual(s.phase, 'error')
+
+    def test_mmu_pending_blocks_all_calibration_entry_points(self):
+        from test_bed_mesh import data as mesh_data
+        from test_probe_wizard import data as probe_data
+        from test_screws_tilt import data as screws_data
+        for source, name in ((mesh_data(), 'bed_mesh'), (probe_data(), 'probe_wizard'), (screws_data(), 'screws_tilt')):
+            p = printer(source)
+            p.mmu_session.pending = Future()
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                getattr(p, name).start()
+            p.subscription.request.assert_not_called()
+            p.sendGCode.assert_not_called()

@@ -22,7 +22,7 @@ printer connection or moving hardware. Preset writes use temporary directories.
 | State and capabilities | Immutable snapshots, effective configuration/limits, heater/fan combinations, active extruder, optional controls and epoch replacement |
 | Input and ownership | Concurrent producers, FIFO input, bounded overload, debounce, stale-event rejection, one UI owner for initialization/rendering/cleanup and UART writes |
 | Home menus | Forward/reverse four-icon paging, empty slots, Leveling/MMU/Info routes, return selection, capability removal and persistent dashboard/MMU areas |
-| MMU placeholder | Back-only menu, no G-code on entry/exit and bounded selected/unselected reel icons |
+| MMU controls | Full-screen ownership, read-only browsing, gate scrolling, draft manual edits, target-specific Cancel-first confirmations, stale-menu/target rejection, print/busy/unknown guards, completion plus state queries, distinct sensors, bypass/recovery, calibration exclusion and UART/offline recovery |
 | Files and folders | Cached lists, nested/empty folders, folder-first sorting, basename labels, full-path print starts, deletion/replacement and selection preservation |
 | Mainsail sorting | Name/date/size in both directions, newest-first fallback, invalid preferences/timestamps, bounded polling and stale Enter rejection |
 | Print workflow | Duplicate suppression, command/status confirmation, failed starts, timeout without replay, paused/resumed/completed/cancelled states and retained errors |
@@ -73,3 +73,28 @@ When checking a release on hardware:
 Record the software revision, hardware configuration, logs and screen photos for
 failures. The [historical audit](../docs/source-audit.md) and
 [LCD compatibility notes](../docs/lcd-assets.md) provide additional context.
+
+
+## MMU physical verification
+
+The isolated suite checks behavior with mocked I/O. Validate the following on the
+actual LCD and installed Happy Hare configuration before merging the control UI:
+
+1. Enter/exit MMU and its subpages. Check the full-screen layout, encoder focus,
+   restored Home selection/dashboard and readable colors/fonts.
+2. Browse every gate without movement; check lists with more than four gates and
+   Spoolman missing/available. Confirm G1 corresponds to API gate 0.
+3. With unloaded filament, test Select only, Preload, Check, Load selected and
+   mapped Load/change. Verify the confirmation target and actual final state.
+4. Test Unload versus Eject spool, including an initially loaded active gate.
+   Confirm Eject removes filament from the MMU, rather than merely parking it.
+5. Unload before selecting bypass; verify extruder-only load/unload and locks.
+6. Exercise an MMU error pause. Confirm automatic Recover entry, draft/manual
+   Cancel, actual-state Apply, separate unlock/reheat and explicit Resume.
+7. Change MMU selection/state from the web UI while an LCD confirmation/editor is
+   open. The old action must not be submitted. Verify printing/busy controls lock.
+8. Disconnect/reconnect Moonraker and UART. Check retained operation errors,
+   rebuilt current page, read-only offline navigation and no command replay.
+
+Mapping edits, EndlessSpool, spool assignment and hardware-specific maintenance
+are not exposed by this first implementation. Use the web UI for these functions.
