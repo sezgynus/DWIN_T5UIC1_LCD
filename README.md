@@ -364,6 +364,8 @@ Command feedback has a deadline even while its transport Future remains unresolv
 
 MMU controls use the validated live control state independently of optional Home RGB telemetry. Missing or malformed gate colors can hide the Home strip without disabling otherwise valid menu actions; print, busy, physical-state and dispatch guards still apply.
 
+HTTP JSON responses are limited to 8 MiB by default, including file lists, metadata and command replies. Integrations can configure `MoonrakerClient(max_json_bytes=...)` with a positive integer byte budget. The reader enforces the limit independently of Content-Length; oversized responses fail without automatically replaying commands.
+
 ### Regression tests
 
 ```bash

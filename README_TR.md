@@ -364,6 +364,8 @@ Komut geri bildirimi, taşıma Future sonucu gelmese de süre sınırına tabidi
 
 MMU kontrolleri, isteğe bağlı ana ekran RGB verisinden bağımsız olarak doğrulanmış canlı kontrol durumunu kullanır. Eksik veya bozuk gate renkleri ana ekran şeridini gizleyebilir; geçerli menü işlemlerini kapatmaz. Baskı, meşguliyet, fiziksel durum ve gönderim kontrolleri uygulanmaya devam eder.
 
+HTTP JSON yanıtları, dosya listesi, metadata ve komut sonuçları dahil varsayılan olarak 8 MiB ile sınırlıdır. Entegrasyonlar `MoonrakerClient(max_json_bytes=...)` ile pozitif tamsayı byte sınırı belirleyebilir. Okuyucu Content-Length bilgisinden bağımsız sınır uygular; büyük yanıtlar hata verir ve komutlar otomatik tekrarlanmaz.
+
 ### Regresyon testleri
 
 ```bash
