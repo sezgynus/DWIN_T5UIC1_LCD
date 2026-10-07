@@ -1,15 +1,12 @@
 import unittest
 from test_capabilities import display, snapshot
-from test_uart import Driver, Port
+from test_t5uic1_driver import driver
 
 
 class AuditRenderingTests(unittest.TestCase):
     def screen(self):
         result = display(snapshot())
-        result.lcd = Driver.__new__(Driver)
-        result.lcd.MYSERIAL1 = Port()
-        result.lcd.DWIN_SendBuf = result.lcd.FHONE
-        result.lcd._closed = False
+        result.lcd = driver()
         return result
 
     def test_complete_progress_has_three_digits_before_percent_sign(self):

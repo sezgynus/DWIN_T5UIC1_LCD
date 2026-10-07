@@ -427,7 +427,7 @@ class MeshLifecycleTests(unittest.TestCase):
         view._closed=False;view._settings=('/dev/fake',);view._uart_epoch=0
         view._uart_online=False;view._next_uart_retry=0
         view.HMI_Init=Mock();view.HMI_StartFrame=Mock();view.Draw_Bed_Mesh=Mock()
-        with patch.object(ui,'T5UIC1_LCD',return_value=Mock()):
+        with patch.object(ui,'T5UIC1Display',return_value=Mock()):
             self.assertTrue(view._ensure_uart())
         view.Draw_Bed_Mesh.assert_called_once()
         self.assertEqual(view.pd.subscription.request.call_count,1)
@@ -452,10 +452,9 @@ class MeshLifecycleTests(unittest.TestCase):
 
 class MeshPacketTests(unittest.TestCase):
     def test_real_driver_builds_result_and_profile_menu_frames(self):
-        from test_uart import Driver,Port
+        from test_t5uic1_driver import driver as make_driver
         view=MeshViewTests.make(self)
-        driver=Driver.__new__(Driver);driver.MYSERIAL1=Port()
-        driver.DWIN_SendBuf=driver.FHONE;driver._closed=False;driver._needs_update=False
+        driver=make_driver();driver._needs_update=False
         view.lcd=driver
         view.pd.bed_mesh.status=payload()['status']['bed_mesh']
         view.pd.bed_mesh.mesh=MeshData.current(view.pd.bed_mesh.status)
@@ -513,7 +512,7 @@ class MeshMenuTests(unittest.TestCase):
         view._closed=False;view._settings=('/dev/fake',);view._uart_epoch=0
         view._uart_online=False;view._next_uart_retry=0
         view.HMI_Init=Mock();view.HMI_StartFrame=Mock();view.Draw_Bed_Mesh_Menu=Mock()
-        with patch.object(ui,'T5UIC1_LCD',return_value=Mock()):
+        with patch.object(ui,'T5UIC1Display',return_value=Mock()):
             self.assertTrue(view._ensure_uart())
         view.Draw_Bed_Mesh_Menu.assert_called_once()
         self.assertEqual(view._mesh_menu_selection,2)
