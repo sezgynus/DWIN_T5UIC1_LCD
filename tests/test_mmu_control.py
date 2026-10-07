@@ -62,6 +62,45 @@ class MMUControlTests(unittest.TestCase):
         m = MMUState.from_snapshot(mmu_snapshot(ttg_map=[2, 2, 2, 3]))
         self.assertEqual(m.tools_for_gate(2), (0, 1, 2))
 
+    def test_map_bulk_save_preserves_many_to_one_and_never_moves(self):
+        p, _, s = self.make()
+        op = s.prepare('map', values=[2, 2, 2, 0])
+        self.assertEqual(op.script, 'MMU_TTG_MAP MAP=2,2,2,0')
+        self.assertEqual(op.values, (2, 2, 2, 0))
+        p.subscription.request.assert_not_called()
+
+    def test_map_rejects_incomplete_invalid_or_unknown_mapping(self):
+        for values in ([], [0, 1], [0, 1, 2, 4], [0, 1, 2, -1],
+                       [0, 1, 2, True], [0, 1, 2, '3']):
+            _, _, s = self.make()
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                s.prepare('map', values=values)
+        _, _, s = self.make(ttg_map=[0, 1])
+        with self.assertRaises(ValueError): s.prepare('map', values=[0, 1, 2, 3])
+
+    def test_map_print_pause_busy_and_external_map_change_are_guarded(self):
+        for state in ('printing', 'paused'):
+            p, data, s = self.make()
+            data['status']['print_stats']['state'] = state
+            with self.subTest(state=state), self.assertRaises(ValueError):
+                s.prepare('map', values=[2]*4)
+        p, data, s = self.make()
+        op = s.prepare('map', values=[2]*4)
+        data['status']['mmu']['ttg_map'] = [1]*4
+        with self.assertRaises(ValueError): s.start(op)
+        p.subscription.request.assert_not_called()
+        _, _, s = self.make(action='Loading')
+        with self.assertRaises(ValueError): s.prepare('map', values=[2]*4)
+
+    def test_map_completion_checks_entire_result_not_rpc_acceptance(self):
+        for matches in (True, False):
+            p, data, s = self.make()
+            s.start(s.prepare('map', values=[2]*4))
+            status = copy.deepcopy(data['status'])
+            if matches: status['mmu']['ttg_map'] = [2]*4
+            self.complete(s, p, status)
+            self.assertEqual(s.phase, 'complete' if matches else 'error')
+
     def test_commands_use_zero_based_gates_and_explicit_eject(self):
         for action, script in [('unload', 'MMU_UNLOAD'), ('eject', 'MMU_EJECT GATE=2 FORCE=1')]:
             p, _, session = self.make()

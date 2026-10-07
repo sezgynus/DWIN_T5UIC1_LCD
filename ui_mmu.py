@@ -137,16 +137,24 @@ class MMUViewMixin:
         self._mmu_gate = 0
         self._mmu_history = []
         self._mmu_notice = ''
+        self._mmu_edit = None
+        self._mmu_map_draft = None
         self._mmu_canvas_page = None
         self.Draw_MMU_Menu()
 
     def _mmu_open(self, page):
+        self._mmu_edit = None
+        if page == 'map':
+            self._mmu_begin_map()
         self._mmu_history.append((self._mmu_page, self._mmu_selection))
         self._mmu_page, self._mmu_selection = page, 1
         self._mmu_notice = ''
         self.Draw_MMU_Menu()
 
     def _mmu_back(self):
+        self._mmu_edit = None
+        if self._mmu_page == 'map':
+            self._mmu_map_draft = None
         if self._mmu_history:
             self._mmu_page, self._mmu_selection = self._mmu_history.pop()
             self._mmu_notice = ''
@@ -209,6 +217,21 @@ class MMUViewMixin:
             return (('action', action, gate), label, 'LOCK', False)
         return (('action', action, gate), label, '>', True)
 
+    def _mmu_begin_map(self):
+        m = self.pd.mmu_session.state
+        self._mmu_map_draft = list(m.ttg_map) if m else []
+        self._mmu_map_base = m.fingerprint if m else None
+        self._mmu_map_original = tuple(self._mmu_map_draft)
+
+    def _mmu_map_writable(self, m):
+        if m is None or m.fingerprint != getattr(self, '_mmu_map_base', None):
+            return False
+        try:
+            self.pd.mmu_session.prepare('map', values=self._mmu_map_draft)
+        except ValueError:
+            return False
+        return True
+
     def _mmu_items(self, m):
         page = self._mmu_page
         nav = lambda key, label: (('page', key), label, '>', True)
@@ -244,6 +267,14 @@ class MMUViewMixin:
             return [self._mmu_action_item('recover', 'Auto recover'), nav('manual', 'Set state manually'),
                     self._mmu_action_item('unlock', 'Unlock / reheat'),
                     self._mmu_action_item('resume', 'Resume print')]
+        if page == 'map':
+            draft = self._mmu_map_draft
+            writable = self._mmu_map_writable(m)
+            return [(('map_edit', tool), 'T%d' % tool, self._mmu_gate_label(gate), writable)
+                    for tool, gate in enumerate(draft)] + [
+                        (('map_save',), 'Save', '>' if writable else 'LOCK',
+                         writable and tuple(draft) != self._mmu_map_original),
+                        (('cancel',), 'Cancel', '', True)]
         if page == 'manual':
             draft = self._mmu_manual
             return [(('edit', 'tool'), 'Tool', self._mmu_tool_label(draft['tool']), True),
@@ -316,7 +347,8 @@ class MMUViewMixin:
         if op is None:
             return False
         try:
-            return self.pd.mmu_session.prepare(op.action, op.gate, op.tool, op.loaded) == op
+            return self.pd.mmu_session.prepare(op.action, op.gate, op.tool, op.loaded,
+                                               values=op.values, enabled=op.enabled) == op
         except ValueError:
             return False
 
@@ -330,6 +362,8 @@ class MMUViewMixin:
             self.lcd.Draw_Rectangle(1, 0x0000, 0, 0, 271, 479)
             self.lcd.Draw_Rectangle(1, 0x1105, 0, 0, 271, 29)
             self._mmu_canvas_page, self._mmu_render = page, {}
+        if page == 'map' and getattr(self, '_mmu_map_draft', None) is None:
+            self._mmu_begin_map()
         if page == 'manual' and not hasattr(self, '_mmu_manual'):
             self._mmu_manual_base = m.fingerprint if m else None
             self._mmu_manual = {'tool': m.tool if m and m.tool is not None and m.tool >= 0 else 0,
@@ -381,14 +415,11 @@ class MMUViewMixin:
                 self._mmu_text('readonly', 'Read-only; edit in web UI', 12, 358, 40, small=True)
             first_y = None
         elif page == 'map':
-            if m:
-                start = getattr(self, '_mmu_map_start', 0)
-                start = min(start, max(0, m.num_gates - 8))
-                for i, tool in enumerate(range(start, min(m.num_gates, start + 8))):
-                    self._mmu_text('map%d' % i, 'T%d > %s' % (tool, self._mmu_gate_label(m.ttg_map[tool])), 12, 70 + 37 * i)
-                self._mmu_text('readonly', 'Read-only; edit in web UI', 12, 398, 40, small=True)
-                self._mmu_text('maphint', 'Turn: scroll   Press Back: return', 12, 421, 40, small=True)
-            first_y = None
+            writable = self._mmu_map_writable(m)
+            self._mmu_text('maphint', 'Press row, turn gate, press again', 12, 66, 40, small=True)
+            self._mmu_text('mapdraft', 'Changes wait for Save' if writable else 'Locked; reopen after state change',
+                           12, 87, 40, small=True, color=0x8410 if writable else 0xFD20)
+            first_y, visible = 114, 7
         elif page == 'status':
             session = self.pd.mmu_session
             self._mmu_text('result', session.message or 'Live MMU telemetry', 12, 66, 40, small=True, color=0xFD20 if session.phase == 'error' else 0xFFFF)
@@ -425,8 +456,17 @@ class MMUViewMixin:
             self._mmu_text('details', summary, 12, 120, 40, small=True)
             self._mmu_text('valid', 'Target changed; cancel and retry' if not self._mmu_confirmation_valid() else 'Check target before confirming', 12, 170, 40, small=True, color=0xFD20)
             message = {'unload': 'Filament returns to MMU.', 'eject': 'Spool removed from MMU.',
-                       'manual': 'Reports state; does not move.', 'resume': 'Print motion will resume.'}.get(op.action, 'This may move filament/motors.')
+                       'manual': 'Reports state; does not move.', 'map': 'Saves mapping; no filament movement.', 'resume': 'Print motion will resume.'}.get(op.action, 'This may move filament/motors.')
             self._mmu_text('effect', message, 12, 210, 40, small=True)
+            if op.action == 'map':
+                old = m.ttg_map if m else ()
+                changes = [(tool, gate) for tool, gate in enumerate(op.values)
+                           if tool >= len(old) or old[tool] != gate]
+                for row in range(5):
+                    value = ('T%d > %s' % (changes[row][0], self._mmu_gate_label(changes[row][1]))
+                             if row < min(4, len(changes)) else
+                             '+%d more changes' % (len(changes) - 4) if row == 4 and len(changes) > 4 else '')
+                    self._mmu_text('change%d' % row, value, 12, 241 + row * 20, 40, small=True)
             for i, (_, label, _, enabled) in enumerate(items):
                 self._mmu_row('item%d' % i, label, '', 8 + i * 132, 374, 124,
                               self._mmu_selection == i + 1, enabled)
@@ -437,6 +477,8 @@ class MMUViewMixin:
                 i = start + row
                 if i < len(items):
                     _, label, value, enabled = items[i]
+                    if page == 'map' and items[i][0][0] == 'map_edit' and getattr(self, '_mmu_edit', None) == ('map', items[i][0][1]):
+                        value = '[' + value + ']'
                     if page == 'manual' and items[i][0][0] == 'edit' and getattr(self, '_mmu_edit', None) == items[i][0][1]:
                         value = '[' + value + ']'
                     self._mmu_row('row%d' % row, label, value, 8, first_y + row * 43, 256,
@@ -460,15 +502,18 @@ class MMUViewMixin:
         if edit:
             if event == self.ENCODER_DIFF_ENTER:
                 self._mmu_edit = None
+            elif isinstance(edit, tuple) and edit[0] == 'map':
+                if not self._mmu_map_writable(m):
+                    self._mmu_edit = None
+                    self._mmu_notice = 'MMU changed; reopen editor'
+                elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+                    delta = 1 if event == self.ENCODER_DIFF_CW else -1
+                    tool = edit[1]
+                    self._mmu_map_draft[tool] = max(0, min(m.num_gates - 1, self._mmu_map_draft[tool] + delta))
             elif m and event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
                 delta = 1 if event == self.ENCODER_DIFF_CW else -1
                 self._mmu_manual[edit] = (not self._mmu_manual[edit] if edit == 'loaded'
                     else max(0, min(m.num_gates - 1, self._mmu_manual[edit] + delta)))
-            self.Draw_MMU_Menu()
-            return
-        if self._mmu_page == 'map' and m and event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
-            delta = 1 if event == self.ENCODER_DIFF_CW else -1
-            self._mmu_map_start = max(0, min(max(0, m.num_gates - 8), getattr(self, '_mmu_map_start', 0) + delta))
             self.Draw_MMU_Menu()
             return
         items = self._mmu_items(m)
@@ -501,12 +546,19 @@ class MMUViewMixin:
                 self._mmu_gate = key[1]
                 self._mmu_open('gate')
                 return
-            elif key[0] in ('action', 'apply'):
+            elif key[0] == 'map_edit':
+                self._mmu_edit = ('map', key[1])
+            elif key[0] in ('action', 'apply', 'map_save'):
                 try:
                     if key[0] == 'apply' and (m is None or m.fingerprint != self._mmu_manual_base):
                         raise ValueError('MMU changed; reopen editor')
-                    self._mmu_confirmation = (self.pd.mmu_session.prepare(key[1], gate=key[2])
-                        if key[0] == 'action' else self.pd.mmu_session.prepare('manual', **self._mmu_manual))
+                    if key[0] == 'map_save':
+                        if not self._mmu_map_writable(m):
+                            raise ValueError('MMU changed; reopen editor')
+                        self._mmu_confirmation = self.pd.mmu_session.prepare('map', values=self._mmu_map_draft)
+                    else:
+                        self._mmu_confirmation = (self.pd.mmu_session.prepare(key[1], gate=key[2])
+                            if key[0] == 'action' else self.pd.mmu_session.prepare('manual', **self._mmu_manual))
                 except ValueError as error:
                     self._mmu_notice = str(error)
                 else:
@@ -521,6 +573,8 @@ class MMUViewMixin:
                     self._mmu_notice = str(error)
                 else:
                     # Drop confirmation so Back can never submit it again.
+                    if self._mmu_confirmation.action == 'map':
+                        self._mmu_map_draft = None
                     self._mmu_page, self._mmu_selection = 'status', 0
                     self.Draw_MMU_Menu()
                     return

@@ -118,6 +118,8 @@ class MMUOperation:
     fingerprint: tuple
     script: str
     label: str
+    values: tuple = ()
+    enabled: bool | None = None
 
 
 class MMUSession:
@@ -136,7 +138,7 @@ class MMUSession:
     def state(self):
         return MMUState.from_snapshot(self.printer.subscription.snapshot())
 
-    def prepare(self, action, gate=None, tool=None, loaded=None, snapshot=None, ignore_pending=False):
+    def prepare(self, action, gate=None, tool=None, loaded=None, snapshot=None, ignore_pending=False, values=(), enabled=None):
         p = self.printer
         snap = p.subscription.snapshot() if snapshot is None else snapshot
         m = MMUState.from_snapshot(snap)
@@ -221,16 +223,25 @@ class MMUSession:
             if m.locked is not True:
                 raise ValueError('MMU is not locked')
             script, label = 'MMU_UNLOCK', 'Unlock / reheat'
+        elif action == 'map':
+            if (not isinstance(values, (tuple, list)) or len(values) != m.num_gates
+                    or any(integer(v) is None or not 0 <= v < m.num_gates for v in values)
+                    or any(v is None or v < 0 for v in m.ttg_map)):
+                raise ValueError('Complete valid tool map required')
+            values = tuple(values)
+            script = 'MMU_TTG_MAP MAP=' + ','.join(str(v) for v in values)
+            label = 'Save tool map'
         elif action == 'resume':
             if ps != 'paused' or m.locked is not False or m.filament != 'loaded':
                 raise ValueError('Recover and unlock first')
             script, label = 'RESUME', 'Resume print'
         else:
             raise ValueError('Unsupported MMU operation')
-        return MMUOperation(action, gate, tool, loaded, m.fingerprint, script, label)
+        return MMUOperation(action, gate, tool, loaded, m.fingerprint, script, label, tuple(values), enabled)
 
     def start(self, operation):
-        fresh = self.prepare(operation.action, operation.gate, operation.tool, operation.loaded)
+        fresh = self.prepare(operation.action, operation.gate, operation.tool, operation.loaded,
+                             values=operation.values, enabled=operation.enabled)
         if fresh != operation:
             raise ValueError('MMU changed; select again')
         self.operation = operation
@@ -245,7 +256,7 @@ class MMUSession:
         try:
             op = self._dispatch_operation
             return self.prepare(op.action, op.gate, op.tool, op.loaded,
-                                ignore_pending=True) == op
+                                ignore_pending=True, values=op.values, enabled=op.enabled) == op
         except ValueError:
             return False
 
@@ -268,6 +279,7 @@ class MMUSession:
             return m.filament != 'unknown'
         if m.locked is not False:
             return False
+        if op.action == 'map': return m.ttg_map == op.values
         if op.action == 'select': return m.gate == op.gate and m.filament == 'unloaded'
         if op.action == 'bypass': return m.gate == -2 and m.filament == 'unloaded'
         if op.action in ('load', 'change'): return m.gate == op.gate and m.filament == 'loaded' and (op.action != 'change' or m.tool == op.tool)

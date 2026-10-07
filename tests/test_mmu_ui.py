@@ -27,6 +27,65 @@ class MMUUITests(unittest.TestCase):
     def strings(self, view):
         return [c.args[-1] for c in view.lcd.Draw_String.call_args_list]
 
+    def edit_map(self, v):
+        self.press(v, 3)
+        self.press(v, 1)
+        v.get_encoder_state.return_value = v.ENCODER_DIFF_CW
+        v.HMI_MMU_Menu()
+        self.press(v, 1)
+
+    def test_map_edit_accept_only_changes_draft_cancel_discards(self):
+        v, _ = self.make()
+        self.edit_map(v)
+        self.assertEqual(v._mmu_map_draft, [1, 1, 2, 3])
+        v.pd.subscription.request.assert_not_called()
+        self.press(v, len(v._mmu_items(v.pd.mmu_session.state)))
+        self.assertEqual(v._mmu_page, 'home')
+        self.press(v, 3)
+        self.assertEqual(v._mmu_map_draft, [0, 1, 2, 3])
+
+    def test_map_save_cancel_keeps_draft_then_confirm_sends_one_bulk_command(self):
+        v, _ = self.make()
+        self.edit_map(v)
+        self.press(v, 5)
+        self.assertEqual(v._mmu_page, 'confirm')
+        self.assertEqual(v._mmu_selection, 1)
+        self.assertIn('T0 > G2', self.strings(v))
+        self.press(v, 1)
+        self.assertEqual(v._mmu_map_draft, [1, 1, 2, 3])
+        self.press(v, 5)
+        self.press(v, 2)
+        self.assertEqual(v._mmu_page, 'status')
+        self.assertEqual(v.pd.subscription.request.call_args.args,
+                         ('printer.gcode.script', {'script': 'MMU_TTG_MAP MAP=1,1,2,3'}))
+        self.assertEqual(v.pd.subscription.request.call_count, 1)
+
+    def test_map_external_change_and_printing_lock_save(self):
+        for change in ('map', 'print'):
+            v, data = self.make()
+            self.edit_map(v)
+            if change == 'map': data['status']['mmu']['ttg_map'] = [3]*4
+            else: data['status']['print_stats']['state'] = 'printing'
+            self.press(v, 5)
+            self.assertEqual(v._mmu_page, 'map')
+            v.pd.subscription.request.assert_not_called()
+
+    def test_map_scroll_and_gate_edit_bounds(self):
+        v, _ = self.make(num_gates=12, ttg_map=list(range(12)), gate_status=[1]*12,
+                         gate_color_rgb=[[1, 0, 0]]*12)
+        self.press(v, 3)
+        self.press(v, 12)
+        for _ in range(3):
+            v.get_encoder_state.return_value = v.ENCODER_DIFF_CW
+            v.HMI_MMU_Menu()
+        self.assertEqual(v._mmu_map_draft[11], 11)
+        self.assertIn('[G12]', self.strings(v))
+        self.press(v, 12)
+        self.press(v, 1)
+        v.get_encoder_state.return_value = v.ENCODER_DIFF_CCW
+        v.HMI_MMU_Menu()
+        self.assertEqual(v._mmu_map_draft[0], 0)
+
     def test_home_uses_full_canvas_but_keeps_original_dashboard_untouched(self):
         v, _ = self.make()
         self.assertIn((1, 0x0000, 0, 0, 271, 479), [c.args for c in v.lcd.Draw_Rectangle.call_args_list])
