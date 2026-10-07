@@ -22,7 +22,7 @@ printer connection or moving hardware. Preset writes use temporary directories.
 | State and capabilities | Immutable snapshots, effective configuration/limits, heater/fan combinations, active extruder, optional controls and epoch replacement |
 | Input and ownership | Concurrent producers, FIFO input, bounded overload, debounce, stale-event rejection, one UI owner for initialization/rendering/cleanup and UART writes |
 | Home menus | Forward/reverse four-icon paging, empty slots, Leveling/MMU/Info routes, return selection, capability removal and persistent dashboard/MMU areas |
-| MMU controls | Full-screen ownership, read-only browsing, gate scrolling, draft manual/map/EndlessSpool/spool-ID edits, target-specific Cancel-first confirmations, stale-menu/target rejection, print/busy/unknown guards, completion plus state queries, distinct sensors, bypass/recovery, calibration exclusion and UART/offline recovery |
+| MMU controls | Full-screen ownership, read-only browsing, gate scrolling, draft manual/map/EndlessSpool/spool-ID edits, target-specific Cancel-first confirmations, stale-menu/target rejection, print/busy/unknown guards, completion plus state queries, distinct sensors, bypass/recovery, calibration exclusion, active-unit LED controls, read-only unit browsing, confirmed unit selection and UART/offline recovery |
 | Files and folders | Cached lists, nested/empty folders, folder-first sorting, basename labels, full-path print starts, deletion/replacement and selection preservation |
 | Mainsail sorting | Name/date/size in both directions, newest-first fallback, invalid preferences/timestamps, bounded polling and stale Enter rejection |
 | Print workflow | Duplicate suppression, command/status confirmation, failed starts, timeout without replay, paused/resumed/completed/cancelled states and retained errors |
@@ -96,8 +96,40 @@ actual LCD and installed Happy Hare configuration before merging the control UI:
 8. Disconnect/reconnect Moonraker and UART. Check retained operation errors,
    rebuilt current page, read-only offline navigation and no command replay.
 
-LED controls and unit selection are not exposed
-by this implementation. Use the web UI for these functions.
+Options → LEDs and Options → Units are implemented when their validated
+capabilities are available. Follow the checks below on hardware; configuration
+confirmation alone does not prove LED output or selector movement. Calibration,
+custom LED effects and entry/status/logo editing remain in the web UI.
+
+LED checks:
+
+1. Open Options → LEDs with valid active-unit `mmu_leds <name>` telemetry. Verify
+   missing/unknown LED telemetry hides or locks the corresponding controls.
+2. Change Enable, Animation and supported exit modes (`off`, `gate_status`,
+   `filament_color`, `slicer_color`). Check Cancel-first confirmation, Cancel
+   without dispatch, and one `MMU_LED UNIT=...` command per confirmed action.
+3. On a multi-unit setup, verify only the active unit changes. Confirm the result
+   is queried from that unit's actual LED object; check the physical enabled,
+   animation and exit output separately from the reported configuration.
+4. Change unit or LED configuration from the web UI during confirmation, and test
+   busy/printing/paused locks and disconnect/reconnect. Stale confirmation must
+   not dispatch; uncertain commands must not replay.
+5. Check Home exit-LED colors, off/black lanes and contrasting gate labels. LCD
+   hue normalization does not reproduce physical brightness.
+
+Unit checks (requires a validated multi-unit gate partition):
+
+1. Open Options → Units, browse each unit and its gates, and return. Browsing must
+   send no command; gate labels must preserve global gate indices. A single-unit
+   installation omits this browser; invalid partitions must not enable selection.
+2. Choose Select this unit. Verify the confirmation names its first global gate,
+   starts on Cancel, and Cancel causes no movement. Confirm once with unloaded
+   filament outside printing/pauses; expect `MMU_SELECT GATE=...` exactly once.
+3. Verify the queried active unit and gate both match the confirmed target. Check
+   actual selector travel/homing on the printer; selection can cause movement.
+4. Change the partition, active unit or physical state from the web UI while
+   confirmation is open. Test loaded/busy/printing/paused locks and reconnect;
+   stale or uncertain operations must not be submitted again.
 
 Tool map: edit several tools to one gate, cancel the draft, cancel confirmation,
 then Save and verify the actual Happy Hare mapping. Check long lists, gate bounds,
