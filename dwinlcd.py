@@ -386,6 +386,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             # Keep status current while the panel is disconnected.
             self.pd.update_variable()
             self.pd.bed_mesh.update()
+            self.pd.mmu_session.update()
             self._ensure_uart()
             return
         try:
@@ -863,6 +864,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._print_error_visible = False
         self.pd.HMI_flag.done_confirm_flag = False
         self.pd.HMI_flag.pause_flag = self.pd.printingIsPaused()
+        if self.checkkey == self.MMUMenu:
+            return
+        mmu = self.pd.mmu_session.state
+        if status == 'paused' and mmu and mmu.locked and mmu.reason:
+            self.Enter_MMU_Menu('recover')
+            return
         if status in ('printing', 'paused', 'pausing'):
             self.Goto_PrintProcess()
         elif status == 'complete':
@@ -964,8 +971,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.checkkey = self.Leveling
                 self.HMI_Leveling()
             elif key == 'MMU':
-                self.checkkey = self.MMUMenu
-                self.Draw_MMU_Menu()
+                self.Enter_MMU_Menu()
             elif key == 'INFO':
                 self._info_origin = self.MainMenu
                 self.checkkey = self.Info
@@ -1878,6 +1884,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     # --------------------------------------------------------------#
 
     def Draw_Status_Area(self, with_update):
+        if getattr(self, 'checkkey', None) == self.MMUMenu:
+            return
         # Compact dashboard: temperatures / speed / fan, bed / flow / Z offset,
         # then interpolated live X/Y/Z positions.
         self.lcd.Draw_Rectangle(
@@ -2538,6 +2546,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 getattr(self, name).reset()
             self.index_prepare = self.index_tune = self.index_control = self.MROWS
             self._offline = True
+        self._poll_mmu()
+        if self.checkkey == self.MMUMenu:
+            self._offline = bool(self.pd.connection_error)
+            if self.last_status != self.pd.status:
+                self._present_print_state()
+            return
         if self._poll_action():
             return
         self._poll_screws_tilt()
