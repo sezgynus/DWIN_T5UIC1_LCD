@@ -228,6 +228,52 @@ class AtlasDriverTests(unittest.TestCase):
         self.assertTrue(lcd._atlas_synced)
         lcd.read_flash.assert_not_called()
 
+    def test_sync_logs_upload_progress_and_persistent_metadata_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcd, _, _ = configured_driver(tmp)
+            lcd.read_flash = Mock(return_value=b"\xFF" * lcd.ATLAS_METADATA_SIZE)
+            lcd.write_sram = Mock()
+            lcd.store_sram_as_picture = Mock()
+            lcd.write_flash = Mock()
+
+            with self.assertLogs(level="INFO") as captured:
+                self.assertTrue(lcd.sync_atlases())
+
+        output = "\n".join(captured.output)
+        self.assertIn("Atlas sync: reading metadata @ 0x3FC0", output)
+        self.assertIn("Atlas 0: changed -> upload required", output)
+        self.assertIn("Atlas 0: SRAM upload complete", output)
+        self.assertIn("Atlas 0: Picture Flash 14 write complete", output)
+        self.assertIn("Atlas 1: Picture Flash 15 write complete", output)
+        self.assertIn("Atlas metadata: Data Flash update complete", output)
+        self.assertIn("Atlas sync complete: updated virtual area(s) 0,1", output)
+
+    def test_sync_logs_unchanged_atlases_and_virtual_area_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcd, _, _ = configured_driver(tmp)
+            _, desired = lcd._atlas_payloads()
+            lcd.read_flash = Mock(return_value=lcd._pack_atlas_metadata(desired))
+            lcd.write_sram = Mock()
+            lcd.store_sram_as_picture = Mock()
+            lcd.write_flash = Mock()
+
+            with self.assertLogs(level="INFO") as captured:
+                self.assertFalse(lcd.sync_atlases())
+                lcd._virtual_area_pictures.clear()
+                lcd._load_atlas_area(1)
+
+        output = "\n".join(captured.output)
+        self.assertIn("Atlas 0: unchanged -> skip", output)
+        self.assertIn("Atlas 1: unchanged -> skip", output)
+        self.assertIn("Atlas metadata: unchanged", output)
+        self.assertIn("Atlas sync complete: no atlas uploads required", output)
+        self.assertIn(
+            "Atlas 1: loading Picture Flash 15 into virtual area 1", output
+        )
+        lcd.write_sram.assert_not_called()
+        lcd.store_sram_as_picture.assert_not_called()
+        lcd.write_flash.assert_not_called()
+
     def test_startup_can_defer_sync_until_binary_atlases_are_present(self):
         lcd = driver()
         lcd._atlas_specs, lcd._atlas_icons = lcd._build_atlas_config(

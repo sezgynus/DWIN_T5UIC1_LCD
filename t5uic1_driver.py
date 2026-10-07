@@ -7,6 +7,7 @@ renderers used by KlipperDWIN to preserve its current visual output.
 """
 
 import hashlib
+import logging
 import math
 import struct
 import time
@@ -872,6 +873,9 @@ class T5UIC1Display:
                 data = path.read_bytes()
             except OSError as error:
                 if allow_missing:
+                    logging.warning(
+                        "Atlas sync deferred: host JPEG missing: %s", path
+                    )
                     return None, None
                 raise OSError(f"Unable to read atlas JPEG: {path}") from error
             if not 4 <= len(data) <= self.SRAM_SIZE:
@@ -901,28 +905,108 @@ class T5UIC1Display:
         if payloads is None:
             return False
         if not desired:
+            logging.info("Atlas sync: no active custom icons; nothing to do")
             self._atlas_synced = True
             return False
 
-        raw_metadata = self.read_flash(
-            self.ATLAS_METADATA_ADDRESS, self.ATLAS_METADATA_SIZE
+        specs, _ = self._atlas_runtime_config()
+        logging.info("Atlas sync: checking %d active atlas(es)", len(desired))
+        for area in sorted(desired):
+            picture_id, size, digest = desired[area]
+            _, path = specs[area]
+            logging.info(
+                "Atlas %d: host=%s picture=%d size=%d hash=%s",
+                area, path, picture_id, size, digest.hex()[:12],
+            )
+
+        logging.info(
+            "Atlas sync: reading metadata @ 0x%04X (%d bytes)",
+            self.ATLAS_METADATA_ADDRESS, self.ATLAS_METADATA_SIZE,
         )
+        try:
+            raw_metadata = self.read_flash(
+                self.ATLAS_METADATA_ADDRESS, self.ATLAS_METADATA_SIZE
+            )
+        except Exception:
+            logging.exception("Atlas sync: metadata read failed")
+            raise
+
         current = self._unpack_atlas_metadata(raw_metadata)
+        if current:
+            logging.info(
+                "Atlas sync: valid persistent metadata found for %d atlas(es)",
+                len(current),
+            )
+        else:
+            logging.info(
+                "Atlas sync: no valid persistent metadata; active atlases require upload"
+            )
+
         changed = [
             area for area in sorted(desired)
             if current.get(area) != desired[area]
         ]
+        changed_set = set(changed)
+        for area in sorted(desired):
+            if area in changed_set:
+                logging.info("Atlas %d: changed -> upload required", area)
+            else:
+                logging.info("Atlas %d: unchanged -> skip", area)
 
-        specs, _ = self._atlas_runtime_config()
         for area in changed:
             picture_id, _ = specs[area]
-            self.write_sram(0, payloads[area])
-            self.store_sram_as_picture(picture_id)
+            data = payloads[area]
+            logging.info(
+                "Atlas %d: uploading %d bytes to SRAM @ 0x0000",
+                area, len(data),
+            )
+            try:
+                self.write_sram(0, data)
+            except Exception:
+                logging.exception("Atlas %d: SRAM upload failed", area)
+                raise
+            logging.info("Atlas %d: SRAM upload complete", area)
+
+            logging.info(
+                "Atlas %d: storing SRAM as Picture Flash %d",
+                area, picture_id,
+            )
+            try:
+                self.store_sram_as_picture(picture_id)
+            except Exception:
+                logging.exception(
+                    "Atlas %d: Picture Flash %d write failed",
+                    area, picture_id,
+                )
+                raise
+            logging.info(
+                "Atlas %d: Picture Flash %d write complete",
+                area, picture_id,
+            )
 
         metadata = self._pack_atlas_metadata(desired)
         if raw_metadata != metadata:
-            self.write_flash(self.ATLAS_METADATA_ADDRESS, metadata)
+            logging.info(
+                "Atlas metadata: updating Data Flash @ 0x%04X",
+                self.ATLAS_METADATA_ADDRESS,
+            )
+            try:
+                self.write_flash(self.ATLAS_METADATA_ADDRESS, metadata)
+            except Exception:
+                logging.exception("Atlas metadata: Data Flash write failed")
+                raise
+            logging.info("Atlas metadata: Data Flash update complete")
+        else:
+            logging.info("Atlas metadata: unchanged")
+
         self._atlas_synced = True
+        if changed:
+            logging.info(
+                "Atlas sync complete: updated virtual area(s) %s",
+                ",".join(str(area) for area in changed),
+            )
+        else:
+            logging.info("Atlas sync complete: no atlas uploads required")
         return bool(changed)
 
     def _load_atlas_area(self, area):
@@ -930,6 +1014,10 @@ class T5UIC1Display:
         if area not in specs:
             raise ValueError("atlas virtual area is not configured")
         picture_id, _ = specs[area]
+        logging.info(
+            "Atlas %d: loading Picture Flash %d into virtual area %d",
+            area, picture_id, area,
+        )
         if area == 0:
             self.show_jpeg(picture_id)
         else:
