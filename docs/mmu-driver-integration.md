@@ -36,6 +36,7 @@ were redesigned by this integration. The earlier A01–A06/A08 audit fixes remai
 - Infrastructure/API integration: 561 tests passed.
 - Header/power/canvas integration: 566 tests passed.
 - Lifecycle and stale-popup integration: 573 tests passed.
+- Final asset-documentation consistency pass: 573 tests passed.
 - Python compile and shell syntax checks passed.
 - GitHub regression runs and bot signatures are verified before the next commit.
 - The exact master driver, atlas manifest and atlas JPEGs are preserved.
