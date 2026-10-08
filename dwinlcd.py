@@ -314,6 +314,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._power_focus = False
         self._power_origin = None
         self._power_confirm_yes = True
+        logging.info('POWER_DIAG init screen=%s focus=%s confirm_yes=%s', self.MainMenu, self._power_focus, self._power_confirm_yes)
         self._loop = UIEventLoop(self._initialize, self._process_input,
                                  self._ui_tick, self._close_resources)
         self._loop.start()
@@ -365,6 +366,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                                  handshake_attempts=1)
             self._configure_menus()
             self.HMI_Init()
+            logging.info('POWER_DIAG uart_render_begin screen=%s ui_epoch=%s', self.checkkey, self._uart_epoch)
             self.HMI_StartFrame(False)
             if getattr(self, 'checkkey', None) == self.BedMeshScreen:
                 self.Draw_Bed_Mesh()
@@ -381,6 +383,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self._show_message('Moonraker unavailable')
             self._uart_online = True
             self._uart_epoch += 1
+            logging.info('POWER_DIAG uart_ready screen=%s ui_epoch=%s focus=%s', self.checkkey, self._uart_epoch, self._power_focus)
             self._uart_probe_failures = 0
             self._next_uart_probe = time.monotonic() + 2.0
             logging.info('LCD UART connected; current screen restored')
@@ -684,6 +687,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                             1 + (self.ENCODER_FAST_MULTIPLIER - 1)
                             * normalized ** self.ENCODER_ACCEL_EXPONENT))
             self._last_encoder_time = now
+            logging.info('POWER_DIAG gpio_rotate delta=%s rate=%.2f ui_epoch=%s', delta, rate, self._uart_epoch)
             self._enqueue_input('rotate', delta, delta * multiplier, rate)
 
     def _button_pressed(self):
@@ -695,6 +699,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             now = time.monotonic()
             if now - self._last_press >= self.ENCODER_WAIT_ENTER / 1000:
                 self._last_press = now
+                logging.info('POWER_DIAG gpio_press ui_epoch=%s', self._uart_epoch)
                 self._enqueue_input('press', 1)
 
     def _request_power_on(self):
@@ -705,6 +710,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             logging.warning('LCD input queue full or closed; power-on request discarded')
 
     def _button_held(self):
+        logging.info('POWER_DIAG gpio_hold ui_epoch=%s', self._uart_epoch)
         if getattr(self, 'power_on_hold_ms', 2000) > 0:
             self._request_power_on()
 
@@ -800,6 +806,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 'live_jog_flush', 0, snapshot['epoch'], getattr(self, '_uart_epoch', 0))))
 
     def _process_input(self, event):
+        if event.kind in ('rotate', 'press', 'power_on'):
+            logging.info('POWER_DIAG input kind=%s value=%s event_epoch=%s event_ui_epoch=%s screen=%s current_ui_epoch=%s uart_online=%s', event.kind, event.value, event.epoch, event.ui_epoch, self.checkkey, self._uart_epoch, self._uart_online)
         if event.kind == 'power_on':
             if not self._closed:
                 self.pd.power_on_if_off()
@@ -2796,8 +2804,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if self.checkkey == self.PowerConfirm:
             if event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
                 self._power_confirm_yes = not self._power_confirm_yes
+                logging.info('POWER_DIAG confirm_toggle yes=%s', self._power_confirm_yes)
                 self._draw_power_confirmation()
             elif event == self.ENCODER_DIFF_ENTER:
+                logging.warning('POWER_DIAG confirm_enter yes=%s origin=%s', self._power_confirm_yes, self._power_origin)
                 if self._power_confirm_yes:
                     self.pd.power_off_if_on()
                     self._show_message('Powering off...')
@@ -2807,16 +2817,19 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if getattr(self, '_power_focus', False):
             if event == self.ENCODER_DIFF_CW:
                 self._power_focus = False
+                logging.info('POWER_DIAG focus_exit screen=%s', self.checkkey)
                 self._draw_power_icon(False, clear=True)
             elif event == self.ENCODER_DIFF_ENTER:
                 self._power_origin = self.checkkey
                 self._power_confirm_yes = True
                 self._power_focus = False
                 self.checkkey = self.PowerConfirm
+                logging.warning('POWER_DIAG popup_open origin=%s event=%s', self._power_origin, event)
                 self._draw_power_confirmation()
             return True
         if event == self.ENCODER_DIFF_CCW and self._power_at_first_item():
             self._power_focus = True
+            logging.info('POWER_DIAG focus_enter screen=%s event=%s', self.checkkey, event)
             self._draw_power_icon(True, clear=True)
             return True
         return False
