@@ -14,6 +14,8 @@ class UARTReconnectTests(unittest.TestCase):
         result._uart_epoch = 0
         result._uart_online = False
         result._next_uart_retry = 0
+        result._next_uart_probe = 0
+        result._uart_probe_failures = 0
         result.HMI_Init = Mock()
         result.HMI_StartFrame = Mock()
         result._show_message = Mock()
@@ -24,7 +26,7 @@ class UARTReconnectTests(unittest.TestCase):
         result = self.display()
         result.lcd = None
         port = Mock()
-        with patch.object(ui, 'T5UIC1_LCD', side_effect=[TimeoutError('no panel'), port]) as factory:
+        with patch.object(ui, 'T5UIC1Display', side_effect=[TimeoutError('no panel'), port]) as factory:
             with patch.object(ui.time, 'monotonic', return_value=0):
                 self.assertFalse(result._ensure_uart())
             with patch.object(ui.time, 'monotonic', return_value=4):
@@ -50,6 +52,48 @@ class UARTReconnectTests(unittest.TestCase):
         self.assertFalse(result._uart_online)
         self.assertIsNone(result.lcd)
         self.assertEqual(result._next_uart_retry, 15)
+
+    def test_liveness_probe_requires_two_failures_before_reconnect(self):
+        result = self.display()
+        result._uart_online = True
+        result.lcd.handshake.return_value = False
+        result.EachMomentUpdate = Mock()
+
+        with patch.object(ui.time, 'monotonic', return_value=10):
+            result._ui_tick()
+        self.assertTrue(result._uart_online)
+        self.assertEqual(result._uart_probe_failures, 1)
+
+        with patch.object(ui.time, 'monotonic', return_value=12):
+            result._ui_tick()
+        self.assertFalse(result._uart_online)
+        self.assertIsNone(result.lcd)
+        self.assertEqual(result._next_uart_retry, 17)
+
+    def test_successful_liveness_probe_resets_failure_count(self):
+        result = self.display()
+        result._uart_online = True
+        result._uart_probe_failures = 1
+        result.lcd.handshake.return_value = True
+        result.EachMomentUpdate = Mock()
+
+        with patch.object(ui.time, 'monotonic', return_value=10):
+            result._ui_tick()
+
+        self.assertTrue(result._uart_online)
+        self.assertEqual(result._uart_probe_failures, 0)
+        self.assertEqual(result._next_uart_probe, 12)
+
+    def test_liveness_probe_is_rate_limited(self):
+        result = self.display()
+        result._uart_online = True
+        result._next_uart_probe = 12
+        result.EachMomentUpdate = Mock()
+
+        with patch.object(ui.time, 'monotonic', return_value=10):
+            result._ui_tick()
+
+        result.lcd.handshake.assert_not_called()
 
     def test_old_uart_epoch_and_offline_input_are_discarded(self):
         result = self.display()
@@ -82,12 +126,12 @@ class UARTReconnectTests(unittest.TestCase):
         self.assertFalse(result._uart_online)
         self.assertIsNone(result.lcd)
         old.close.assert_called_once()
-        old.UpdateLCD.assert_not_called()
+        old.update.assert_not_called()
 
     def test_closed_display_does_not_reopen_port(self):
         result = self.display()
         result._closed = True
-        with patch.object(ui, 'T5UIC1_LCD') as factory:
+        with patch.object(ui, 'T5UIC1Display') as factory:
             self.assertFalse(result._ensure_uart())
         factory.assert_not_called()
 
@@ -101,16 +145,18 @@ class UARTReconnectTests(unittest.TestCase):
         self.assertTrue(result._uart_online)
 
     def test_current_screen_is_flushed_immediately_after_reconnect(self):
-        from test_uart import Driver, Port
+        from test_t5uic1_driver import driver
         result = self.display()
-        driver = Driver.__new__(Driver)
-        driver.MYSERIAL1 = Port()
-        driver.DWIN_SendBuf = driver.FHONE
-        driver._closed = False
-        driver._needs_update = False
-        result.HMI_Init = lambda: driver.JPG_CacheTo1(1)
-        result.HMI_StartFrame = lambda update: driver.Frame_Clear(0)
-        with patch.object(ui, 'T5UIC1_LCD', return_value=driver):
+        lcd = driver()
+        lcd._needs_update = False
+        result.HMI_Init = Mock()
+        result.HMI_StartFrame = lambda update: lcd.clear(0)
+        with patch.object(ui, 'T5UIC1Display', return_value=lcd):
             self.assertTrue(result._ensure_uart())
-        self.assertEqual([frame[1] for frame in driver.MYSERIAL1.frames], [0x25, 1, 0x3D])
-        self.assertFalse(driver._needs_update)
+        result.HMI_Init.assert_called_once_with()
+        self.assertEqual([frame[1] for frame in lcd.serial.frames], [1, 0x3D])
+        self.assertFalse(lcd._needs_update)
+
+
+if __name__ == '__main__':
+    unittest.main()

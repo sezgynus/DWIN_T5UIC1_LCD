@@ -34,7 +34,7 @@ Uygulama, Ender 3 V2’de kullanılan 4,3 inç paneli ve görsel kaynak düzenin
 | Yazıcı ayarları | Homing, Move/Live Jog, ısıtıcı/fan hedefleri, çalışma zamanı Z offset ve hareket sınırları |
 | Tabla kalibrasyonu | Dört köşe Screws Tilt Adjust, Bed Mesh Calibrate, kayıtlı Mesh Viewer ve Probe calibration |
 | Entegrasyonlar | Düzenlenebilir Mainsail sıcaklık presetleri, Happy Hare kanal görünümü, Spoolman yüzdeleri ve M355 kabin ışığı |
-| Sistem bilgileri | Kaydırılabilir host, yazılım ve MCU bilgileri; encoder ile güç açma |
+| Sistem bilgileri | Kaydırılabilir host, yazılım ve MCU bilgileri; encoder ile güç açma/kapatma |
 
 Menüler algılanan yazıcı yeteneklerine göre şekillenir. **MMU menüsü tam ekran Happy Hare kontrolü, canlı durum ve kurtarma sunar**; ana ekrandaki kanal görünümünün mevcut yerleşimi korunur. Diğer sınırlar [aşağıda](#kapsam-ve-sınırlar) listelenmiştir.
 
@@ -269,9 +269,11 @@ M355 P0..255
 Light is ON, Brightness=128
 ```
 
-### Encoder ile güç açma
+### Encoder ile güç kontrolü
 
 Encoder düğmesini basılı tutarak Moonraker güç aygıtı açılabilir; Klipper veya LCD UART çevrimdışı olsa da çalışır. Aygıt adı ve basılı tutma süresini `./configure.sh` ile ayarlayın. Varsayılanlar `Printer` ve **2 saniye**; `0` ms, basıldığında hemen güç açma ister.
+
+Her menünün sağ üstünde aynı güç ikonu bulunur. İlk menü öğesindeyken encoderi saat yönünün tersine çevirerek ikona odaklanın; saat yönünde çevirerek menüye dönün. Odaklanmış ikonda encoder düğmesine basmak **Turn off printer?** onay penceresini açar ve **Yes varsayılan seçilidir**. Yes onaylandığında yalnızca yapılandırılmış Moonraker güç aygıtının bildirilen durumu `on` ise kapatma komutu gönderilir; No, gelinen menüye döner.
 
 ## Yapılandırma
 
@@ -342,6 +344,8 @@ sudo systemctl restart KlipperDWIN.service
 
 Tek UI sahibi thread; çizim, gezinme ve UART yazımlarını yönetir. GPIO callback’leri girdi olaylarını kuyruğa ekler. Moonraker WebSocket abonelikleri birleştirilmiş değiştirilemez durum sağlar; sıralı HTTP worker komutları işler, uzun tabla kalibrasyonları tamamlanması izlenen WebSocket RPC kullanır.
 
+Yanıt tabanlı panel heartbeat'i, Linux UART aygıtı açık kalmış olsa bile LCD güç çevrimini algılar. Yeniden bağlantıda ekran ve geçici atlas/cache durumu persistent Picture Flash'tan geri yüklenir; değişmemiş atlas verisi Flash'a yeniden yazılmaz.
+
 Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başarısız yazıcı komutları **otomatik tekrar gönderilmez**. Yeniden bağlantı arayüzü çizer ve geçici önbellekleri yeniden kurar. Zaman aşımı, komutun yazıcıya ulaşıp yanıtın kaybolduğu anlamına gelebilir; tekrarlamadan önce gerçek durumu inceleyin.
 
 | Modüller | Sorumluluk |
@@ -351,7 +355,7 @@ Bağlantı epoch’ları eski girdileri ve kuyruktaki komutları reddeder. Başa
 | `moonraker_client.py`, `moonraker_subscription.py`, `command_feedback.py` | HTTP/WebSocket iletişimi ve komut onayı |
 | `screws_tilt.py`, `bed_mesh.py`, `probe_wizard.py` | Kalibrasyon durum makineleri ve sonuç/yapılandırma korumaları |
 | `thumbnail_preview.py`, `thumbnail_cache.py`, `preview_metadata.py` | JPEG hazırlığı, SRAM alan yönetimi ve isteğe bağlı metadata |
-| `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Ekran paketleri, GPIO girdileri ve olay döngüsü |
+| `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Tam T5UIC1 protokol sürücüsü, GPIO girdileri ve olay döngüsü |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset kaydı, çalışma zamanı sınırları ve sistem telemetrisi |
 
 Hareket ve kalibrasyon komutları gönderilirken canlı baskı, home ve oturum durumu yeniden kontrol edilir; eski jog konumu reddedilir. Hareket hatasından sonra MOVE=0 temizliğinin çalışabilmesi için jog geri yükleme ayrı bağlantı kontrolü kullanır.
@@ -365,6 +369,8 @@ Komut geri bildirimi, taşıma Future sonucu gelmese de süre sınırına tabidi
 MMU kontrolleri, isteğe bağlı ana ekran RGB verisinden bağımsız olarak doğrulanmış canlı kontrol durumunu kullanır. Eksik veya bozuk gate renkleri ana ekran şeridini gizleyebilir; geçerli menü işlemlerini kapatmaz. Baskı, meşguliyet, fiziksel durum ve gönderim kontrolleri uygulanmaya devam eder.
 
 HTTP JSON yanıtları, dosya listesi, metadata ve komut sonuçları dahil varsayılan olarak 8 MiB ile sınırlıdır. Entegrasyonlar `MoonrakerClient(max_json_bytes=...)` ile pozitif tamsayı byte sınırı belirleyebilir. Okuyucu Content-Length bilgisinden bağımsız sınır uygular; büyük yanıtlar hata verir ve komutlar otomatik tekrarlanmaz.
+
+T5UIC1 LCD'nin donanım yapılandırması, firmware/görsel kaynakları, bellek düzeni ve çalışma zamanı protokolü [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md) içinde birlikte belgelenmiştir.
 
 ### Regresyon testleri
 

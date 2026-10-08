@@ -34,7 +34,7 @@ The application targets the 4.3-inch panel and asset layout used by the Ender 3 
 | Adjust the printer | Homing, Move/Live Jog, heater/fan targets, runtime Z offset and motion limits |
 | Calibrate the bed | Four-corner Screws Tilt Adjust, Bed Mesh Calibrate, saved Mesh Viewer and Probe calibration |
 | Use integrations | Editable Mainsail temperature presets, Happy Hare gate visualization, Spoolman percentages and M355 case light |
-| Inspect the system | Scrollable host, software and MCU information; encoder power-on |
+| Inspect the system | Scrollable host, software and MCU information; encoder power on/off |
 
 Menus adapt to detected printer capabilities. The **MMU menu provides full-screen Happy Hare control, live status and recovery**; its Home-screen gate visualization keeps the existing layout. Remaining limitations are listed [below](#scope-and-limitations).
 
@@ -269,9 +269,11 @@ M355 P0..255
 Light is ON, Brightness=128
 ```
 
-### Encoder power-on
+### Encoder power control
 
 A Moonraker power device can be switched on by holding the encoder button, even while Klipper or LCD UART is offline. Configure the device name and hold duration with `./configure.sh`. Defaults are `Printer` and **2 seconds**; `0` ms requests power-on immediately on press.
+
+Every menu exposes the same power icon at the top-right. From the first menu item, rotate the encoder counter-clockwise to focus the icon; rotate clockwise to return to the menu. Pressing the focused icon opens a **Turn off printer?** confirmation with **Yes selected by default**. Confirming Yes switches off the configured Moonraker power device only when its reported state is `on`; No returns to the originating menu.
 
 ## Configuration
 
@@ -342,7 +344,7 @@ Transport and action errors are logged, but a clean log cannot prove physical mo
 
 One UI owner thread controls rendering, navigation and UART writes. GPIO callbacks enqueue input events. Moonraker WebSocket subscriptions supply merged immutable state; a serialized HTTP worker handles commands, while long bed-calibration operations use completion-tracked WebSocket RPC.
 
-Connection epochs reject stale input and queued commands. Failed printer commands are **not replayed automatically**. Reconnecting redraws the UI and rebuilds volatile caches. A timeout may mean the printer received a command but its response was lost; inspect actual state before retrying.
+Connection epochs reject stale input and queued commands. Failed printer commands are **not replayed automatically**. A response-based panel heartbeat detects LCD power cycles even when the Linux UART device remains open; reconnecting redraws the UI and restores volatile atlas/cache state from persistent Picture Flash without rewriting unchanged atlas data. A timeout may mean the printer received a command but its response was lost; inspect actual state before retrying.
 
 | Modules | Responsibility |
 |---|---|
@@ -351,7 +353,7 @@ Connection epochs reject stale input and queued commands. Failed printer command
 | `moonraker_client.py`, `moonraker_subscription.py`, `command_feedback.py` | HTTP/WebSocket transport and command confirmation |
 | `screws_tilt.py`, `bed_mesh.py`, `probe_wizard.py` | Calibration state machines and result/config guards |
 | `thumbnail_preview.py`, `thumbnail_cache.py`, `preview_metadata.py` | JPEG preparation, SRAM allocation and optional metadata |
-| `DWIN_Screen.py`, `encoder.py`, `ui_events.py` | Display packets, GPIO input and event loop |
+| `t5uic1_driver.py`, `encoder.py`, `ui_events.py` | Complete T5UIC1 protocol driver, GPIO input and event loop |
 | `preset_store.py`, `motion_settings.py`, `system_info.py` | Preset persistence, runtime limits and system telemetry |
 
 Motion and calibration commands recheck live print, homing and session state when dispatched; stale jog positions are rejected. Jog cleanup uses a separate connection guard so MOVE=0 restoration remains available after a movement failure.
@@ -365,6 +367,8 @@ Command feedback has a deadline even while its transport Future remains unresolv
 MMU controls use the validated live control state independently of optional Home RGB telemetry. Missing or malformed gate colors can hide the Home strip without disabling otherwise valid menu actions; print, busy, physical-state and dispatch guards still apply.
 
 HTTP JSON responses are limited to 8 MiB by default, including file lists, metadata and command replies. Integrations can configure `MoonrakerClient(max_json_bytes=...)` with a positive integer byte budget. The reader enforces the limit independently of Content-Length; oversized responses fail without automatically replaying commands.
+
+Complete T5UIC1 LCD configuration, firmware/assets, memory layout and runtime protocol details are documented in [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md).
 
 ### Regression tests
 

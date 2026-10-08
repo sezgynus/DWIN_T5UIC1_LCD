@@ -1,17 +1,11 @@
 """MMU menu and Happy Hare home-screen rendering mixin."""
 
+from lcd_atlas import ICON_MMU_HOME_NORMAL, ICON_MMU_HOME_SELECTED
+
 class MMUViewMixin:
     def Draw_MMU_Home_Icon(self, x, y, selected):
-        # Three filament reels fit the same tile as the stock Home icons.
-        edge = self.lcd.Color_White if selected else 0x8410
-        colors = (0xF800, 0x07E0, 0x001F) if selected else (0x7800, 0x03E0, 0x0010)
-        for lane, color in enumerate(colors):
-            left = x + 16 + lane * 27
-            self.lcd.Draw_Rectangle(1, color, left+4, y+22, left+18, y+49)
-            for flange in (left, left+19):
-                self.lcd.Draw_Rectangle(1, edge, flange, y+16, flange+3, y+55)
-            self.lcd.Draw_Line(color, left+11, y+56, left+11, y+62)
-        self.lcd.Draw_Line(edge, x+27, y+62, x+81, y+62)
+        icon_id = ICON_MMU_HOME_SELECTED if selected else ICON_MMU_HOME_NORMAL
+        self.lcd.draw_atlas_icon(icon_id, x + 16, y + 16)
 
     @staticmethod
     def _rgb565(rgb):
@@ -36,7 +30,7 @@ class MMUViewMixin:
         start = left + max(0, (width - total) // 2)
         title = str(mmu.get('name') or 'MMU')[:22]
         title_x = max(4, (self.lcd.DWIN_WIDTH - 6 * len(title)) // 2)
-        self.lcd.Draw_String(False, True, self.lcd.font6x12,
+        self.lcd.draw_text(False, True, self.lcd.font6x12,
                              self.lcd.Color_White, self.lcd.Color_Bg_Black,
                              title_x, 32, title)
 
@@ -58,19 +52,19 @@ class MMUViewMixin:
             y0, y1 = top + 13, top + 52
 
             # Warm cardboard/wood flanges stand out against the black UI.
-            self.lcd.Draw_Rectangle(1, flange, reel_x + 1, top + 7,
+            self.lcd.draw_rectangle(1, flange, reel_x + 1, top + 7,
                                     reel_x + flange_w, top + 58)
-            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + 1, top + 7,
+            self.lcd.draw_rectangle(0, flange_edge, reel_x + 1, top + 7,
                                     reel_x + flange_w, top + 58)
-            self.lcd.Draw_Rectangle(1, flange, reel_x + reel_w - flange_w - 1, top + 7,
+            self.lcd.draw_rectangle(1, flange, reel_x + reel_w - flange_w - 1, top + 7,
                                     reel_x + reel_w - 2, top + 58)
-            self.lcd.Draw_Rectangle(0, flange_edge, reel_x + reel_w - flange_w - 1, top + 7,
+            self.lcd.draw_rectangle(0, flange_edge, reel_x + reel_w - flange_w - 1, top + 7,
                                     reel_x + reel_w - 2, top + 58)
-            self.lcd.Draw_Rectangle(1, color, body_left, y0, body_right, y1)
+            self.lcd.draw_rectangle(1, color, body_left, y0, body_right, y1)
 
             winding = self.lcd.Color_White if sum(mmu['gate_color_rgb'][gate]) < 0.7 else flange
             for line_x in range(body_left + 5, body_right, 7):
-                self.lcd.Draw_Line(winding, line_x, y0, line_x, y1)
+                self.lcd.draw_line(winding, line_x, y0, line_x, y1)
 
             percent = percentages[gate] if gate < len(percentages) else None
             # Percent text needs enough horizontal room. Compact high-gate
@@ -79,10 +73,10 @@ class MMUViewMixin:
                 pct = '--' if percent is None else '%d%%' % percent
                 # Black backing keeps the percentage readable on white/yellow filament.
                 pct_w = 6 * len(pct) + 4
-                self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black,
+                self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black,
                                         cx - pct_w // 2, top + 27,
                                         cx + pct_w // 2, top + 41)
-                self.lcd.Draw_String(False, True, self.lcd.font6x12,
+                self.lcd.draw_text(False, True, self.lcd.font6x12,
                                      self.lcd.Color_White, self.lcd.Color_Bg_Black,
                                      cx - 3 * len(pct), top + 28, pct)
 
@@ -107,8 +101,8 @@ class MMUViewMixin:
             # Black/off LEDs therefore render as black rather than falling back.
             label_bg = indicator
             border = indicator
-            self.lcd.Draw_Rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
-            self.lcd.Draw_Rectangle(0, border, lx0, top + 64, lx1, top + 78)
+            self.lcd.draw_rectangle(1, label_bg, lx0, top + 64, lx1, top + 78)
+            self.lcd.draw_rectangle(0, border, lx0, top + 64, lx1, top + 78)
             # Choose black or white text for maximum contrast against
             # the live lane color.  This keeps bright green/yellow/cyan lane
             # numbers readable without sacrificing dark-color visibility.
@@ -119,7 +113,7 @@ class MMUViewMixin:
                          587 * g6 * 255 // 63 +
                          114 * b5 * 255 // 31) // 1000
             label_fg = 0x0000 if luminance >= 140 else self.lcd.Color_White
-            self.lcd.Draw_String(False, True, self.lcd.font6x12,
+            self.lcd.draw_text(False, True, self.lcd.font6x12,
                                  label_fg, label_bg,
                                  cx - 3 * len(label), top + 65, label)
 
@@ -181,7 +175,7 @@ class MMUViewMixin:
             self._mmu_canvas_page = None
             self.Goto_MainMenu()
             self.Draw_Status_Area(False)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def _mmu_text(self, key, value, x, y, cells=31, small=False, color=0xFFFF, bg=0x0000):
         value = str(value).replace('\n', ' ').replace('\r', ' ')
@@ -193,8 +187,8 @@ class MMUViewMixin:
         if self._mmu_render.get(key) == signature:
             return
         self._mmu_render[key] = signature
-        self.lcd.Draw_Rectangle(1, bg, x, y, min(271, x + cells * width - 1), y + height - 1)
-        self.lcd.Draw_String(False, False, self.lcd.font6x12 if small else self.lcd.font8x16,
+        self.lcd.draw_rectangle(1, bg, x, y, min(271, x + cells * width - 1), y + height - 1)
+        self.lcd.draw_text(False, False, self.lcd.font6x12 if small else self.lcd.font8x16,
                              color, bg, x, y, value)
 
     def _mmu_row(self, key, label, value, x, y, width, selected, enabled=True):
@@ -206,16 +200,16 @@ class MMUViewMixin:
         self._mmu_render[key] = signature
         bg = 0x33BD if selected else 0x18E4
         fg = 0xFFFF if enabled else 0x8410
-        self.lcd.Draw_Rectangle(1, bg, x, y, x + width - 1, y + 39)
+        self.lcd.draw_rectangle(1, bg, x, y, x + width - 1, y + 39)
         if selected:
-            self.lcd.Draw_Rectangle(0, 0xFFFF, x, y, x + width - 1, y + 39)
+            self.lcd.draw_rectangle(0, 0xFFFF, x, y, x + width - 1, y + 39)
         cells = (width - 16) // 8
         value = str(value)[:max(0, cells - 3)]
         available = cells - (len(value) + 1 if value else 0)
         label = label[:available] if len(label) <= available else label[:max(0, available - 1)] + '~'
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, fg, bg, x + 8, y + 12, label)
+        self.lcd.draw_text(False, False, self.lcd.font8x16, fg, bg, x + 8, y + 12, label)
         if value:
-            self.lcd.Draw_String(False, False, self.lcd.font8x16, fg, bg,
+            self.lcd.draw_text(False, False, self.lcd.font8x16, fg, bg,
                                  x + width - 8 - 8 * len(value), y + 12, value)
 
     @staticmethod
@@ -445,23 +439,23 @@ class MMUViewMixin:
         if self._mmu_render.get('spools') == signature:
             return
         self._mmu_render['spools'] = signature
-        self.lcd.Draw_Rectangle(1, 0x0000, 8, 59, 263, 164)
+        self.lcd.draw_rectangle(1, 0x0000, 8, 59, 263, 164)
         for slot, gate in enumerate(range(start, min(m.num_gates, start + count))):
             x = 14 + slot * 66
             rgb = colors[gate] if gate < len(colors) else (0.5, 0.5, 0.5)
             color = self._rgb565(rgb) if m.gate_status[gate] in (1, 2) else 0x8410
             tools = m.tools_for_gate(gate)
             label = 'T%d' % tools[0] if len(tools) == 1 else 'T*' if tools else '--'
-            self.lcd.Draw_String(False, False, self.lcd.font6x12, 0xFFFF, 0x0000, x + 6, 61, label)
-            self.lcd.Draw_Rectangle(1, color, x + 6, 85, x + 35, 123)
+            self.lcd.draw_text(False, False, self.lcd.font6x12, 0xFFFF, 0x0000, x + 6, 61, label)
+            self.lcd.draw_rectangle(1, color, x + 6, 85, x + 35, 123)
             for fx in (x, x + 36):
-                self.lcd.Draw_Rectangle(1, 0x9B46, fx, 79, fx + 5, 129)
+                self.lcd.draw_rectangle(1, 0x9B46, fx, 79, fx + 5, 129)
             percent = self._mmu_percent(gate)
-            self.lcd.Draw_Rectangle(1, 0x0000, x + 3, 99, x + 38, 113)
-            self.lcd.Draw_String(False, False, self.lcd.font6x12, 0xFFFF, 0x0000, x + 6, 100, percent)
+            self.lcd.draw_rectangle(1, 0x0000, x + 3, 99, x + 38, 113)
+            self.lcd.draw_text(False, False, self.lcd.font6x12, 0xFFFF, 0x0000, x + 6, 100, percent)
             bg = 0x07E0 if gate == m.gate else 0x18E4
-            self.lcd.Draw_Rectangle(1, bg, x, 138, x + 41, 158)
-            self.lcd.Draw_String(False, False, self.lcd.font6x12, 0x0000 if bg == 0x07E0 else 0xFFFF,
+            self.lcd.draw_rectangle(1, bg, x, 138, x + 41, 158)
+            self.lcd.draw_text(False, False, self.lcd.font6x12, 0x0000 if bg == 0x07E0 else 0xFFFF,
                                  bg, x + 12, 142, 'G%d' % (gate + 1))
         if m.num_gates > 4:
             self._mmu_render.pop('gatepage', None)
@@ -477,13 +471,13 @@ class MMUViewMixin:
         if self._mmu_render.get('path') == signature:
             return
         self._mmu_render['path'] = signature
-        self.lcd.Draw_Rectangle(1, 0x0000, 12, y, 259, y + 40)
+        self.lcd.draw_rectangle(1, 0x0000, 12, y, 259, y + 40)
         color = 0x249F if m.filament == 'loaded' else 0x8410
         for x, name in ((14, 'GATE'), (82, 'BOWDEN'), (200, 'NOZZLE')):
-            self.lcd.Draw_String(False, False, self.lcd.font6x12, 0x8410, 0x0000, x, y, name)
-        self.lcd.Draw_Line(color, 30, y + 24, 233, y + 24)
+            self.lcd.draw_text(False, False, self.lcd.font6x12, 0x8410, 0x0000, x, y, name)
+        self.lcd.draw_line(color, 30, y + 24, 233, y + 24)
         for x in (26, 106, 229):
-            self.lcd.Draw_Rectangle(1, color, x, y + 20, x + 7, y + 27)
+            self.lcd.draw_rectangle(1, color, x, y + 20, x + 7, y + 27)
 
     def _mmu_confirmation_valid(self):
         op = getattr(self, '_mmu_confirmation', None)
@@ -502,8 +496,8 @@ class MMUViewMixin:
         page = self._mmu_page
         m = self.pd.mmu_session.state
         if getattr(self, '_mmu_canvas_page', None) != page:
-            self.lcd.Draw_Rectangle(1, 0x0000, 0, 0, 271, 479)
-            self.lcd.Draw_Rectangle(1, 0x1105, 0, 0, 271, 29)
+            self.lcd.draw_rectangle(1, 0x0000, 0, 0, 271, 479)
+            self.lcd.draw_rectangle(1, 0x1105, 0, 0, 271, 29)
             self._mmu_canvas_page, self._mmu_render = page, {}
         if page == 'map' and getattr(self, '_mmu_map_draft', None) is None:
             self._mmu_begin_map()
@@ -728,12 +722,12 @@ class MMUViewMixin:
                     self._mmu_row('row%d' % row, label, value, 8, first_y + row * 43, 256,
                                   self._mmu_selection == i + 1, enabled)
                 elif self._mmu_render.get('row%d' % row) is not None:
-                    self.lcd.Draw_Rectangle(1, 0x0000, 8, first_y + row * 43, 263, first_y + row * 43 + 39)
+                    self.lcd.draw_rectangle(1, 0x0000, 8, first_y + row * 43, 263, first_y + row * 43 + 39)
                     self._mmu_render.pop('row%d' % row, None)
             if len(items) > visible:
                 self._mmu_text('pagination', '%d-%d / %d' % (start + 1, min(len(items), start + visible), len(items)), 12, 436, 40, small=True)
         self._mmu_text('footer', self._mmu_notice or ('Turn: edit   Press: accept' if getattr(self, '_mmu_edit', None) else 'Turn: select   Press: open'), 10, 463, 42, small=True, color=0xFD20 if self._mmu_notice else 0x8410)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_MMU_Menu(self):
         if not hasattr(self, '_mmu_page'):

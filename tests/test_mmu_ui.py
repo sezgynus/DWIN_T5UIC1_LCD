@@ -42,7 +42,7 @@ class MMUUITests(unittest.TestCase):
         view._dispatch_input()
 
     def strings(self, view):
-        return [c.args[-1] for c in view.lcd.Draw_String.call_args_list]
+        return [c.args[-1] for c in view.lcd.draw_text.call_args_list]
 
     def make_hardware(self, selector_type='ServoSelector', always=False, **changes):
         fields = dict(unit=0, is_homed=True, selector={'grip': 'Released'},
@@ -148,11 +148,11 @@ class MMUUITests(unittest.TestCase):
             v._mmu_canvas_page = None
             v.lcd.reset_mock()
             v.Draw_MMU_Menu()
-            for call in v.lcd.Draw_Rectangle.call_args_list:
+            for call in v.lcd.draw_rectangle.call_args_list:
                 _, _, x0, y0, x1, y1 = call.args
                 self.assertTrue(0 <= x0 <= x1 < 272)
                 self.assertTrue(0 <= y0 <= y1 < 480)
-            for call in v.lcd.Draw_String.call_args_list:
+            for call in v.lcd.draw_text.call_args_list:
                 self.assertTrue(0 <= call.args[5] < 272)
                 self.assertTrue(0 <= call.args[6] < 480)
         v._mmu_open('unit')
@@ -261,7 +261,7 @@ class MMUUITests(unittest.TestCase):
         v, _ = self.make_hardware(selector_type='LinearServoSelector')
         v.lcd.reset_mock()
         v._mmu_open('maintenance')
-        for c in v.lcd.Draw_Rectangle.call_args_list:
+        for c in v.lcd.draw_rectangle.call_args_list:
             _, _, x0, y0, x1, y1 = c.args
             self.assertTrue(0 <= x0 <= x1 < 272)
             self.assertTrue(0 <= y0 <= y1 < 480)
@@ -559,7 +559,7 @@ class MMUUITests(unittest.TestCase):
         v._mmu_selection = count
         v.Draw_MMU_Menu()
         self.assertTrue(any('G16' in s for s in self.strings(v)))
-        for c in v.lcd.Draw_String.call_args_list:
+        for c in v.lcd.draw_text.call_args_list:
             x, _, value = c.args[-3:]
             font = c.args[2]
             cell = 6 if font == v.lcd.font6x12 else 8
@@ -593,16 +593,16 @@ class MMUUITests(unittest.TestCase):
 
     def test_home_uses_full_canvas_but_keeps_original_dashboard_untouched(self):
         v, _ = self.make()
-        self.assertIn((1, 0x0000, 0, 0, 271, 479), [c.args for c in v.lcd.Draw_Rectangle.call_args_list])
+        self.assertIn((1, 0x0000, 0, 0, 271, 479), [c.args for c in v.lcd.draw_rectangle.call_args_list])
         self.assertIn('T2 > G3  LOADED', self.strings(v))
         v.lcd.reset_mock()
         v.Draw_Status_Area(True)
         v.lcd.assert_not_called()
-        v.lcd.Draw_Rectangle.assert_not_called()
-        v.lcd.Draw_String.assert_not_called()
+        v.lcd.draw_rectangle.assert_not_called()
+        v.lcd.draw_text.assert_not_called()
         v.Draw_MMU_Menu()
-        v.lcd.Draw_Rectangle.assert_not_called()
-        v.lcd.Draw_String.assert_not_called()
+        v.lcd.draw_rectangle.assert_not_called()
+        v.lcd.draw_text.assert_not_called()
 
     def test_browse_gates_and_open_details_never_moves(self):
         v, _ = self.make()
@@ -693,8 +693,8 @@ class MMUUITests(unittest.TestCase):
         v.lcd.reset_mock()
         v.get_encoder_state.return_value = v.ENCODER_DIFF_CW
         v.HMI_MMU_Menu()
-        self.assertTrue(v.lcd.Draw_Rectangle.called)
-        for c in v.lcd.Draw_Rectangle.call_args_list:
+        self.assertTrue(v.lcd.draw_rectangle.called)
+        for c in v.lcd.draw_rectangle.call_args_list:
             self.assertGreaterEqual(c.args[3], 5)
             self.assertNotEqual(c.args[2:], (0,0,271,479))
         self.assertNotIn('78%', self.strings(v))
@@ -767,12 +767,12 @@ class MMUUITests(unittest.TestCase):
             v._mmu_canvas_page = None
             v.lcd.reset_mock()
             v.Draw_MMU_Menu()
-            for c in v.lcd.Draw_Rectangle.call_args_list:
+            for c in v.lcd.draw_rectangle.call_args_list:
                 _, _, x0, y0, x1, y1 = c.args
                 with self.subTest(page=page, coords=c.args):
                     self.assertTrue(0 <= x0 <= x1 < 272)
                     self.assertTrue(0 <= y0 <= y1 < 480)
-            for c in v.lcd.Draw_String.call_args_list:
+            for c in v.lcd.draw_text.call_args_list:
                 x,y,value = c.args[-3:]
                 self.assertGreaterEqual(x,0)
                 self.assertLess(x,272)
@@ -831,11 +831,11 @@ class MMUUITests(unittest.TestCase):
         v._uart_epoch = 0
         v.HMI_Init = Mock()
         port = Mock()
-        with patch.object(ui, 'T5UIC1_LCD', return_value=port):
+        with patch.object(ui, 'T5UIC1Display', return_value=port):
             self.assertTrue(v._ensure_uart())
         self.assertEqual(v._mmu_page, 'gates')
-        self.assertIn((1,0x0000,0,0,271,479), [c.args for c in port.Draw_Rectangle.call_args_list])
-        self.assertIn('G1 PLA', [c.args[-1] for c in port.Draw_String.call_args_list])
+        self.assertIn((1,0x0000,0,0,271,479), [c.args for c in port.draw_rectangle.call_args_list])
+        self.assertIn('G1 PLA', [c.args[-1] for c in port.draw_text.call_args_list])
         v.pd.subscription.request.assert_not_called()
 
     def test_offline_encoder_navigation_can_back_out_but_never_sends_motion(self):
@@ -868,5 +868,5 @@ class MMUUITests(unittest.TestCase):
         v.EachMomentUpdate()
         self.assertEqual(v.checkkey,v.MMUMenu)
         self.assertIn('Nozzle 201/205 C', self.strings(v))
-        self.assertNotIn((1,0x0000,0,0,271,479), [c.args for c in v.lcd.Draw_Rectangle.call_args_list])
-        self.assertFalse(any(c.args[3] == v.STATUS_Y for c in v.lcd.Draw_Rectangle.call_args_list))
+        self.assertNotIn((1,0x0000,0,0,271,479), [c.args for c in v.lcd.draw_rectangle.call_args_list])
+        self.assertFalse(any(c.args[3] == v.STATUS_Y for c in v.lcd.draw_rectangle.call_args_list))

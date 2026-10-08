@@ -14,7 +14,8 @@ from encoder import Encoder
 from gpiozero import Button, Device
 from gpiozero.pins.lgpio import LGPIOFactory
 from printerInterface import PrinterData
-from DWIN_Screen import T5UIC1_LCD
+from t5uic1_driver import T5UIC1Display
+from lcd_atlas import ICON_FOLDER, ICON_MCU, ICON_MACHINE, ICON_HOST, ICON_SOFTWARE, ICON_POWER
 
 def _MAX(lhs, rhs):
     if lhs > rhs:
@@ -123,6 +124,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     BedMeshMenu = 43
     MMUMenu = 44
     FilePreview = 45
+    PowerConfirm = 46
 
     MINUNITMULT = 10
 
@@ -140,9 +142,6 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     dwin_zoffset = 0.0
     last_zoffset = 0.0
-
-    # Picture ID
-    Language_English = 1
 
     # ICON ID
     ICON = 0x09
@@ -297,6 +296,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._uart_epoch = 0
         self._uart_online = False
         self._next_uart_retry = 0
+        self._next_uart_probe = 0
+        self._uart_probe_failures = 0
         self.encoder = self.button = self.lcd = self.pd = None
         self._settings = (USARTx, encoder_pins, button_pin, octoPrint_API_Key,
                           moonraker_url, request_timeout, settings_path, power_device, power_on_hold_ms)
@@ -310,6 +311,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._live_jog_future = None
         self._live_jog_pending = None
         self._info_scroll = 0
+        self._power_focus = False
+        self._power_origin = None
+        self._power_confirm_yes = True
         self._loop = UIEventLoop(self._initialize, self._process_input,
                                  self._ui_tick, self._close_resources)
         self._loop.start()
@@ -344,6 +348,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._uart_online = False
         self._uart_epoch += 1
         self._next_uart_retry = time.monotonic() + 5
+        self._next_uart_probe = 0
+        self._uart_probe_failures = 0
         if self.lcd is not None:
             self.lcd.close()
         self.lcd = None
@@ -355,7 +361,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if self._closed or time.monotonic() < self._next_uart_retry:
             return False
         try:
-            self.lcd = T5UIC1_LCD(self._settings[0], handshake_timeout=1.0,
+            self.lcd = T5UIC1Display(self._settings[0], handshake_timeout=1.0,
                                  handshake_attempts=1)
             self._configure_menus()
             self.HMI_Init()
@@ -371,11 +377,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.Draw_MMU_Menu()
             if getattr(self, 'checkkey', None) == self.FilePreview:
                 self.Draw_File_Preview()
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             if self.pd.connection_error and self.checkkey != self.MMUMenu:
                 self._show_message('Moonraker unavailable')
             self._uart_online = True
             self._uart_epoch += 1
+            self._uart_probe_failures = 0
+            self._next_uart_probe = time.monotonic() + 2.0
             logging.info('LCD UART connected; current screen restored')
             return True
         except (OSError, TimeoutError):
@@ -391,6 +399,19 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self._ensure_uart()
             return
         try:
+            now = time.monotonic()
+            if now >= getattr(self, '_next_uart_probe', 0):
+                self._next_uart_probe = now + 2.0
+                if self.lcd.handshake(timeout=0.5):
+                    self._uart_probe_failures = 0
+                else:
+                    self._uart_probe_failures = getattr(self, '_uart_probe_failures', 0) + 1
+                    logging.warning('LCD liveness probe failed (%d/2)',
+                                    self._uart_probe_failures)
+                    if self._uart_probe_failures >= 2:
+                        logging.warning('LCD liveness lost; reconnecting')
+                        self._uart_failed()
+                        return
             if getattr(self, 'checkkey', None) == self.FilePreview:
                 if not getattr(self, '_pending_start', None) and not getattr(self, '_start_error_visible', False):
                     self._poll_file_preview()
@@ -440,7 +461,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             screens[self.checkkey]()
         else:
             self.HMI_StartFrame(False)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def _poll_action(self):
         feedback = getattr(self, '_action_feedback', None)
@@ -543,7 +564,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             bottom = selection.now + self.MROWS
         setattr(self, index_name, max(self.MROWS, bottom))
         draw()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
         return True
 
     def _draw_capability_menu(self, name, selection, bottom=None, profile=None):
@@ -570,10 +591,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 elif key == 'SPEED':
                     value = self.pd.feedrate_percentage
                 elif key == 'ZOFF':
-                    self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black,
+                    self.lcd.draw_signed_scaled_float_text(self.lcd.font8x16, self.lcd.Color_Bg_Black,
                                                2, 2, 202, self.MBASE(row), self.pd.BABY_Z_VAR * 100)
                 if value is not None:
-                    self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                    self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16,
                                           self.lcd.Color_White, self.lcd.Color_Bg_Black,
                                           3, 216, self.MBASE(row), value)
 
@@ -592,7 +613,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.checkkey = self.FanSpeed
             values.Fan_speed = self.pd.thermalManager['fan_speed'][0]
             value = values.Fan_speed
-        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+        self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16,
                                self.lcd.Color_White, self.lcd.Select_Color,
                                3, 216, self.MBASE(row), value)
 
@@ -617,10 +638,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def _show_message(self, message):
         self.Clear_Main_Window()
-        self.lcd.Draw_String(False, True, self.lcd.DWIN_FONT_STAT,
+        self.lcd.draw_text(False, True, self.lcd.DWIN_FONT_STAT,
                              self.lcd.Color_White, self.lcd.Color_Bg_Black,
                              10, 50, message)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def _enqueue_input(self, kind, value, accelerated_value=0, rate=0.0):
         feedback = getattr(self, '_action_feedback', None)
@@ -697,7 +718,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.index_prepare = self.index_tune = self.MROWS
             self._offline = False
             self.HMI_StartFrame(False)
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             return False
         return True
 
@@ -833,35 +854,30 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             if (lcd is not None and self.lcd is lcd
                     and not getattr(lcd, '_closed', False)):
                 lcd._defer_updates = False
-                lcd.UpdateLCD()
+                lcd.update()
 
     def MBASE(self, L):
         return 49 + self.MLINE * L
 
-    def HMI_SetLanguageCache(self):
-        self.lcd.JPG_CacheTo1(self.Language_English)
-
-    def HMI_SetLanguage(self):
-        self.HMI_SetLanguageCache()
-
     def HMI_ShowBoot(self, mesg=None):
         if mesg:
-            self.lcd.Draw_String(
+            self.lcd.draw_text(
                 False, False, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 10, 50,
                 mesg
             )
         for t in range(0, 100, 2):
-            self.lcd.ICON_Show(self.ICON, self.ICON_Bar, 15, 260)
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 15 + t * 242 / 100, 260, 257, 280)
-            self.lcd.UpdateLCD()
+            self.lcd.show_icon(self.ICON, self.ICON_Bar, 15, 260)
+            self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 15 + t * 242 / 100, 260, 257, 280)
+            self.lcd.update()
             time.sleep(.020)
 
     def HMI_Init(self):
-        # HMI_SDCardInit()
-
-        self.HMI_SetLanguage()
+        # Virtual display areas are owned exclusively by the managed atlas
+        # driver. Legacy language-JPEG caching used area 1 and could overwrite
+        # an atlas after a panel power-cycle/reconnect.
+        pass
 
     def _present_print_state(self):
         status = self.pd.status
@@ -883,9 +899,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 return
             self.Goto_PrintProcess()
             self.pd.HMI_flag.done_confirm_flag = True
-            self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 250,
+            self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 0, 250,
                                     self.lcd.DWIN_WIDTH - 1, self.STATUS_Y)
-            self.lcd.ICON_Show(self.ICON, self.ICON_Confirm_E, 86, 283)
+            self.lcd.show_icon(self.ICON, self.ICON_Confirm_E, 86, 283)
         elif status == 'error':
             if getattr(self, '_acknowledged_terminal', None) == self._terminal_key():
                 self.Goto_MainMenu()
@@ -924,7 +940,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.select_page.set(min(self.select_page.now, len(entries)-1))
         page = self.select_page.now // 4
         # Clear only navigation: the logo/MMU and live dashboard stay in place.
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 126, 271, self.STATUS_Y-1)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 0, 126, 271, self.STATUS_Y-1)
         for index in range(page*4, min(len(entries), page*4+4)):
             key, label, normal, selected = entries[index]
             slot = index % 4
@@ -933,13 +949,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             if key == 'MMU':
                 self.Draw_MMU_Home_Icon(x, y, active)
             else:
-                self.lcd.ICON_Show(self.ICON, selected if active else normal, x, y)
+                self.lcd.show_icon(self.ICON, selected if active else normal, x, y)
             if active:
-                self.lcd.Draw_Rectangle(0, self.lcd.Color_White, x, y, x+109, y+99)
+                self.lcd.draw_rectangle(0, self.lcd.Color_White, x, y, x+109, y+99)
             self._draw_menu_text(label, x+(109-len(label)*8)//2, y+71)
         pages = (len(entries)+3)//4
         if pages > 1:
-            self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
+            self.lcd.draw_text(False, False, self.lcd.font6x12, self.lcd.Color_White,
                                  self.lcd.Color_Bg_Black, 127, 347, str(page+1)+'/'+str(pages))
 
     def HMI_MainMenu(self):
@@ -983,7 +999,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.Draw_Info_Menu()
         if event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW) and previous != self.select_page.now:
             self._draw_home_page()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def _refresh_file_snapshot(self):
         paths = self.pd.GetDirectory(getattr(self, '_file_directory', ''))
@@ -1012,7 +1028,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.select_file.set(self._file_paths.index(select) + 1)
             self.index_file = max(self.MROWS, self.select_file.now)
         self.Draw_Print_File_Menu()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_SelectFile(self):
         event = self.get_encoder_state()
@@ -1047,7 +1063,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.index_file = max(self.MROWS, self.select_file.now,
                               min(self.index_file, self.select_file.now + self.MROWS))
         self.Redraw_SD_List()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def _poll_print_start(self):
         pending = getattr(self, '_pending_start', None)
@@ -1119,7 +1135,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             elif self.select_prepare.now == self.PREPARE_CASE_COOL:  # Cool
                 self._action('Cooldown', self.pd.cooldown)
 
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Control(self):
         encoder_diffState = self.get_encoder_state()
@@ -1158,7 +1174,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.checkkey = self.Info
                 self.Draw_Info_Menu()
 
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Info(self):
         event = self.get_encoder_state()
@@ -1181,7 +1197,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             else:
                 self.select_page.set(next(i for i, entry in enumerate(self._home_entries()) if entry[0] == 'INFO'))
                 self.Goto_MainMenu()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Printing(self):
         encoder_diffState = self.get_encoder_state()
@@ -1246,7 +1262,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.pd.HMI_flag.select_flag = True
                 self.checkkey = self.Print_window
                 self.Popup_window_PauseOrStop()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     # Pause and Stop window */
     def HMI_PauseOrStop(self):
@@ -1271,7 +1287,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                                  confirmation_timeout=60)
                 else:
                     self.Goto_PrintProcess()  # cancel stop
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     # Tune  */
     def HMI_Tune(self):
@@ -1287,7 +1303,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             elif self.select_tune.now == self.TUNE_CASE_SPEED:  # Print speed
                 self.checkkey = self.PrintSpeed
                 self.pd.HMI_ValueStruct.print_speed = self.pd.feedrate_percentage
-                self.lcd.Draw_IntValue(
+                self.lcd.draw_integer_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 216, self.MBASE(self.TUNE_CASE_SPEED + self.MROWS - self.index_tune),
                     self.pd.feedrate_percentage
@@ -1298,7 +1314,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             elif self.select_tune.now == self.TUNE_CASE_ZOFF:   #z offset
                 self._open_zoffset(0, self.TUNE_CASE_ZOFF + self.MROWS - self.index_tune)
 
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_PrintSpeed(self):
         encoder_diffState = self.get_encoder_state()
@@ -1316,7 +1332,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.encoderRate = True
             self._action("Print speed", lambda: self.pd.set_feedrate(self.pd.HMI_ValueStruct.print_speed))
 
-        self.lcd.Draw_IntValue(
+        self.lcd.draw_integer_text(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
             3, 216, self.MBASE(self.select_tune.now + self.MROWS - self.index_tune),
             self.pd.HMI_ValueStruct.print_speed
@@ -1333,7 +1349,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 if (encoder_diffState == self.ENCODER_DIFF_ENTER):
                     self.pd.HMI_flag.ETempTooLow_flag = False
                     self.Draw_Move_Menu()
-                    self.lcd.UpdateLCD()
+                    self.lcd.update()
                 return
         # Avoid flicker by updating only the previous menu
         live_index = 4 + int(self.pd.HAS_HOTEND)
@@ -1353,7 +1369,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             elif self.select_axis.now == 1:  # axis move
                 self.checkkey = self.Move_X
                 self.pd.HMI_ValueStruct.Move_X_scale = self.pd.state.status['gcode_move']['position'][0] * self.MINUNITMULT
-                self.lcd.Draw_FloatValue(
+                self.lcd.draw_scaled_float_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 1, 216, self.MBASE(1),
                     self.pd.HMI_ValueStruct.Move_X_scale
@@ -1361,7 +1377,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             elif self.select_axis.now == 2:  # Y axis move
                 self.checkkey = self.Move_Y
                 self.pd.HMI_ValueStruct.Move_Y_scale = self.pd.state.status['gcode_move']['position'][1] * self.MINUNITMULT
-                self.lcd.Draw_FloatValue(
+                self.lcd.draw_scaled_float_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 1, 216, self.MBASE(2),
                     self.pd.HMI_ValueStruct.Move_Y_scale
@@ -1369,7 +1385,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             elif self.select_axis.now == 3:  # Z axis move
                 self.checkkey = self.Move_Z
                 self.pd.HMI_ValueStruct.Move_Z_scale = self.pd.state.status['gcode_move']['position'][2] * self.MINUNITMULT
-                self.lcd.Draw_FloatValue(
+                self.lcd.draw_scaled_float_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
                     3, 1, 216, self.MBASE(3),
                     self.pd.HMI_ValueStruct.Move_Z_scale
@@ -1380,19 +1396,19 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                     if not self.pd.state.status.get(self.pd.capabilities.active_hotend.name, {}).get('can_extrude', False):
                         self.pd.HMI_flag.ETempTooLow_flag = True
                         self.Popup_Window_ETempTooLow()
-                        self.lcd.UpdateLCD()
+                        self.lcd.update()
                         return
                 self.checkkey = self.Extruder
                 self.pd.last_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
                 self.pd.HMI_ValueStruct.Move_E_scale = self.pd.state.status['gcode_move']['position'][3] * self.MINUNITMULT
-                self.lcd.Draw_Signed_Float(
+                self.lcd.draw_signed_scaled_float_text(
                     self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4),
                     self.pd.HMI_ValueStruct.Move_E_scale
                 )
             elif self.select_axis.now == live_index:
                 self._live_jog = not getattr(self, '_live_jog', False)
                 self.Draw_Move_Menu()
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Move_X(self):
         encoder_diffState = self.get_encoder_state()
@@ -1401,14 +1417,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.lcd.Draw_FloatValue(
+            self.lcd.draw_scaled_float_text(
                 True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 3, 1, 216, self.MBASE(1),
                 self.pd.HMI_ValueStruct.Move_X_scale
             )
             if not getattr(self, '_live_jog', False):
                 self._action("Jog X", lambda: self.pd.moveAbsolute('X', self.pd.HMI_ValueStruct.Move_X_scale / self.MINUNITMULT, 5000))
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
             self.pd.HMI_ValueStruct.Move_X_scale += self._encoder_move_value
@@ -1425,10 +1441,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             applied = (self.pd.HMI_ValueStruct.Move_X_scale - previous_scale) / self.MINUNITMULT
             if applied:
                 self._queue_live_jog('X', applied, self._live_jog_speed('X'))
-        self.lcd.Draw_FloatValue(
+        self.lcd.draw_scaled_float_text(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(1), self.pd.HMI_ValueStruct.Move_X_scale)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Move_Y(self):
         encoder_diffState = self.get_encoder_state()
@@ -1437,7 +1453,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.lcd.Draw_FloatValue(
+            self.lcd.draw_scaled_float_text(
                 True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 3, 1, 216, self.MBASE(2),
                 self.pd.HMI_ValueStruct.Move_Y_scale
@@ -1445,7 +1461,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
             if not self._live_jog:
                 self._action("Jog Y", lambda: self.pd.moveAbsolute('Y', self.pd.HMI_ValueStruct.Move_Y_scale / self.MINUNITMULT, 5000))
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
             self.pd.HMI_ValueStruct.Move_Y_scale += self._encoder_move_value
@@ -1462,10 +1478,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             applied = (self.pd.HMI_ValueStruct.Move_Y_scale - previous_scale) / self.MINUNITMULT
             if applied:
                 self._queue_live_jog('Y', applied, self._live_jog_speed('Y'))
-        self.lcd.Draw_FloatValue(
+        self.lcd.draw_scaled_float_text(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(2), self.pd.HMI_ValueStruct.Move_Y_scale)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Move_Z(self):
         encoder_diffState = self.get_encoder_state()
@@ -1474,14 +1490,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             return
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.lcd.Draw_FloatValue(
+            self.lcd.draw_scaled_float_text(
                 True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 3, 1, 216, self.MBASE(3),
                 self.pd.HMI_ValueStruct.Move_Z_scale
             )
             if not self._live_jog:
                 self._action("Jog Z", lambda: self.pd.moveAbsolute('Z', self.pd.HMI_ValueStruct.Move_Z_scale / self.MINUNITMULT, 600))
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
             self.pd.HMI_ValueStruct.Move_Z_scale += self._encoder_move_value
@@ -1498,10 +1514,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             applied = (self.pd.HMI_ValueStruct.Move_Z_scale - previous_scale) / self.MINUNITMULT
             if applied:
                 self._queue_live_jog('Z', applied, self._live_jog_speed('Z'))
-        self.lcd.Draw_FloatValue(
+        self.lcd.draw_scaled_float_text(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 1, 216, self.MBASE(3), self.pd.HMI_ValueStruct.Move_Z_scale)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Move_E(self):
         encoder_diffState = self.get_encoder_state()
@@ -1511,13 +1527,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
         elif (encoder_diffState == self.ENCODER_DIFF_ENTER):
             self.checkkey = self.AxisMove
-            self.lcd.Draw_Signed_Float(
+            self.lcd.draw_signed_scaled_float_text(
                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 3, 1, 216,
                 self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale
             )
             if not self._live_jog:
                 self._action("Jog E", lambda: self.pd.moveAbsolute('E', self.pd.HMI_ValueStruct.Move_E_scale / self.MINUNITMULT, 300))
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             return
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
             self.pd.HMI_ValueStruct.Move_E_scale += self._encoder_move_value
@@ -1532,8 +1548,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             applied = (self.pd.HMI_ValueStruct.Move_E_scale - previous_scale) / self.MINUNITMULT
             if applied:
                 self._queue_live_jog('E', applied, self._live_jog_speed('E'))
-        self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
-        self.lcd.UpdateLCD()
+        self.lcd.draw_signed_scaled_float_text(self.lcd.font8x16, self.lcd.Select_Color, 3, 1, 216, self.MBASE(4), self.pd.HMI_ValueStruct.Move_E_scale)
+        self.lcd.update()
 
     def HMI_Temperature(self):
         event = self.get_encoder_state()
@@ -1557,7 +1573,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             else:
                 self.pd.HMI_ValueStruct.show_mode = -1
                 self._open_thermal_editor(key, self.select_temp.now)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def _preset_hmi(self, profile=None):
         profile = getattr(self, '_active_preset', 0) if profile is None else profile
@@ -1565,7 +1581,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.checkkey = self.TemperatureID
             self.select_temp.reset()
             self.Draw_Temperature_Menu()
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             return
         selection = self.select_PLA
         draw = lambda: self._draw_capability_menu('preheat', selection, profile=profile)
@@ -1587,7 +1603,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                     self.HMI_AudioFeedback(future)
             else:
                 self._open_thermal_editor(key, selection.now, profile)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_PLAPreheatSetting(self):
         self._preset_hmi()
@@ -1611,10 +1627,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             value = self.pd.HMI_ValueStruct.Fan_speed + (self._encoder_move_value if event == self.ENCODER_DIFF_CW else -self._encoder_move_value)
             self.pd.HMI_ValueStruct.Fan_speed = max(0, min(100, value))
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+            self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16,
                                    self.lcd.Color_White, self.lcd.Select_Color,
                                    3, 216, self.MBASE(row), self.pd.HMI_ValueStruct.Fan_speed)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_ETemp(self):
         encoder_diffState = self.get_encoder_state()
@@ -1631,7 +1647,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if (self.pd.HMI_ValueStruct.show_mode == -1):  # temperature
                 self.checkkey = self.TemperatureID
-                self.lcd.Draw_IntValue(
+                self.lcd.draw_integer_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(temp_line),
                     self.pd.HMI_ValueStruct.E_Temp
@@ -1640,7 +1656,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.checkkey = self.PLAPreheat
                 profile = getattr(self, '_active_preset', 0)
                 self.pd.material_preset[profile].hotend_temp = self.pd.HMI_ValueStruct.E_Temp
-                self.lcd.Draw_IntValue(
+                self.lcd.draw_integer_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(temp_line),
                     self.pd.material_preset[profile].hotend_temp
@@ -1648,7 +1664,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 return
             else:  # tune
                 self.checkkey = self.Tune
-                self.lcd.Draw_IntValue(
+                self.lcd.draw_integer_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(temp_line),
                     self.pd.HMI_ValueStruct.E_Temp
@@ -1671,7 +1687,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if heater and 0 < self.pd.HMI_ValueStruct.E_Temp < heater.minimum:
             self.pd.HMI_ValueStruct.E_Temp = heater.minimum if encoder_diffState == self.ENCODER_DIFF_CW else 0
         # E_Temp value
-        self.lcd.Draw_IntValue(
+        self.lcd.draw_integer_text(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 216, self.MBASE(temp_line),
             self.pd.HMI_ValueStruct.E_Temp
@@ -1692,7 +1708,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if (encoder_diffState == self.ENCODER_DIFF_ENTER):
             if (self.pd.HMI_ValueStruct.show_mode == -1):  # temperature
                 self.checkkey = self.TemperatureID
-                self.lcd.Draw_IntValue(
+                self.lcd.draw_integer_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(bed_line),
                     self.pd.HMI_ValueStruct.Bed_Temp
@@ -1701,7 +1717,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.checkkey = self.PLAPreheat
                 profile = getattr(self, '_active_preset', 0)
                 self.pd.material_preset[profile].bed_temp = self.pd.HMI_ValueStruct.Bed_Temp
-                self.lcd.Draw_IntValue(
+                self.lcd.draw_integer_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(bed_line),
                     self.pd.material_preset[profile].bed_temp
@@ -1709,7 +1725,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 return
             else:  # tune
                 self.checkkey = self.Tune
-                self.lcd.Draw_IntValue(
+                self.lcd.draw_integer_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black,
                     3, 216, self.MBASE(bed_line),
                     self.pd.HMI_ValueStruct.Bed_Temp
@@ -1732,13 +1748,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         if heater and 0 < self.pd.HMI_ValueStruct.Bed_Temp < heater.minimum:
             self.pd.HMI_ValueStruct.Bed_Temp = heater.minimum if encoder_diffState == self.ENCODER_DIFF_CW else 0
         # Bed_Temp value
-        self.lcd.Draw_IntValue(
+        self.lcd.draw_integer_text(
             True, True, 0, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Select_Color,
             3, 216, self.MBASE(bed_line),
             self.pd.HMI_ValueStruct.Bed_Temp
         )
 
-# ---------------------Todo--------------------------------#
 
     def HMI_Motion(self):
         event = self.get_encoder_state()
@@ -1752,7 +1767,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.checkkey = self.Control
                 self.select_control.set(self.CONTROL_CASE_MOVE)
                 self.Draw_Control_Menu()
-                self.lcd.UpdateLCD()
+                self.lcd.update()
                 return
             if self.select_motion.now > len(settings):
                 self.select_motion.reset()
@@ -1762,7 +1777,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.checkkey = self.MotionValue
         if event != self.ENCODER_DIFF_NO:
             self.Draw_Motion_Menu()
-            self.lcd.UpdateLCD()
+            self.lcd.update()
 
     def HMI_MotionValue(self):
         event = self.get_encoder_state()
@@ -1784,7 +1799,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self._motion_target = min(max(.99, previous), self._motion_target)
         if event != self.ENCODER_DIFF_NO:
             self.Draw_Motion_Menu()
-            self.lcd.UpdateLCD()
+            self.lcd.update()
 
     def _probe_options(self):
         wizard = self.pd.probe_wizard
@@ -1810,7 +1825,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.Clear_Main_Window()
         self.Draw_Title('Probe calibration')
         wizard = self.pd.probe_wizard
-        self.lcd.Draw_String(False, False, self.lcd.font6x12, self.lcd.Color_White,
+        self.lcd.draw_text(False, False, self.lcd.font6x12, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, 8, 35, wizard.message[:42])
         options = self._probe_options()
         self._probe_selection = max(0, min(getattr(self, '_probe_selection', 0), max(0, len(options) - 1)))
@@ -1818,7 +1833,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.Draw_Menu_Line(row, self.ICON_Zoffset, label)
             if row == self._probe_selection:
                 self.Draw_Menu_Cursor(row)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Probe_Wizard(self):
         wizard = self.pd.probe_wizard
@@ -1842,7 +1857,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.checkkey = self.Homeoffset
         self.pd.HMI_ValueStruct.show_mode = mode
         self._zoffset_target = self.pd.BABY_Z_VAR * 100
-        self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Select_Color,
+        self.lcd.draw_signed_scaled_float_text(self.lcd.font8x16, self.lcd.Select_Color,
                                    2, 2, 202, self.MBASE(row), self._zoffset_target)
 
     def HMI_Zoffset(self):
@@ -1861,12 +1876,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self._action("Runtime Z offset", lambda: self.pd.setZOffset(self._zoffset_target / 100.0))
 
             self.checkkey = self.Prepare if self.pd.HMI_ValueStruct.show_mode == -4 else self.Tune
-            self.lcd.Draw_Signed_Float(
+            self.lcd.draw_signed_scaled_float_text(
                 self.lcd.font8x16, self.lcd.Color_Bg_Black, 2, 2, 202, self.MBASE(zoff_line),
                 self._zoffset_target
             )
 
-            self.lcd.UpdateLCD()
+            self.lcd.update()
             return
 
         elif (encoder_diffState == self.ENCODER_DIFF_CW):
@@ -1882,12 +1897,12 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.last_zoffset = self.dwin_zoffset
         self.dwin_zoffset = self._zoffset_target / 100.0
 
-        self.lcd.Draw_Signed_Float(
+        self.lcd.draw_signed_scaled_float_text(
             self.lcd.font8x16, self.lcd.Select_Color, 2, 2, 202,
             self.MBASE(zoff_line),
             self._zoffset_target
         )
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     # --------------------------------------------------------------#
     # --------------------------------------------------------------#
@@ -1897,7 +1912,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             return
         # Compact dashboard: temperatures / speed / fan, bed / flow / Z offset,
         # then interpolated live X/Y/Z positions.
-        self.lcd.Draw_Rectangle(
+        self.lcd.draw_rectangle(
             1, self.lcd.Color_Bg_Black, 0, self.STATUS_Y,
             self.lcd.DWIN_WIDTH, self.lcd.DWIN_HEIGHT - 1)
 
@@ -1908,14 +1923,14 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         value1, value2, value3 = 26, 137, 223
 
         if self.pd.HAS_HOTEND:
-            self.lcd.ICON_Show(self.ICON, self.ICON_HotendTemp, x1, y1 - 1)
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.DWIN_FONT_STAT,
+            self.lcd.show_icon(self.ICON, self.ICON_HotendTemp, x1, y1 - 1)
+            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black, 3, value1, y1,
                 self.pd.thermalManager['temp_hotend'][0]['celsius'])
-            self.lcd.Draw_String(False, False, self.lcd.DWIN_FONT_STAT,
+            self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 value1 + 3 * self.STAT_CHR_W, y1, "/")
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.DWIN_FONT_STAT,
+            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
                 value1 + 4 * self.STAT_CHR_W, y1,
                 self.pd.thermalManager['temp_hotend'][0]['target'])
@@ -1923,46 +1938,46 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         # Match the established dashboard behavior: alternate speed override
         # and instantaneous Klipper toolhead velocity in the same field.
         phase = int(time.monotonic() / 2.0) & 1
-        self.lcd.ICON_Show(self.ICON, self.ICON_Speed, x2, y1 - 1)
+        self.lcd.show_icon(self.ICON, self.ICON_Speed, x2, y1 - 1)
         if phase:
             speed_text = '{:.0f}%'.format(self.pd.feedrate_percentage)
         else:
             speed_text = '{:.0f}mm/s'.format(abs(self.pd.live_velocity))
-        self.lcd.Draw_String(False, True, self.lcd.DWIN_FONT_STAT,
+        self.lcd.draw_text(False, True, self.lcd.DWIN_FONT_STAT,
             self.lcd.Color_White, self.lcd.Color_Bg_Black, value2, y1, speed_text)
 
         if self.pd.HAS_FAN:
-            self.lcd.ICON_Show(self.ICON, self.ICON_FanSpeed, x3, y1 - 1)
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.DWIN_FONT_STAT,
+            self.lcd.show_icon(self.ICON, self.ICON_FanSpeed, x3, y1 - 1)
+            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
                 value3, y1, self.pd.dashboard_fan_pwm)
 
         if self.pd.HAS_HEATED_BED:
-            self.lcd.ICON_Show(self.ICON, self.ICON_BedTemp, x1, y2 - 1)
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.DWIN_FONT_STAT,
+            self.lcd.show_icon(self.ICON, self.ICON_BedTemp, x1, y2 - 1)
+            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black, 3, value1, y2,
                 self.pd.thermalManager['temp_bed']['celsius'])
-            self.lcd.Draw_String(False, False, self.lcd.DWIN_FONT_STAT,
+            self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black,
                 value1 + 3 * self.STAT_CHR_W, y2, "/")
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.DWIN_FONT_STAT,
+            self.lcd.draw_integer_text(True, True, 0, self.lcd.DWIN_FONT_STAT,
                 self.lcd.Color_White, self.lcd.Color_Bg_Black, 3,
                 value1 + 4 * self.STAT_CHR_W, y2,
                 self.pd.thermalManager['temp_bed']['target'])
 
         # The extrusion field alternates between M221 flow override and
         # instantaneous volumetric flow so both fit without sacrificing XYZ.
-        self.lcd.ICON_Show(self.ICON, self.ICON_StepE, x2, y2 - 1)
+        self.lcd.show_icon(self.ICON, self.ICON_StepE, x2, y2 - 1)
         if phase:
             flow_text = '{:.0f}%'.format(self.pd.flow_percentage)
         else:
             flow_text = '{:.1f}mm3/s'.format(self.pd.volumetric_flow)
-        self.lcd.Draw_String(False, True, self.lcd.DWIN_FONT_STAT,
+        self.lcd.draw_text(False, True, self.lcd.DWIN_FONT_STAT,
             self.lcd.Color_White, self.lcd.Color_Bg_Black, value2, y2, flow_text)
 
         if self.pd.HAS_ZOFFSET_ITEM:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Zoffset, x3, y2 - 1)
-            self.lcd.Draw_Signed_Float(
+            self.lcd.show_icon(self.ICON, self.ICON_Zoffset, x3, y2 - 1)
+            self.lcd.draw_signed_scaled_float_text(
                 self.lcd.DWIN_FONT_STAT, self.lcd.Color_Bg_Black,
                 2, 2, value3, y2, self.pd.BABY_Z_VAR * 100)
 
@@ -1971,36 +1986,44 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 (self.ICON_MaxSpeedX, x1, value1, positions[0]),
                 (self.ICON_MaxSpeedY, x2, value2, positions[1]),
                 (self.ICON_MaxSpeedZ, x3, value3, positions[2])):
-            self.lcd.ICON_Show(self.ICON, icon, xpos, y3 - 3)
-            self.lcd.Draw_Signed_Float(
+            self.lcd.show_icon(self.ICON, icon, xpos, y3 - 3)
+            self.lcd.draw_signed_scaled_float_text(
                 self.lcd.DWIN_FONT_STAT, self.lcd.Color_Bg_Black,
                 3, 1, value_x, y3, position * 10)
 
+    def _draw_power_icon(self, selected=False, clear=False):
+        if clear:
+            self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Blue, 241, 2, 268, 29)
+        self.lcd.draw_atlas_icon(ICON_POWER, 244, 5)
+        if selected:
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 241, 2, 267, 28)
+
     def Draw_Title(self, title):
-        self.lcd.Draw_String(False, False, self.lcd.DWIN_FONT_HEAD, self.lcd.Color_White, self.lcd.Color_Bg_Blue, 14, 4, title)
+        self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_HEAD, self.lcd.Color_White, self.lcd.Color_Bg_Blue, 14, 4, title)
+        self._draw_power_icon(getattr(self, '_power_focus', False))
 
     def Draw_Popup_Bkgd_105(self):
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Window, 14, 105, 258, 374)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Window, 14, 105, 258, 374)
 
     def Draw_More_Icon(self, line):
-        self.lcd.ICON_Show(self.ICON, self.ICON_More, 226, self.MBASE(line) - 3)
+        self.lcd.show_icon(self.ICON, self.ICON_More, 226, self.MBASE(line) - 3)
 
     def Draw_Menu_Cursor(self, line):
-        self.lcd.Draw_Rectangle(1, self.lcd.Rectangle_Color, 0, self.MBASE(line) - 18, 14, self.MBASE(line + 1) - 20)
+        self.lcd.draw_rectangle(1, self.lcd.Rectangle_Color, 0, self.MBASE(line) - 18, 14, self.MBASE(line + 1) - 20)
 
     def Draw_Menu_Icon(self, line, icon):
-        self.lcd.ICON_Show(self.ICON, icon, 26, self.MBASE(line) - 3)
+        self.lcd.show_icon(self.ICON, icon, 26, self.MBASE(line) - 3)
 
     def Draw_Menu_Line(self, line, icon=False, label=False):
         if (label):
-            self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, self.LBLX, self.MBASE(line) - 1, label)
+            self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, self.LBLX, self.MBASE(line) - 1, label)
         if (icon):
             self.Draw_Menu_Icon(line, icon)
-        self.lcd.Draw_Line(self.lcd.Line_Color, 16, self.MBASE(line) + 33, 256, self.MBASE(line) + 34)
+        self.lcd.draw_line(self.lcd.Line_Color, 16, self.MBASE(line) + 33, 256, self.MBASE(line) + 34)
 
     # The "Back" label is always on the first line
     def Draw_Back_Label(self):
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+        self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, self.LBLX, self.MBASE(0), 'Back')
 
     # Draw "Back" line at the top
@@ -2011,7 +2034,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self.Draw_Menu_Cursor(0)
 
     def _draw_menu_text(self, text, x, y):
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+        self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, x, y, text)
 
     def draw_move_en(self, line):
@@ -2039,9 +2062,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         label = path.rstrip('/').rsplit('/', 1)[-1]
         self.Draw_Menu_Line(row, False if is_dir else self.ICON_File, label)
         if is_dir:
-            y = self.MBASE(row)
-            self.lcd.Draw_Rectangle(1, 0xFFE0, 26, y-7, 35, y-3)
-            self.lcd.Draw_Rectangle(1, 0xFFE0, 26, y-3, 45, y+10)
+            self.lcd.draw_atlas_icon(ICON_FOLDER, 26, self.MBASE(row) - 7)
 
     def Draw_Select_Highlight(self, sel):
         self.pd.HMI_flag.select_flag = sel
@@ -2051,13 +2072,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         else:
             c1 = self.lcd.Color_Bg_Window
             c2 = self.lcd.Select_Color
-        self.lcd.Draw_Rectangle(0, c1, 25, 279, 126, 318)
-        self.lcd.Draw_Rectangle(0, c1, 24, 278, 127, 319)
-        self.lcd.Draw_Rectangle(0, c2, 145, 279, 246, 318)
-        self.lcd.Draw_Rectangle(0, c2, 144, 278, 247, 319)
+        self.lcd.draw_rectangle(0, c1, 25, 279, 126, 318)
+        self.lcd.draw_rectangle(0, c1, 24, 278, 127, 319)
+        self.lcd.draw_rectangle(0, c2, 145, 279, 246, 318)
+        self.lcd.draw_rectangle(0, c2, 144, 278, 247, 319)
 
     def Draw_Popup_Bkgd_60(self):
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Window, 14, 60, 258, 330)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Window, 14, 60, 258, 330)
 
     def Draw_Printing_Screen(self):
         self.Draw_Title('Tune')
@@ -2067,16 +2088,16 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def Draw_Print_ProgressBar(self, Percentrecord=None):
         if Percentrecord is None:
             Percentrecord = self.pd.getPercent()
-        self.lcd.ICON_Show(self.ICON, self.ICON_Bar, 15, 93)
-        self.lcd.Draw_Rectangle(1, self.lcd.BarFill_Color, 16 + Percentrecord * 240 / 100, 93, 256, 113)
-        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 3, 109, 133, Percentrecord)
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 133, 133, "%")
+        self.lcd.show_icon(self.ICON, self.ICON_Bar, 15, 93)
+        self.lcd.draw_rectangle(1, self.lcd.BarFill_Color, 16 + Percentrecord * 240 / 100, 93, 256, 113)
+        self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 3, 109, 133, Percentrecord)
+        self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Percent_Color, self.lcd.Color_Bg_Black, 133, 133, "%")
 
     def _draw_print_time(self, seconds, x):
         # Format completed minutes, not rounded fractional hours/minutes.
         minutes = max(0, int(seconds)) // 60
         text = '{:02d}:{:02d}'.format(minutes // 60, minutes % 60)
-        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+        self.lcd.draw_text(False, True, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, x, 212, text)
 
     def Draw_Print_ProgressElapsed(self):
@@ -2099,7 +2120,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def _draw_info_row(self, label, value, y):
         self._draw_menu_text(label, 8, y)
-        text = T5UIC1_LCD._panel_text(value)[:17]
+        text = T5UIC1Display._panel_text(value)[:17]
         color = self.lcd.Color_White
         if label == 'Network':
             state = text.strip().lower()
@@ -2107,26 +2128,28 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 color = 0x07E0
             elif state == 'offline':
                 color = 0xF800
-        self.lcd.Draw_String(False, False, self.lcd.font8x16, color,
+        self.lcd.draw_text(False, False, self.lcd.font8x16, color,
                              self.lcd.Color_Bg_Black, 120, y, text)
 
     def _draw_info_section(self, label, y):
-        text = T5UIC1_LCD._panel_text(label)[:24]
+        text = T5UIC1Display._panel_text(label)[:24]
         palette = {
-            'MACHINE': (0x07FF, self.ICON_PrintSize),
-            'HOST': (0xF81F, self.ICON_Info),
-            'SOFTWARE': (0xA81F, self.ICON_Version),
+            'MACHINE': (0x07FF, ICON_MACHINE),
+            'HOST': (0xF81F, ICON_HOST),
+            'SOFTWARE': (0xA81F, ICON_SOFTWARE),
         }
         key = text.upper()
         if key.startswith('MCU'):
-            color, icon = 0x07E0, None
+            color, icon = 0x07E0, ICON_MCU
         else:
-            color, icon = palette.get(key, (self.lcd.Color_White, self.ICON_Info))
+            color, icon = palette.get(key, (self.lcd.Color_White, None))
         if icon is not None:
-            self.lcd.ICON_Show(self.ICON, icon, 8, y - 2)
-        self.lcd.Draw_String(False, False, self.lcd.font10x20, color,
+            self.lcd.draw_atlas_icon(icon, 8, y - 2)
+        else:
+            self.lcd.show_icon(self.ICON, self.ICON_Info, 8, y - 2)
+        self.lcd.draw_text(False, False, self.lcd.font10x20, color,
                              self.lcd.Color_Bg_Black, 40, y, key)
-        self.lcd.Draw_Rectangle(1, color, 40, y + 21, 255, y + 22)
+        self.lcd.draw_rectangle(1, color, 40, y + 21, 255, y + 22)
 
     def _info_items(self):
         info = self.pd.system_info
@@ -2176,8 +2199,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             if kind == 'section':
                 self._draw_info_section(label, y)
             elif kind == 'wide':
-                text = T5UIC1_LCD._panel_text(value)[:31]
-                self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+                text = T5UIC1Display._panel_text(value)[:31]
+                self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Color_White,
                                      self.lcd.Color_Bg_Black, 8, y, text)
             else:
                 self._draw_info_row(label, value, y)
@@ -2212,7 +2235,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 text = '{:.3g}'.format(value)
             if len(text) > 9:
                 text = '#' * 9
-            self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+            self.lcd.draw_text(False, True, self.lcd.font8x16, self.lcd.Color_White,
                                  self.lcd.Select_Color if editing else self.lcd.Color_Bg_Black,
                                  168, self.MBASE(row), text.rjust(9))
 
@@ -2230,7 +2253,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
         live_row = 4 + int(self.pd.HAS_HOTEND)
         self.Draw_Menu_Line(live_row, self.ICON_Axis, 'Live jog')
-        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+        self.lcd.draw_text(False, True, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, 224, self.MBASE(live_row),
                              '[X]' if getattr(self, '_live_jog', False) else '[ ]')
 
@@ -2243,10 +2266,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         for index in range(3 + int(self.pd.HAS_HOTEND)):
             value = position[index] * self.MINUNITMULT
             if index == 3:
-                self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black,
+                self.lcd.draw_signed_scaled_float_text(self.lcd.font8x16, self.lcd.Color_Bg_Black,
                                            3, 1, 216, self.MBASE(4), value)
             else:
-                self.lcd.Draw_FloatValue(
+                self.lcd.draw_scaled_float_text(
                     True, True, 0, self.lcd.font8x16, self.lcd.Color_White,
                     self.lcd.Color_Bg_Black, 3, 1, 216, self.MBASE(index + 1), value)
 
@@ -2262,10 +2285,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def Goto_MainMenu(self):
         self.checkkey = self.MainMenu
         self.Clear_Main_Window()
+        self._draw_power_icon(getattr(self, '_power_focus', False))
 
-        self.lcd.Frame_AreaCopy(1, 0, 2, 39, 12, 14, 9)
         if self.pd.mmu is None:
-            self.lcd.ICON_Show(self.ICON, self.ICON_LOGO, 71, 52)
+            self.lcd.show_icon(self.ICON, self.ICON_LOGO, 71, 52)
         else:
             self.Draw_MMU_Status()
         self._drawn_mmu_state = self.pd.mmu
@@ -2288,10 +2311,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         name = self.pd.file_name
         if name:
             npos = _MAX(0, self.lcd.DWIN_WIDTH - len(name) * self.MENU_CHR_W) / 2
-            self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, npos, 60, name)
+            self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Color_White, self.lcd.Color_Bg_Black, npos, 60, name)
 
-        self.lcd.ICON_Show(self.ICON, self.ICON_PrintTime, 17, 193)
-        self.lcd.ICON_Show(self.ICON, self.ICON_RemainTime, 150, 191)
+        self.lcd.show_icon(self.ICON, self.ICON_PrintTime, 17, 193)
+        self.lcd.show_icon(self.ICON, self.ICON_RemainTime, 150, 191)
 
         self.Draw_Print_ProgressBar()
         self.Draw_Print_ProgressElapsed()
@@ -2301,10 +2324,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     # --------------------------------------------------------------#
 
     def Clear_Title_Bar(self):
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Blue, 0, 0, self.lcd.DWIN_WIDTH, 30)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Blue, 0, 0, self.lcd.DWIN_WIDTH, 30)
 
     def Clear_Menu_Area(self):
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 31, self.lcd.DWIN_WIDTH, self.STATUS_Y)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 0, 31, self.lcd.DWIN_WIDTH, self.STATUS_Y)
 
     def Clear_Main_Window(self):
         self.Clear_Title_Bar()
@@ -2312,60 +2335,60 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def Clear_Popup_Area(self):
         self.Clear_Title_Bar()
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, 31, self.lcd.DWIN_WIDTH, self.lcd.DWIN_HEIGHT)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 0, 31, self.lcd.DWIN_WIDTH, self.lcd.DWIN_HEIGHT)
 
     def Popup_window_PauseOrStop(self):
         self.Clear_Main_Window()
         self.Draw_Popup_Bkgd_60()
         if(self.select_print.now == 1):
-            self.lcd.Draw_String(
+            self.lcd.draw_text(
                 False, True, self.lcd.font8x16, self.lcd.Popup_Text_Color, self.lcd.Color_Bg_Window,
                 (272 - 8 * 11) / 2, 150,
                 self.MSG_PAUSE_PRINT
             )
         elif (self.select_print.now == 2):
-            self.lcd.Draw_String(
+            self.lcd.draw_text(
                 False, True, self.lcd.font8x16, self.lcd.Popup_Text_Color, self.lcd.Color_Bg_Window,
                 (272 - 8 * 10) / 2, 150,
                 self.MSG_STOP_PRINT
             )
-        self.lcd.ICON_Show(self.ICON, self.ICON_Confirm_E, 26, 280)
-        self.lcd.ICON_Show(self.ICON, self.ICON_Cancel_E, 146, 280)
+        self.lcd.show_icon(self.ICON, self.ICON_Confirm_E, 26, 280)
+        self.lcd.show_icon(self.ICON, self.ICON_Cancel_E, 146, 280)
         self.Draw_Select_Highlight(True)
 
     def Popup_Window_Home(self, parking=False):
         self.Clear_Main_Window()
         self.Draw_Popup_Bkgd_60()
-        self.lcd.ICON_Show(self.ICON, self.ICON_BLTouch, 101, 105)
+        self.lcd.show_icon(self.ICON, self.ICON_BLTouch, 101, 105)
         if parking:
-            self.lcd.Draw_String(
+            self.lcd.draw_text(
                 False, True, self.lcd.font8x16, self.lcd.Popup_Text_Color, self.lcd.Color_Bg_Window,
                 (272 - 8 * (7)) / 2, 230, "Parking")
         else:
-            self.lcd.Draw_String(
+            self.lcd.draw_text(
                 False, True, self.lcd.font8x16, self.lcd.Popup_Text_Color, self.lcd.Color_Bg_Window,
                 (272 - 8 * (10)) / 2, 230, "Homing XYZ")
 
-        self.lcd.Draw_String(
+        self.lcd.draw_text(
             False, True, self.lcd.font8x16, self.lcd.Popup_Text_Color, self.lcd.Color_Bg_Window,
             (272 - 8 * 23) / 2, 260, "Please wait until done.")
 
     def Popup_Window_ETempTooLow(self):
         self.Clear_Main_Window()
         self.Draw_Popup_Bkgd_60()
-        self.lcd.ICON_Show(self.ICON, self.ICON_TempTooLow, 102, 105)
-        self.lcd.Draw_String(
+        self.lcd.show_icon(self.ICON, self.ICON_TempTooLow, 102, 105)
+        self.lcd.draw_text(
             False, True, self.lcd.font8x16, self.lcd.Popup_Text_Color,
             self.lcd.Color_Bg_Window, 20, 235,
             "Nozzle is too cold"
         )
-        self.lcd.ICON_Show(self.ICON, self.ICON_Confirm_E, 86, 280)
+        self.lcd.show_icon(self.ICON, self.ICON_Confirm_E, 86, 280)
 
     def Erase_Menu_Cursor(self, line):
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 0, self.MBASE(line) - 18, 14, self.MBASE(line + 1) - 20)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 0, self.MBASE(line) - 18, 14, self.MBASE(line + 1) - 20)
 
     def Erase_Menu_Text(self, line):
-        self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, self.LBLX, self.MBASE(line) - 14, 271, self.MBASE(line) + 28)
+        self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, self.LBLX, self.MBASE(line) - 14, 271, self.MBASE(line) + 28)
 
     def Move_Highlight(self, ffrom, newline):
         self.Erase_Menu_Cursor(newline - ffrom)
@@ -2373,10 +2396,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def Add_Menu_Line(self):
         self.Move_Highlight(1, self.MROWS)
-        self.lcd.Draw_Line(self.lcd.Line_Color, 16, self.MBASE(self.MROWS + 1) - 20, 256, self.MBASE(self.MROWS + 1) - 19)
+        self.lcd.draw_line(self.lcd.Line_Color, 16, self.MBASE(self.MROWS + 1) - 20, 256, self.MBASE(self.MROWS + 1) - 19)
 
     def Scroll_Menu(self, dir):
-        self.lcd.Frame_AreaMove(1, dir, self.MLINE, self.lcd.Color_Bg_Black, 0, 31, self.lcd.DWIN_WIDTH, 349)
+        self.lcd.move_area(1, dir, self.MLINE, self.lcd.Color_Bg_Black, 0, 31, self.lcd.DWIN_WIDTH, 349)
         if dir == self.DWIN_SCROLL_DOWN:
             self.Move_Highlight(-1, 0)
         elif dir == self.DWIN_SCROLL_UP:
@@ -2398,7 +2421,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             if logical == self.select_file.now:
                 self.Draw_Menu_Cursor(row)
         if len(entries) == 1:
-            self.lcd.Draw_String(False, False, self.lcd.font8x16, self.lcd.Color_White,
+            self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Color_White,
                                  self.lcd.Color_Bg_Black, 20, self.MBASE(2),
                                  'File list unavailable' if self.pd.file_error else 'Loading files...' if self.pd._files_loading or self.pd._directory_loading else 'No files')
 
@@ -2431,83 +2454,83 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def ICON_Print(self):
         if self.select_page.now == 0:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Print_1, 17, 130)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 17, 130, 126, 229)
+            self.lcd.show_icon(self.ICON, self.ICON_Print_1, 17, 130)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 17, 130, 126, 229)
             self._draw_menu_text('Print', 57, 201)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Print_0, 17, 130)
+            self.lcd.show_icon(self.ICON, self.ICON_Print_0, 17, 130)
             self._draw_menu_text('Print', 57, 201)
 
     def ICON_Prepare(self):
         if self.select_page.now == 1:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Prepare_1, 145, 130)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 145, 130, 254, 229)
+            self.lcd.show_icon(self.ICON, self.ICON_Prepare_1, 145, 130)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 145, 130, 254, 229)
             self._draw_menu_text('Prepare', 175, 201)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Prepare_0, 145, 130)
+            self.lcd.show_icon(self.ICON, self.ICON_Prepare_0, 145, 130)
             self._draw_menu_text('Prepare', 175, 201)
 
     def ICON_Control(self):
         if self.select_page.now == 2:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Control_1, 17, 246)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 17, 246, 126, 345)
+            self.lcd.show_icon(self.ICON, self.ICON_Control_1, 17, 246)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 17, 246, 126, 345)
             self._draw_menu_text('Control', 48, 318)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Control_0, 17, 246)
+            self.lcd.show_icon(self.ICON, self.ICON_Control_0, 17, 246)
             self._draw_menu_text('Control', 48, 318)
 
     def ICON_Leveling(self, show):
         if show:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Leveling_1, 145, 246)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 145, 246, 254, 345)
+            self.lcd.show_icon(self.ICON, self.ICON_Leveling_1, 145, 246)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 145, 246, 254, 345)
             self._draw_menu_text('Leveling', 182, 318)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Leveling_0, 145, 246)
+            self.lcd.show_icon(self.ICON, self.ICON_Leveling_0, 145, 246)
             self._draw_menu_text('Leveling', 182, 318)
 
     def ICON_StartInfo(self, show):
         if show:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Info_1, 145, 246)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 145, 246, 254, 345)
+            self.lcd.show_icon(self.ICON, self.ICON_Info_1, 145, 246)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 145, 246, 254, 345)
             self._draw_menu_text('Info', 186, 318)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Info_0, 145, 246)
+            self.lcd.show_icon(self.ICON, self.ICON_Info_0, 145, 246)
             self._draw_menu_text('Info', 186, 318)
 
     def ICON_Tune(self):
         if (self.select_print.now == 0):
-            self.lcd.ICON_Show(self.ICON, self.ICON_Setup_1, 8, 252)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 8, 252, 87, 351)
+            self.lcd.show_icon(self.ICON, self.ICON_Setup_1, 8, 252)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 8, 252, 87, 351)
             self._draw_menu_text('Tune', 31, 325)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Setup_0, 8, 252)
+            self.lcd.show_icon(self.ICON, self.ICON_Setup_0, 8, 252)
             self._draw_menu_text('Tune', 31, 325)
 
     def ICON_Continue(self):
         if (self.select_print.now == 1):
-            self.lcd.ICON_Show(self.ICON, self.ICON_Continue_1, 96, 252)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 96, 252, 175, 351)
+            self.lcd.show_icon(self.ICON, self.ICON_Continue_1, 96, 252)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 96, 252, 175, 351)
             self._draw_menu_text('Continue', 121, 325)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Continue_0, 96, 252)
+            self.lcd.show_icon(self.ICON, self.ICON_Continue_0, 96, 252)
             self._draw_menu_text('Continue', 121, 325)
 
     def ICON_Pause(self):
         if (self.select_print.now == 1):
-            self.lcd.ICON_Show(self.ICON, self.ICON_Pause_1, 96, 252)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 96, 252, 175, 351)
+            self.lcd.show_icon(self.ICON, self.ICON_Pause_1, 96, 252)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 96, 252, 175, 351)
             self._draw_menu_text('Pause', 116, 325)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Pause_0, 96, 252)
+            self.lcd.show_icon(self.ICON, self.ICON_Pause_0, 96, 252)
             self._draw_menu_text('Pause', 116, 325)
 
     def ICON_Stop(self):
         if (self.select_print.now == 2):
-            self.lcd.ICON_Show(self.ICON, self.ICON_Stop_1, 184, 252)
-            self.lcd.Draw_Rectangle(0, self.lcd.Color_White, 184, 252, 263, 351)
+            self.lcd.show_icon(self.ICON, self.ICON_Stop_1, 184, 252)
+            self.lcd.draw_rectangle(0, self.lcd.Color_White, 184, 252, 263, 351)
             self._draw_menu_text('Stop', 209, 325)
         else:
-            self.lcd.ICON_Show(self.ICON, self.ICON_Stop_0, 184, 252)
+            self.lcd.show_icon(self.ICON, self.ICON_Stop_0, 184, 252)
             self._draw_menu_text('Stop', 209, 325)
 
     def Item_Prepare_Move(self, row):
@@ -2526,7 +2549,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def Item_Prepare_Offset(self, row):
         if self.pd.HAS_BED_PROBE:
             self._draw_menu_text('Z offset', self.LBLX, self.MBASE(row))  # "Z-Offset"
-            self.lcd.Draw_Signed_Float(self.lcd.font8x16, self.lcd.Color_Bg_Black, 2, 2, 202, self.MBASE(row), self.pd.BABY_Z_VAR * 100)
+            self.lcd.draw_signed_scaled_float_text(self.lcd.font8x16, self.lcd.Color_Bg_Black, 2, 2, 202, self.MBASE(row), self.pd.BABY_Z_VAR * 100)
         else:
             self._draw_menu_text('Set home', self.LBLX, self.MBASE(row))  # "..."
         self.Draw_Menu_Line(row, self.ICON_SetHome)
@@ -2576,7 +2599,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.pd.probe_wizard.update()
         if self.checkkey == self.Info and self.pd.refresh_system_info():
             self.Draw_Info_Menu()
-            self.lcd.UpdateLCD()
+            self.lcd.update()
         if self._poll_print_start() or getattr(self, '_start_error_visible', False):
             return
         if self.checkkey == self.SelectFile and (
@@ -2618,11 +2641,11 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                     if attr == 'Move_E_scale':
                         self.pd.last_E_scale = scale
                     if signed:
-                        self.lcd.Draw_Signed_Float(
+                        self.lcd.draw_signed_scaled_float_text(
                             self.lcd.font8x16, self.lcd.Select_Color,
                             3, 1, 216, row, scale)
                     else:
-                        self.lcd.Draw_FloatValue(
+                        self.lcd.draw_scaled_float_text(
                             True, True, 0, self.lcd.font8x16,
                             self.lcd.Color_White, self.lcd.Select_Color,
                             3, 1, 216, row, scale)
@@ -2659,15 +2682,108 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             if self.checkkey == self.MainMenu:
                 mmu_state = self.pd.mmu
                 if mmu_state != getattr(self, '_drawn_mmu_state', None):
-                    self.lcd.Draw_Rectangle(1, self.lcd.Color_Bg_Black, 4, 31, 268, 125)
+                    self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Black, 4, 31, 268, 125)
                     if mmu_state is None:
-                        self.lcd.Frame_AreaCopy(1, 0, 2, 39, 12, 14, 9)
-                        self.lcd.ICON_Show(self.ICON, self.ICON_LOGO, 71, 52)
+                        self.lcd.show_icon(self.ICON, self.ICON_LOGO, 71, 52)
                     else:
                         self.Draw_MMU_Status()
                     self._drawn_mmu_state = mmu_state
             self.Draw_Status_Area(update)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
+
+    def _power_at_first_item(self):
+        selections = {
+            self.MainMenu: 'select_page', self.SelectFile: 'select_file',
+            self.Prepare: 'select_prepare', self.Control: 'select_control',
+            self.AxisMove: 'select_axis', self.TemperatureID: 'select_temp',
+            self.Motion: 'select_motion', self.Tune: 'select_tune',
+            self.PLAPreheat: 'select_PLA', self.ABSPreheat: 'select_ABS',
+            self.CaseLight: 'select_light',
+        }
+        name = selections.get(self.checkkey)
+        if name is not None:
+            return getattr(self, name).now == 0
+        custom = {
+            self.BedMeshMenu: '_mesh_menu_selection',
+            self.MeshProfiles: '_mesh_profile_selection',
+            self.ScrewsTiltMenu: '_screws_selection',
+            self.FilePreview: '_preview_choice',
+            self.Info: '_info_scroll',
+        }
+        if self.checkkey == self.MMUMenu:
+            return (not self.pd.connection_error and getattr(self, '_mmu_selection', 0) == 0
+                    and getattr(self, '_mmu_edit', None) is None)
+        attr = custom.get(self.checkkey)
+        return attr is not None and getattr(self, attr, 0) == 0
+
+    def _draw_power_confirmation(self):
+        self.Clear_Popup_Area()
+        self.lcd.draw_text(False, False, self.lcd.DWIN_FONT_HEAD, self.lcd.Color_White,
+                           self.lcd.Color_Bg_Blue, 14, 4, 'Power')
+        self.Draw_Popup_Bkgd_105()
+        self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Popup_Text_Color,
+                           self.lcd.Color_Bg_Window, 42, 150, 'Turn off printer?')
+        for yes, label, x in ((True, 'Yes', 42), (False, 'No', 164)):
+            color = self.lcd.Select_Color if self._power_confirm_yes == yes else self.lcd.Color_Bg_Window
+            self.lcd.draw_rectangle(0, color, x - 12, 224, x + 52, 264)
+            self.lcd.draw_text(False, False, self.lcd.font8x16, self.lcd.Popup_Text_Color,
+                               self.lcd.Color_Bg_Window, x, 236, label)
+
+    def _restore_power_origin(self):
+        origin = self._power_origin
+        self._power_origin = None
+        self._power_focus = False
+        self.checkkey = origin if origin is not None else self.MainMenu
+        redraw = {
+            self.MainMenu: self.Goto_MainMenu,
+            self.SelectFile: self.Draw_Print_File_Menu,
+            self.Prepare: self.Draw_Prepare_Menu,
+            self.Control: self.Draw_Control_Menu,
+            self.AxisMove: self.Draw_Move_Menu,
+            self.TemperatureID: self.Draw_Temperature_Menu,
+            self.Motion: self.Draw_Motion_Menu,
+            self.Info: self.Draw_Info_Menu,
+            self.Tune: self.Draw_Tune_Menu,
+            self.MMUMenu: self.Draw_MMU_Menu,
+            self.BedMeshMenu: self.Draw_Bed_Mesh_Menu,
+            self.BedMeshScreen: self.Draw_Bed_Mesh,
+            self.MeshProfiles: self.Draw_Mesh_Profiles,
+            self.FilePreview: self.Draw_File_Preview,
+        }.get(self.checkkey)
+        if redraw is not None:
+            redraw()
+        else:
+            self._restore_action_screen()
+
+    def _handle_power_navigation(self):
+        event = self.get_encoder_state()
+        if self.checkkey == self.PowerConfirm:
+            if event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
+                self._power_confirm_yes = not self._power_confirm_yes
+                self._draw_power_confirmation()
+            elif event == self.ENCODER_DIFF_ENTER:
+                if self._power_confirm_yes:
+                    self.pd.power_off_if_on()
+                    self._show_message('Powering off...')
+                else:
+                    self._restore_power_origin()
+            return True
+        if getattr(self, '_power_focus', False):
+            if event == self.ENCODER_DIFF_CW:
+                self._power_focus = False
+                self._draw_power_icon(False, clear=True)
+            elif event == self.ENCODER_DIFF_ENTER:
+                self._power_origin = self.checkkey
+                self._power_confirm_yes = True
+                self._power_focus = False
+                self.checkkey = self.PowerConfirm
+                self._draw_power_confirmation()
+            return True
+        if event == self.ENCODER_DIFF_CCW and self._power_at_first_item():
+            self._power_focus = True
+            self._draw_power_icon(True, clear=True)
+            return True
+        return False
 
     def _dispatch_input(self):
         feedback = getattr(self, '_action_feedback', None)
@@ -2682,14 +2798,16 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
                 self._start_error_visible = False
                 self.Goto_MainMenu()
-                self.lcd.UpdateLCD()
+                self.lcd.update()
             return
         if getattr(self, '_print_error_visible', False):
             if self.get_encoder_state() == self.ENCODER_DIFF_ENTER:
                 self._acknowledged_terminal = self._terminal_key()
                 self._print_error_visible = False
                 self.Goto_MainMenu()
-                self.lcd.UpdateLCD()
+                self.lcd.update()
+            return
+        if self._handle_power_navigation():
             return
         if self.checkkey == self.MainMenu:
             self.HMI_MainMenu()

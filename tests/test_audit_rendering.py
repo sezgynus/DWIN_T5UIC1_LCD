@@ -1,16 +1,56 @@
 import unittest
 from test_capabilities import display, snapshot
-from test_uart import Driver, Port
+from test_t5uic1_driver import driver
 
 
 class AuditRenderingTests(unittest.TestCase):
     def screen(self):
         result = display(snapshot())
-        result.lcd = Driver.__new__(Driver)
-        result.lcd.MYSERIAL1 = Port()
-        result.lcd.DWIN_SendBuf = result.lcd.FHONE
-        result.lcd._closed = False
+        result.lcd = driver()
+        # Simulate startup having synchronized and loaded the managed atlas.
+        result.lcd._atlas_synced = True
+        result.lcd._atlas_virtual_areas_loaded = True
+        result.lcd._virtual_area_pictures = {0: 14}
         return result
+
+    def test_mcu_headings_copy_chip_from_atlas_including_unavailable_heading(self):
+        result = self.screen()
+        for label in ('MCU: mcu', 'MCU: mmu', 'MCU'):
+            with self.subTest(label=label):
+                result.lcd.serial.frames.clear()
+                result._draw_info_section(label, 140)
+                copies = [f for f in result.lcd.serial.frames if f[1] == 0x27]
+                self.assertEqual(copies, [bytes.fromhex(
+                    'AA 27 20 00 C0 00 00 00 D3 00 13 '
+                    '00 08 00 8A CC 33 C3 3C')])
+                # Custom IDs must never be sent to the stock 9.ICO renderer.
+                self.assertFalse(any(f[1] == 0x23 for f in result.lcd.serial.frames))
+
+    def test_machine_host_software_headings_use_their_atlas_rectangles(self):
+        result = self.screen()
+        rectangles = {
+            'Machine': '00 E0 00 00 00 F3 00 13',
+            'Host': '00 A0 00 20 00 B3 00 33',
+            'Software': '00 C0 00 20 00 D3 00 33',
+        }
+        for label, rectangle in rectangles.items():
+            with self.subTest(label=label):
+                result.lcd.serial.frames.clear()
+                result._draw_info_section(label, 140)
+                copies = [f for f in result.lcd.serial.frames if f[1] == 0x27]
+                self.assertEqual(copies, [bytes.fromhex(
+                    'AA 27 20 ' + rectangle + ' 00 08 00 8A CC 33 C3 3C')])
+                self.assertFalse(any(f[1] == 0x23 for f in result.lcd.serial.frames))
+
+    def test_title_draws_global_power_icon_from_managed_atlas(self):
+        result = self.screen()
+        result.lcd.serial.frames.clear()
+        result.Draw_Title('Prepare')
+        copies = [f for f in result.lcd.serial.frames if f[1] == 0x27]
+        self.assertEqual(copies, [bytes.fromhex(
+            'AA 27 20 00 E0 00 20 00 F3 00 33 '
+            '00 F4 00 05 CC 33 C3 3C')])
+        self.assertFalse(any(f[1] == 0x23 for f in result.lcd.serial.frames))
 
     def test_complete_progress_has_three_digits_before_percent_sign(self):
         result = self.screen()
@@ -31,7 +71,7 @@ class AuditRenderingTests(unittest.TestCase):
 
     def test_near_zero_negative_does_not_leave_minus_sign(self):
         result = self.screen()
-        result.lcd.Draw_Signed_Float(1, 0, 2, 2, 100, 20, -.1)
+        result.lcd.draw_signed_scaled_float_text(1, 0, 2, 2, 100, 20, -.1)
         self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'  0.00')
 
     def test_thermal_editor_draw_is_flushed_by_input_owner(self):
@@ -40,7 +80,7 @@ class AuditRenderingTests(unittest.TestCase):
         result = self.screen()
         result._closed = False
         result._encoder_event = result.ENCODER_DIFF_NO
-        result._dispatch_input = lambda: result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 216, 50, 205)
+        result._dispatch_input = lambda: result.lcd.draw_integer_text(True, True, 0, 1, 0xFFFF, 0, 3, 216, 50, 205)
         result._process_input(InputEvent('press', 1, 1))
         self.assertEqual([frame[1] for frame in result.lcd.MYSERIAL1.frames], [0x11, 0x3D])
 
@@ -76,15 +116,15 @@ class AuditRenderingTests(unittest.TestCase):
         self.assertTrue(any(frame[11:-4] == b'###' for frame in result.lcd.MYSERIAL1.frames if frame[1] == 0x11))
         self.assertEqual(result.pd.feedrate_percentage, 1000)
         self.assertEqual(result.pd.thermalManager['temp_hotend'][0]['target'], 1200)
-        result.lcd.Draw_Signed_Float(1, 0, 3, 1, 216, 50, 1234567890)
+        result.lcd.draw_signed_scaled_float_text(1, 0, 3, 1, 216, 50, 1234567890)
         self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'######')
-        result.lcd.Draw_Signed_Float(1, 0, 3, 1, 216, 50, 5)
+        result.lcd.draw_signed_scaled_float_text(1, 0, 3, 1, 216, 50, 5)
         self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'   0.5')
 
     def test_negative_integer_sign_transition_clears_entire_field(self):
         result = self.screen()
         for value, expected in ((-5, b' -5'), (5, b'  5'), (-999, b'###')):
-            result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
+            result.lcd.draw_integer_text(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
             self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], expected)
 
     def test_motion_value_is_complete_scientific_text_with_fixed_padding(self):
@@ -100,7 +140,7 @@ class AuditRenderingTests(unittest.TestCase):
     def test_extreme_finite_numbers_render_marker_without_decimal_overflow(self):
         result = self.screen()
         for value in (1e300, -1e300, 10**100):
-            result.lcd.Draw_IntValue(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
+            result.lcd.draw_integer_text(True, True, 0, 1, 0xFFFF, 0, 3, 33, 50, value)
             self.assertEqual(result.lcd.MYSERIAL1.frames[-1][11:-4], b'###')
 
     def test_move_menu_and_editor_use_same_command_coordinates(self):
@@ -125,21 +165,21 @@ class AuditRenderingTests(unittest.TestCase):
     def test_move_menu_without_hotend_draws_only_xyz(self):
         result = display(snapshot(hotend=False))
         result.Draw_Move_Menu()
-        self.assertEqual(result.lcd.Draw_FloatValue.call_count, 3)
-        result.lcd.Draw_Signed_Float.assert_not_called()
+        self.assertEqual(result.lcd.draw_scaled_float_text.call_count, 3)
+        result.lcd.draw_signed_scaled_float_text.assert_not_called()
 
 
 def test_user_visible_labels_do_not_depend_on_frame_copy_assets():
     source = Path(__file__).resolve().parents[1].joinpath('dwinlcd.py').read_text()
     legacy_text_fragments = (
         'Frame_TitleCopy(',
-        'Frame_AreaCopy(1, 226, 179, 256, 189',  # Back
-        'Frame_AreaCopy(1, 69, 61, 102, 71',     # Move
-        'Frame_AreaCopy(1, 1, 451, 31, 463',     # Print
-        'Frame_AreaCopy(1, 33, 451, 82, 466',    # Prepare
-        'Frame_AreaCopy(1, 85, 451, 132, 463',   # Control
-        'Frame_AreaCopy(1, 132, 451, 159, 466',  # Info
-        'Frame_AreaCopy(1, 103, 59, 200, 74',    # Disable steppers
-        'Frame_AreaCopy(1, 202, 61, 271, 71',    # Auto home
+        'copy_cache(1, 226, 179, 256, 189',  # Back
+        'copy_cache(1, 69, 61, 102, 71',     # Move
+        'copy_cache(1, 1, 451, 31, 463',     # Print
+        'copy_cache(1, 33, 451, 82, 466',    # Prepare
+        'copy_cache(1, 85, 451, 132, 463',   # Control
+        'copy_cache(1, 132, 451, 159, 466',  # Info
+        'copy_cache(1, 103, 59, 200, 74',    # Disable steppers
+        'copy_cache(1, 202, 61, 271, 71',    # Auto home
     )
     assert not any(fragment in source for fragment in legacy_text_fragments)

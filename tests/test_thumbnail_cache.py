@@ -30,16 +30,16 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(tuple(cache.entries),keys[:5])
         addresses=sorted(cache.entries.values())
         self.assertTrue(all(a+n<=b for (a,n),(b,m) in zip(addresses,addresses[1:])))
-        lcd.SRAM_Icon.assert_not_called()
+        lcd.show_sram_jpeg.assert_not_called()
 
     def test_background_packets_are_bounded_and_partial_upload_is_not_a_hit(self):
         cache,keys,lcd=self.make(size=600)
         cache.tick(lcd);cache.tick(lcd)
-        self.assertEqual(lcd.Write_SRAM.call_count,2)
+        self.assertEqual(lcd.write_sram.call_count,2)
         self.assertIsNone(cache.address(keys[0]))
         cache.tick(lcd);cache.tick(lcd)
         self.assertEqual(cache.address(keys[0]),0)
-        self.assertEqual(b''.join(call.args[1] for call in lcd.Write_SRAM.call_args_list),b'x'*600)
+        self.assertEqual(b''.join(call.args[1] for call in lcd.write_sram.call_args_list),b'x'*600)
 
     def test_reordering_retains_entries_and_only_downloads_new_priority(self):
         cache,keys,lcd=self.make();self.fill(cache,lcd)
@@ -81,7 +81,7 @@ class CacheTests(unittest.TestCase):
         replacement=(keys[0][0],2,200,None)
         cache.sync((1,1),(replacement,)+keys[1:],(replacement,)+keys[1:5])
         future.set_result(b'x'*300);cache.tick(lcd)
-        lcd.Write_SRAM.assert_not_called()
+        lcd.write_sram.assert_not_called()
         self.assertNotIn(keys[0],cache.entries)
         self.assertEqual(cache.job[0],replacement)
 
@@ -90,7 +90,7 @@ class CacheTests(unittest.TestCase):
         cache.tick(lcd);cache.entries[keys[1]]=(1000,300)
         cache.sync((2,1),keys,keys[:5]);self.assertFalse(cache.entries)
         future.set_result(b'x'*300);cache.tick(lcd)
-        lcd.Write_SRAM.assert_not_called()
+        lcd.write_sram.assert_not_called()
 
     def test_foreground_preempts_unrelated_partial_preload(self):
         cache,keys,lcd=self.make(size=2000)
@@ -98,7 +98,7 @@ class CacheTests(unittest.TestCase):
         cache.tick(lcd,foreground=keys[7],chunks=8)
         self.assertEqual(cache.job[0],keys[7])
         self.assertIsNone(cache.address(keys[0]))
-        lcd.Write_SRAM.assert_not_called()
+        lcd.write_sram.assert_not_called()
         for _ in range(3):cache.tick(lcd,foreground=keys[7],chunks=8)
         self.assertIsNotNone(cache.address(keys[7]))
 
@@ -115,7 +115,7 @@ class CacheTests(unittest.TestCase):
 
     def test_write_failure_never_publishes_partial_entry(self):
         cache,keys,lcd=self.make(size=600)
-        cache.tick(lcd);lcd.Write_SRAM.side_effect=OSError('disconnected')
+        cache.tick(lcd);lcd.write_sram.side_effect=OSError('disconnected')
         with self.assertRaises(OSError):cache.tick(lcd)
         self.assertFalse(cache.entries)
         cache.sync((2,1),keys,keys[:5])
@@ -125,7 +125,7 @@ class CacheTests(unittest.TestCase):
         for data in (b'',b'x'*32769,()):
             cache,keys,lcd=self.make();cache.loader.side_effect=lambda k:completed(data)
             cache.tick(lcd);cache.tick(lcd)
-            lcd.Write_SRAM.assert_not_called()
+            lcd.write_sram.assert_not_called()
             self.assertIn(keys[0],cache.errors)
 
     def test_temporary_metadata_failure_retries_after_backoff(self):
@@ -150,4 +150,4 @@ class CacheTests(unittest.TestCase):
         self.assertIsNone(cache.address(keys[1]))
         self.assertIsNotNone(cache.address(keys[0]))
         self.assertEqual(cache.job[0],keys[5])
-        lcd.Write_SRAM.assert_not_called()
+        lcd.write_sram.assert_not_called()

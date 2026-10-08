@@ -9,13 +9,13 @@ class CaseLightMixin:
         self.Draw_Menu_Line(2, self.ICON_CaseLight, 'Brightness')
         if self.select_light.now:
             self.Draw_Menu_Cursor(self.select_light.now)
-        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+        self.lcd.draw_text(False, True, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, 224, self.MBASE(1),
                              '[X]' if getattr(self, '_case_light_on', False) else '[ ]')
-        self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+        self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16,
                                self.lcd.Color_White, self.lcd.Color_Bg_Black,
                                3, 208, self.MBASE(2), getattr(self, '_case_light_brightness', 0))
-        self.lcd.Draw_String(False, True, self.lcd.font8x16, self.lcd.Color_White,
+        self.lcd.draw_text(False, True, self.lcd.font8x16, self.lcd.Color_White,
                              self.lcd.Color_Bg_Black, 232, self.MBASE(2), '%')
 
     def _poll_case_light_query(self):
@@ -34,7 +34,7 @@ class CaseLightMixin:
                 self._case_light_query_pending = False
                 if self.checkkey == self.CaseLight:
                     self.Draw_Case_Light_Menu()
-                    self.lcd.UpdateLCD()
+                    self.lcd.update()
                 return True
 
     def _refresh_case_light_state(self):
@@ -65,10 +65,10 @@ class CaseLightMixin:
             else:
                 self.checkkey = self.CaseLightBrightness
                 self._case_light_brightness_target = getattr(self, '_case_light_brightness', 0)
-                self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+                self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16,
                                        self.lcd.Color_White, self.lcd.Select_Color,
                                        3, 208, self.MBASE(2), self._case_light_brightness_target)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 
     def HMI_Case_Light_Brightness(self):
         event = self.get_encoder_state()
@@ -83,8 +83,8 @@ class CaseLightMixin:
         elif event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
             delta = self._encoder_move_value if event == self.ENCODER_DIFF_CW else -self._encoder_move_value
             self._case_light_brightness_target = max(0, min(100, self._case_light_brightness_target + delta))
-            self.lcd.Draw_IntValue(True, True, 0, self.lcd.font8x16,
+            self.lcd.draw_integer_text(True, True, 0, self.lcd.font8x16,
                                    self.lcd.Color_White, self.lcd.Select_Color,
                                    3, 208, self.MBASE(2), self._case_light_brightness_target)
-        self.lcd.UpdateLCD()
+        self.lcd.update()
 

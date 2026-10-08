@@ -318,14 +318,20 @@ class DisplayIntegrationTests(unittest.TestCase):
         writes = []
         closed = []
         prepared = Event()
-        base = ui.T5UIC1_LCD
+        base = ui.T5UIC1Display
 
         class FakeLCD(base):
             def __init__(self, port, **kwargs):
-                self.DWIN_SendBuf = self.FHONE
-                self.MYSERIAL1 = Mock()
-                self.MYSERIAL1.write.side_effect = lambda data: (writes.append((get_ident(), bytes(data))), len(data))[1]
-                self.MYSERIAL1.close.side_effect = lambda: closed.append(get_ident())
+                self.serial = Mock()
+                self.MYSERIAL1 = self.serial
+                self.serial.write.side_effect = lambda data: (writes.append((get_ident(), bytes(data))), len(data))[1]
+                self.serial.close.side_effect = lambda: closed.append(get_ident())
+                self._closed = False
+                self._needs_update = True
+                self._defer_updates = False
+                self._atlas_synced = True
+                self._atlas_sync_blocked = False
+                self._virtual_area_pictures = {0: 14}
 
         encoder = Mock()
         encoder.getValue.return_value = 0
@@ -355,7 +361,7 @@ class DisplayIntegrationTests(unittest.TestCase):
                 patch.object(backend, 'MoonrakerSubscription') as subscription, patch.object(backend, 'ReadWorker', ImmediateReadWorker), \
                 patch.object(ui, 'Encoder', return_value=encoder), \
                 patch.object(ui, 'Button', return_value=button), \
-                patch.object(ui, 'T5UIC1_LCD', FakeLCD), \
+                patch.object(ui, 'T5UIC1Display', FakeLCD), \
                 patch.object(ui.DWIN_LCD, 'HMI_ShowBoot'), \
                 patch.object(ui.DWIN_LCD, 'Draw_Prepare_Menu', prepare):
             subscription.return_value.snapshot.return_value = snapshot

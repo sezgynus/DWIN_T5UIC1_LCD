@@ -83,8 +83,8 @@ class ThumbnailTests(unittest.TestCase):
         view._thumbnail_cache.entries[view._preview_cache_key]=(4096,2300)
         view.Draw_File_Preview();view.lcd.reset_mock()
         view._poll_file_preview()
-        view.lcd.SRAM_Icon.assert_called_once_with(8,68,4096)
-        view.lcd.Write_SRAM.assert_not_called()
+        view.lcd.show_sram_jpeg.assert_called_once_with(8,68,4096)
+        view.lcd.write_sram.assert_not_called()
         view._uart_epoch=1;view.Draw_File_Preview();view._poll_file_preview()
         self.assertFalse(view._thumbnail_cache.entries)
         view._thumbnail_cache.loader.assert_called_once()
@@ -93,23 +93,23 @@ class ThumbnailTests(unittest.TestCase):
         view=self.make();view.Draw_File_Preview();view._preview_future.set_exception(ValueError('No thumbnail'))
         view._poll_file_preview()
         self.assertEqual(view._preview_error,'No thumbnail')
-        self.assertIn('Cancel',[c.args[-1] for c in view.lcd.Draw_String.call_args_list])
+        self.assertIn('Cancel',[c.args[-1] for c in view.lcd.draw_text.call_args_list])
 
     def test_jpeg_upload_is_chunked_and_displayed_only_once_after_completion(self):
         view=self.make();view._preview_future.set_result(b'x'*2300)
         view._poll_file_preview()
         self.assertEqual(view._thumbnail_cache.upload['index'],1024)
-        self.assertEqual(view.lcd.Write_SRAM.call_count,8)
-        view.lcd.SRAM_Icon.assert_not_called()
+        self.assertEqual(view.lcd.write_sram.call_count,8)
+        view.lcd.show_sram_jpeg.assert_not_called()
         view._poll_file_preview();view._poll_file_preview();view._poll_file_preview()
-        view.lcd.SRAM_Icon.assert_called_once_with(8,68,0)
-        calls=view.lcd.Write_SRAM.call_args_list
+        view.lcd.show_sram_jpeg.assert_called_once_with(8,68,0)
+        calls=view.lcd.write_sram.call_args_list
         self.assertEqual(b''.join(c.args[1] for c in calls),b'x'*2300)
         self.assertEqual([c.args[0] for c in calls],list(range(0,2300,128)))
         self.assertTrue(all(1<=len(c.args[1])<=128 for c in calls))
         view.lcd.reset_mock();view.Draw_File_Preview();view._poll_file_preview()
-        view.lcd.Write_SRAM.assert_not_called()
-        view.lcd.SRAM_Icon.assert_called_once_with(8,68,0)
+        view.lcd.write_sram.assert_not_called()
+        view.lcd.show_sram_jpeg.assert_called_once_with(8,68,0)
 
     def test_cancel_or_changed_connection_stops_partial_jpeg_upload(self):
         for cancel in (True,False):
@@ -118,8 +118,8 @@ class ThumbnailTests(unittest.TestCase):
             if cancel:view.HMI_File_Preview()
             else:view._preview_epoch-=1
             view._poll_file_preview()
-            view.lcd.Write_SRAM.assert_not_called()
-            view.lcd.SRAM_Icon.assert_not_called()
+            view.lcd.write_sram.assert_not_called()
+            view.lcd.show_sram_jpeg.assert_not_called()
 
     def test_print_revalidates_file_and_duplicate_press_does_not_resubmit(self):
         view=self.make();view._preview_choice=0
@@ -139,7 +139,7 @@ class ThumbnailTests(unittest.TestCase):
     def test_late_completion_after_cancel_does_not_draw(self):
         view=self.make();view.HMI_File_Preview();view.lcd.reset_mock()
         view._preview_future.set_result(image_jpeg(png()))
-        view._poll_file_preview();view.lcd.Draw_Rectangle.assert_not_called()
+        view._poll_file_preview();view.lcd.draw_rectangle.assert_not_called()
 
     def test_large_source_preferred_over_tiny_icon(self):
         client=Mock();client.get.return_value={'result':{'thumbnails':[
@@ -154,8 +154,8 @@ class ThumbnailTests(unittest.TestCase):
         view._thumbnail_cache.entries[view._thumbnail_keys['a.gcode']]=(3000,1200)
         view._open_file_preview('a.gcode')
         view._thumbnail_cache.loader.assert_not_called()
-        view.lcd.Write_SRAM.assert_not_called()
-        view.lcd.SRAM_Icon.assert_called_once_with(8,68,3000)
+        view.lcd.write_sram.assert_not_called()
+        view.lcd.show_sram_jpeg.assert_called_once_with(8,68,3000)
 
     def test_replaced_file_cannot_print_from_old_preview(self):
         view=self.make();view._preview_choice=0
@@ -171,8 +171,8 @@ class ThumbnailTests(unittest.TestCase):
         view.EachMomentUpdate=Mock();view._file_status_at=0
         view.lcd.reset_mock()
         view._ui_tick();view._ui_tick()
-        self.assertEqual(view.lcd.Write_SRAM.call_count,4)
-        view.lcd.SRAM_Icon.assert_not_called()
+        self.assertEqual(view.lcd.write_sram.call_count,4)
+        view.lcd.show_sram_jpeg.assert_not_called()
         view.EachMomentUpdate.assert_called_once()
 
     def test_current_folder_first_five_follow_sort_and_file_replacement(self):
