@@ -372,6 +372,7 @@ class T5UIC1Display:
             raise RuntimeError("LCD is closed")
         if self._defer_updates or not self._needs_update:
             return
+        logging.info('LCD_DRAW_DIAG cmd_0x3D refresh')
         self._send(0x3D)
         self._needs_update = False
 
@@ -607,6 +608,7 @@ class T5UIC1Display:
     def show_jpeg(self, jpeg_id):
         if not isinstance(jpeg_id, int) or not 0 <= jpeg_id <= 15:
             raise ValueError("JPEG ID must be 0..15")
+        logging.info('LCD_DRAW_DIAG cmd_0x22 show_jpeg picture=%s area=0', jpeg_id)
         self._send(0x22, bytes((0, jpeg_id)))
         if not hasattr(self, "_virtual_area_pictures"):
             self._virtual_area_pictures = {}
@@ -645,6 +647,7 @@ class T5UIC1Display:
         if cache_id not in (0, 1):
             raise ValueError("virtual display area must be 0 or 1")
         mode = self._image_mode(cache_id, background, restore, enhanced)
+        logging.info('LCD_DRAW_DIAG cmd_0x27 copy_cache area=%s src=(%s,%s,%s,%s) dst=(%s,%s)', cache_id, x0, y0, x1, y1, x, y)
         self._send(0x27, bytes((mode,)) + self._words(x0, y0, x1, y1, x, y))
 
     def configure_animation(self, animation_id, enabled, library_id,
@@ -1150,6 +1153,7 @@ class T5UIC1Display:
             raise T5UIC1ProtocolError(
                 "custom atlases are not synchronized; refusing render-time Flash sync"
             )
+        logging.info('LCD_DRAW_DIAG atlas_icon id=%s area=%s src=(%s,%s,%s,%s) dst=(%s,%s)', icon_id, area, source_x, source_y, width, height, x, y)
         self._ensure_atlas_area(area)
         self.copy_cache(
             area,
