@@ -499,6 +499,7 @@ class MMUViewMixin:
             self.lcd.draw_rectangle(1, 0x0000, 0, 0, 271, 479)
             self.lcd.draw_rectangle(1, 0x1105, 0, 0, 271, 29)
             self._mmu_canvas_page, self._mmu_render = page, {}
+            self._draw_power_icon(getattr(self, '_power_focus', False))
         if page == 'map' and getattr(self, '_mmu_map_draft', None) is None:
             self._mmu_begin_map()
         if page in ('endless', 'group') and getattr(self, '_mmu_endless_draft', None) is None:
@@ -517,7 +518,7 @@ class MMUViewMixin:
         title = self.MMU_TITLES[page]
         if page in ('gate', 'filament', 'spool'):
             title += ' / ' + self._mmu_gate_label(self._mmu_gate)
-        self._mmu_text('title', title, 34, 5, 28, bg=0x1105)
+        self._mmu_text('title', title, 34, 5, 25, bg=0x1105)
         connection = 'OFFLINE' if self.pd.connection_error else 'MMU unavailable' if not m else (
             'MMU DISABLED' if m.enabled is not True else m.action.upper())
         self._mmu_text('connection', connection, 10, 36, 42, small=True,

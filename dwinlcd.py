@@ -2734,6 +2734,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._power_origin = None
         self._power_focus = False
         self.checkkey = origin if origin is not None else self.MainMenu
+        if self.checkkey == self.MMUMenu:
+            # The power popup overwrote the cached full-screen MMU canvas.
+            self._mmu_canvas_page = None
         redraw = {
             self.MainMenu: self.Goto_MainMenu,
             self.SelectFile: self.Draw_Print_File_Menu,

@@ -370,6 +370,8 @@ HTTP JSON responses are limited to 8 MiB by default, including file lists, metad
 
 Complete T5UIC1 LCD configuration, firmware/assets, memory layout and runtime protocol details are documented in [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md).
 
+The MMU full-screen pages use the complete T5UIC1 driver and reserve the top-right header for the managed power icon. From MMU Back, one more counter-clockwise step focuses power; clockwise returns to Back. Choosing No in the power popup restores the full MMU page, including its draft and selection. Static custom icons use the master atlas manifest; MMU live gate/filament graphics remain dynamic.
+
 ### Regression tests
 
 ```bash
