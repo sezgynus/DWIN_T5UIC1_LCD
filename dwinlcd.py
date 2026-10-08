@@ -366,7 +366,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                                  handshake_attempts=1)
             self._configure_menus()
             self.HMI_Init()
-            logging.info('POWER_DIAG uart_render_begin screen=%s ui_epoch=%s', self.checkkey, self._uart_epoch)
+            logging.info('POWER_DIAG uart_render_begin screen=%s ui_epoch=%s', getattr(self, 'checkkey', None), self._uart_epoch)
             self.HMI_StartFrame(False)
             if getattr(self, 'checkkey', None) == self.BedMeshScreen:
                 self.Draw_Bed_Mesh()
@@ -383,7 +383,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self._show_message('Moonraker unavailable')
             self._uart_online = True
             self._uart_epoch += 1
-            logging.info('POWER_DIAG uart_ready screen=%s ui_epoch=%s focus=%s', self.checkkey, self._uart_epoch, self._power_focus)
+            logging.info('POWER_DIAG uart_ready screen=%s ui_epoch=%s focus=%s', getattr(self, 'checkkey', None), self._uart_epoch, getattr(self, '_power_focus', False))
             self._uart_probe_failures = 0
             self._next_uart_probe = time.monotonic() + 2.0
             logging.info('LCD UART connected; current screen restored')
@@ -2020,7 +2020,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
 
     def _draw_power_icon(self, selected=False, clear=False):
-        logging.info('LCD_DRAW_DIAG power_icon selected=%s clear=%s screen=%s', selected, clear, self.checkkey)
+        logging.info('LCD_DRAW_DIAG power_icon selected=%s clear=%s screen=%s', selected, clear, getattr(self, 'checkkey', None))
         if clear:
             self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Blue, 241, 2, 268, 29)
         self.lcd.draw_atlas_icon(ICON_POWER, 244, 5)
