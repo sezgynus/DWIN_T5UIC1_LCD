@@ -879,11 +879,21 @@ class MMUViewMixin:
                 self.pd.mmu_session.phase, self.pd.mmu_session.message = 'idle', ''
         self.Draw_MMU_Menu()
 
+    def _mmu_power_popup_stale(self):
+        return (getattr(self, 'checkkey', None) == self.PowerConfirm and getattr(self, '_power_origin', None) == self.MMUMenu
+                and (self.pd.connection_error or not self.pd.state.ready
+                     or getattr(self, '_power_origin_epoch', None) != self.pd.state.epoch))
+
     def _poll_mmu(self):
         session = self.pd.mmu_session
         was_pending = session.pending is not None
         session.update()
+        if self._mmu_power_popup_stale():
+            self._restore_power_origin()
         if self.checkkey == self.MMUMenu:
+            if self.pd.connection_error and getattr(self, '_power_focus', False):
+                self._power_focus = False
+                self._draw_power_icon(False, clear=True)
             if was_pending and getattr(self, '_mmu_page', 'home') != 'status' and session.phase == 'error':
                 self._mmu_page, self._mmu_selection = 'status', 1
             self.Draw_MMU_Menu()

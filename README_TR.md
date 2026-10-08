@@ -372,7 +372,7 @@ HTTP JSON yanıtları, dosya listesi, metadata ve komut sonuçları dahil varsay
 
 T5UIC1 LCD'nin donanım yapılandırması, firmware/görsel kaynakları, bellek düzeni ve çalışma zamanı protokolü [`docs/t5uic1-reference.md`](docs/t5uic1-reference.md) içinde birlikte belgelenmiştir.
 
-MMU tam ekran sayfaları tam T5UIC1 sürücüsünü kullanır; başlığın sağ üstü yönetilen güç ikonuna ayrılmıştır. MMU Back seçiliyken bir adım daha saat yönünün tersine dönüş güç ikonuna odaklanır; saat yönünde dönüş Back’e döner. Güç popup’ında No seçmek, taslak ve seçim dahil MMU sayfasını tamamen geri çizer. Özel statik ikonlar master atlas tablosunu kullanır; MMU canlı gate/filament grafikleri dinamik kalır.
+MMU tam ekran sayfaları tam T5UIC1 sürücüsünü kullanır; başlığın sağ üstü yönetilen güç ikonuna ayrılmıştır. MMU Back seçiliyken bir adım daha saat yönünün tersine dönüş güç ikonuna odaklanır; saat yönünde dönüş Back’e döner. Güç popup’ında No seçmek, taslak ve seçim dahil MMU sayfasını tamamen geri çizer. Özel statik ikonlar master atlas tablosunu kullanır; MMU canlı gate/filament grafikleri dinamik kalır. Panel kaybı veya bağlantı dönemi değişimi açık MMU güç popup’ını kapatma komutu göndermeden iptal eder. Ayrıntılar [sürücü entegrasyon kaydında](docs/mmu-driver-integration.md).
 
 ### Regresyon testleri
 

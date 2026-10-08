@@ -345,6 +345,13 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self.button.when_held = self._button_held
 
     def _uart_failed(self):
+        if (getattr(self, 'checkkey', None) == self.PowerConfirm
+                and getattr(self, '_power_origin', None) == self.MMUMenu):
+            self.checkkey = self.MMUMenu
+            self._power_origin = None
+        if getattr(self, 'checkkey', None) == self.MMUMenu:
+            self._power_focus = False
+            self._mmu_canvas_page = None
         self._uart_online = False
         self._uart_epoch += 1
         self._next_uart_retry = time.monotonic() + 5
@@ -704,6 +711,10 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     def _sync_input_state(self, event):
         previous_epoch = self.pd.state.epoch
         self.pd.update_variable()
+        if self._mmu_power_popup_stale():
+            self._restore_power_origin()
+            self.lcd.update()
+            return False
         if getattr(self, 'checkkey', None) == self.MMUMenu and not self.pd.state.ready:
             self._poll_mmu()
             return True  # Offline MMU navigation remains read-only.
@@ -885,7 +896,8 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._print_error_visible = False
         self.pd.HMI_flag.done_confirm_flag = False
         self.pd.HMI_flag.pause_flag = self.pd.printingIsPaused()
-        if self.checkkey == self.MMUMenu:
+        if (self.checkkey == self.MMUMenu or
+                (self.checkkey == self.PowerConfirm and getattr(self, '_power_origin', None) == self.MMUMenu)):
             return
         mmu = self.pd.mmu_session.state
         if status == 'paused' and mmu and mmu.locked and mmu.reason:
@@ -2759,6 +2771,9 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             self._restore_action_screen()
 
     def _handle_power_navigation(self):
+        if self._mmu_power_popup_stale():
+            self._restore_power_origin()
+            return True
         event = self.get_encoder_state()
         if self.checkkey == self.PowerConfirm:
             if event in (self.ENCODER_DIFF_CW, self.ENCODER_DIFF_CCW):
@@ -2777,6 +2792,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self._draw_power_icon(False, clear=True)
             elif event == self.ENCODER_DIFF_ENTER:
                 self._power_origin = self.checkkey
+                self._power_origin_epoch = self.pd.state.epoch
                 self._power_confirm_yes = True
                 self._power_focus = False
                 self.checkkey = self.PowerConfirm

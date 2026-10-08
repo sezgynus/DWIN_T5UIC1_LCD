@@ -158,3 +158,29 @@ Cancel-first confirmation and actual enabled flag. Motor release: discover
 stepper_enable, resolve configured MMU drivers only, reject missing telemetry,
 query every driver plus sync state, and verify printer XYZ drivers stay untouched.
 On hardware verify servo behavior and re-home a linear selector if necessary.
+
+
+## MMU with the complete T5UIC1 driver
+
+`test_mmu_driver.py` renders every MMU page through the actual driver, checks
+all production LCD call names and verifies normal/selected Home atlas packets.
+`test_mmu_power_integration.py` covers header space, idle-page reuse, encoder
+focus, numeric editing and complete popup restoration without discarding drafts.
+`test_mmu_driver_lifecycle.py` verifies a single refresh per encoder event,
+heartbeat recovery, atlas restoration without Flash programming, no MMU command
+replay and cancellation of stale power confirmations.
+
+Physical follow-up on the integrated branch:
+
+1. Check Home MMU icons, folder icons and Info headings against master.
+2. Browse all MMU pages. From Back, rotate CCW to power; CW returns to Back.
+   Open power and choose No; verify the complete page and any unsaved draft.
+3. With no active movement, power-cycle only the LCD. Verify the current MMU
+   screen and icons return without restarting a filament operation.
+4. Change or restart the Moonraker/Klipper connection while an MMU power popup
+   is open. Verify cancellation and read-only offline navigation.
+5. Run the MMU operation checks above, including real Load/Unload and LED output.
+
+These are physical acceptance checks; mocked UART packets do not establish
+panel rendering or real printer motion. Integration details and the master
+comparison are recorded in [the driver integration record](../docs/mmu-driver-integration.md).
