@@ -687,7 +687,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                             1 + (self.ENCODER_FAST_MULTIPLIER - 1)
                             * normalized ** self.ENCODER_ACCEL_EXPONENT))
             self._last_encoder_time = now
-            logging.info('POWER_DIAG gpio_rotate delta=%s rate=%.2f ui_epoch=%s', delta, rate, self._uart_epoch)
+            logging.info('POWER_DIAG gpio_rotate delta=%s rate=%.2f ui_epoch=%s', delta, rate, getattr(self, '_uart_epoch', 0))
             self._enqueue_input('rotate', delta, delta * multiplier, rate)
 
     def _button_pressed(self):
@@ -699,7 +699,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             now = time.monotonic()
             if now - self._last_press >= self.ENCODER_WAIT_ENTER / 1000:
                 self._last_press = now
-                logging.info('POWER_DIAG gpio_press ui_epoch=%s', self._uart_epoch)
+                logging.info('POWER_DIAG gpio_press ui_epoch=%s', getattr(self, '_uart_epoch', 0))
                 self._enqueue_input('press', 1)
 
     def _request_power_on(self):
@@ -710,7 +710,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
             logging.warning('LCD input queue full or closed; power-on request discarded')
 
     def _button_held(self):
-        logging.info('POWER_DIAG gpio_hold ui_epoch=%s', self._uart_epoch)
+        logging.info('POWER_DIAG gpio_hold ui_epoch=%s', getattr(self, '_uart_epoch', 0))
         if getattr(self, 'power_on_hold_ms', 2000) > 0:
             self._request_power_on()
 
@@ -807,7 +807,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
     def _process_input(self, event):
         if event.kind in ('rotate', 'press', 'power_on'):
-            logging.info('POWER_DIAG input kind=%s value=%s event_epoch=%s event_ui_epoch=%s screen=%s current_ui_epoch=%s uart_online=%s', event.kind, event.value, event.epoch, event.ui_epoch, self.checkkey, self._uart_epoch, self._uart_online)
+            logging.info('POWER_DIAG input kind=%s value=%s event_epoch=%s event_ui_epoch=%s screen=%s current_ui_epoch=%s uart_online=%s', event.kind, event.value, event.epoch, event.ui_epoch, getattr(self, 'checkkey', None), getattr(self, '_uart_epoch', 0), getattr(self, '_uart_online', False))
         if event.kind == 'power_on':
             if not self._closed:
                 self.pd.power_on_if_off()
@@ -926,7 +926,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.pd.job_Info['print_stats'].get('print_duration', 0))
 
     def HMI_StartFrame(self, with_update):
-        logging.info('LCD_DRAW_DIAG start_frame screen=%s status=%s with_update=%s', self.checkkey, self.pd.status, with_update)
+        logging.info('LCD_DRAW_DIAG start_frame screen=%s status=%s with_update=%s', getattr(self, 'checkkey', None), getattr(self.pd, 'status', None), with_update)
         self._present_print_state()
         if not self._print_error_visible:
             self.Draw_Status_Area(with_update)
@@ -2335,7 +2335,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     # --------------------------------------------------------------#
 
     def Goto_MainMenu(self):
-        logging.info('LCD_DRAW_DIAG main_menu_begin previous_screen=%s', self.checkkey)
+        logging.info('LCD_DRAW_DIAG main_menu_begin previous_screen=%s', getattr(self, 'checkkey', None))
         self.checkkey = self.MainMenu
         self.Clear_Main_Window()
         self._draw_power_icon(getattr(self, '_power_focus', False))
