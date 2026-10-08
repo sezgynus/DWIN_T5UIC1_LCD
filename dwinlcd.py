@@ -926,6 +926,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
                 self.pd.job_Info['print_stats'].get('print_duration', 0))
 
     def HMI_StartFrame(self, with_update):
+        logging.info('LCD_DRAW_DIAG start_frame screen=%s status=%s with_update=%s', self.checkkey, self.pd.status, with_update)
         self._present_print_state()
         if not self._print_error_visible:
             self.Draw_Status_Area(with_update)
@@ -2019,6 +2020,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
 
 
     def _draw_power_icon(self, selected=False, clear=False):
+        logging.info('LCD_DRAW_DIAG power_icon selected=%s clear=%s screen=%s', selected, clear, self.checkkey)
         if clear:
             self.lcd.draw_rectangle(1, self.lcd.Color_Bg_Blue, 241, 2, 268, 29)
         self.lcd.draw_atlas_icon(ICON_POWER, 244, 5)
@@ -2333,6 +2335,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
     # --------------------------------------------------------------#
 
     def Goto_MainMenu(self):
+        logging.info('LCD_DRAW_DIAG main_menu_begin previous_screen=%s', self.checkkey)
         self.checkkey = self.MainMenu
         self.Clear_Main_Window()
         self._draw_power_icon(getattr(self, '_power_focus', False))
@@ -2344,6 +2347,7 @@ class DWIN_LCD(MMUViewMixin, CaseLightMixin, ScrewsTiltMixin, BedMeshMixin, File
         self._drawn_mmu_state = self.pd.mmu
 
         self._draw_home_page()
+        logging.info('LCD_DRAW_DIAG main_menu_draw_complete screen=%s', self.checkkey)
 
     def Goto_PrintProcess(self):
         self.checkkey = self.PrintProcess
